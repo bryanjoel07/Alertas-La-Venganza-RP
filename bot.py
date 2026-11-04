@@ -21,23 +21,39 @@ logging.basicConfig(
 
 logger = logging.getLogger("LaVenganzaRP")
 
+# ==========================================
+# VARIABLES PRIVADAS DE RAILWAY
+# ==========================================
+
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
+# ==========================================
+# CONFIGURACION DEL SERVIDOR
+# ==========================================
+
 GUILD_ID = 1244988345327550565
-CHANNEL_ID = 1513421828415164546
-MESSAGE_ID = 1536621817471696907
+
+CONNECT_CHANNEL_ID = 1513421828415164546
+
+PANEL_MESSAGE_ID = 1536621817471696907
+
+ALERT_CHANNEL_ID = 1567618111920807987
+
+CONNECT_URL = "https://cfx.re/join/57vjg7"
 
 CHECK_INTERVAL = 30
+
 CONFIRM_SECONDS = 90
 
-# Almacenamiento local para reinicios del proceso.
-# Para persistencia entre despliegues de Railway,
-# se requiere un volumen persistente.
 STATE_FILE = os.getenv(
     "STATE_FILE",
     "/tmp/la_venganza_alert_state.json"
 )
+
+# ==========================================
+# CONFIGURACION DISCORD
+# ==========================================
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -47,6 +63,7 @@ client = discord.Client(intents=intents)
 last_state = None
 pending_state = None
 pending_since = None
+last_observed_state = None
 
 
 # ==========================================
@@ -56,7 +73,10 @@ pending_since = None
 def clean_text(value):
     text = str(value or "")
 
-    text = unicodedata.normalize("NFKC", text)
+    text = unicodedata.normalize(
+        "NFKC",
+        text
+    )
 
     text = text.replace("```", "")
     text = text.replace("`", "")
@@ -67,79 +87,62 @@ def clean_text(value):
 
 
 # ==========================================
-# DETECTAR ESTADO
+# IDENTIFICAR ESTADOS
 # ==========================================
 
 def parse_status(value):
     text = clean_text(value)
 
-    down_words = (
-        "offline",
-        "down",
-        "cerrado",
-        "caido",
-        "caído",
-        "desconectado"
-    )
+    # Evitar interpretar mensajes ambiguos.
+    # Partial nunca genera una alerta.
 
-    up_words = (
-        "online",
-        "up",
-        "abierto",
-        "operativo",
-        "conectado"
-    )
-
-    # El estado debe aparecer como un valor
-    # aislado, con emojis o formato adicional.
-    text = re.sub(
-        r"^[^\w]+",
-        "",
+    if re.search(
+        r"\b(partial|degraded|parcial)\b",
         text
-    )
+    ):
+        return "partial"
 
-    for word in down_words:
-        if re.search(
-            rf"\b{re.escape(word)}\b",
-            text
-        ):
-            return "down"
+    if re.search(
+        r"\b(offline|down|cerrado|caido|caído)\b",
+        text
+    ):
+        return "down"
 
-    for word in up_words:
-        if re.search(
-            rf"\b{re.escape(word)}\b",
-            text
-        ):
-            return "up"
+    if re.search(
+        r"\b(online|up|abierto|operativo)\b",
+        text
+    ):
+        return "up"
 
     return None
 
 
 # ==========================================
-# LEER EL PANEL ORIGINAL
+# LEER ESTADO DEL PANEL ORIGINAL
 # ==========================================
 
 def detect_status(message):
     for embed in message.embeds:
         for field in embed.fields:
-            name = clean_text(field.name)
+
+            field_name = clean_text(
+                field.name
+            )
 
             if re.search(
                 r"\b(status|estado)\b",
-                name
+                field_name
             ):
-                state = parse_status(field.value)
 
-                if state:
-                    return state
+                return parse_status(
+                    field.value
+                )
 
-    # No inferir estado desde el titulo
-    # ni desde el enlace de conexion.
     return None
 
 
 # ==========================================
-# ESTADO GUARDADO
+# GUARDAR ESTADO
 # ==========================================
 
 def load_state():
@@ -149,6 +152,7 @@ def load_state():
             "r",
             encoding="utf-8"
         ) as file:
+
             data = json.load(file)
 
         state = data.get("state")
@@ -156,7 +160,11 @@ def load_state():
         if state in ("up", "down"):
             return state
 
-    except (OSError, ValueError, TypeError):
+    except (
+        OSError,
+        ValueError,
+        TypeError
+    ):
         pass
 
     return None
@@ -164,63 +172,100 @@ def load_state():
 
 def save_state(state):
     try:
+        directory = os.path.dirname(
+            STATE_FILE
+        )
+
+        if directory:
+            os.makedirs(
+                directory,
+                exist_ok=True
+            )
+
+        temporary_file = STATE_FILE + ".tmp"
+
         with open(
-            STATE_FILE,
+            temporary_file,
             "w",
             encoding="utf-8"
         ) as file:
+
             json.dump(
                 {"state": state},
                 file
             )
 
+        os.replace(
+            temporary_file,
+            STATE_FILE
+        )
+
     except OSError:
         logger.warning(
-            "No se pudo guardar el estado local."
+            "No se pudo guardar el estado."
         )
 
 
 # ==========================================
-# ENVIAR ALERTAS
+# ENVIAR ALERTAS A DISCORD
 # ==========================================
 
 async def send_alert(state):
+
     if state == "down":
+
         title = (
             "🚨 SERVER DOWN | LA VENGANZA RP"
         )
 
         description = (
-            "🔴 **La ciudad se encuentra "
-            "fuera de servicio.**\n\n"
-            "🛠️ Estamos verificando la situación.\n\n"
+            "🔴 **LA CIUDAD SE ENCUENTRA "
+            "FUERA DE SERVICIO**\n\n"
+            "🛠️ Mi gente, nuestro servidor "
+            "se encuentra temporalmente "
+            "fuera de servicio.\n\n"
+            "🔧 Nuestro equipo estará "
+            "verificando la situación.\n\n"
             "📢 Les notificaremos cuando "
-            "el servidor vuelva a estar disponible.\n\n"
+            "la ciudad esté disponible "
+            "nuevamente.\n\n"
             "🔴 **LA VENGANZA RP**\n"
-            "*La ciudad más real • El rol más duro*"
+            "*La ciudad más real • "
+            "El rol más duro*"
         )
 
         color = 0xFF0000
 
-    else:
+    elif state == "up":
+
         title = (
             "🟢 SERVER RESTORED | LA VENGANZA RP"
         )
 
         description = (
-            "✅ **¡La ciudad está disponible "
-            "nuevamente!**\n\n"
-            "🔥 ¡Mi gente, ya pueden entrar!\n\n"
+            "✅ **¡LA CIUDAD ESTÁ "
+            "DISPONIBLE NUEVAMENTE!**\n\n"
+            "🌴 ¡Mi gente, ya estamos de vuelta!\n\n"
+            "🚗 Preparen sus máquinas, "
+            "reúnan al corillo y entren "
+            "a disfrutar del roleplay.\n\n"
             "🎮 **CONÉCTATE AQUÍ:**\n"
-            "https://cfx.re/join/57vjg7\n\n"
+            f"{CONNECT_URL}\n\n"
             "🔴 **LA VENGANZA RP**\n"
-            "*La ciudad más real • El rol más duro*"
+            "*La ciudad más real • "
+            "El rol más duro*"
         )
 
         color = 0x22C55E
 
+    else:
+        return False
+
     payload = {
         "username": "La Venganza RP | Alertas",
+        "allowed_mentions": {
+            "parse": []
+        },
         "embeds": [
             {
                 "title": title,
@@ -237,117 +282,224 @@ async def send_alert(state):
     }
 
     timeout = aiohttp.ClientTimeout(
-        total=15
+        total=20
     )
 
     async with aiohttp.ClientSession(
         timeout=timeout
     ) as session:
+
         async with session.post(
             WEBHOOK_URL,
             json=payload
         ) as response:
-            if response.status not in (200, 204):
+
+            if response.status not in (
+                200,
+                204
+            ):
+
+                error = await response.text()
+
                 raise RuntimeError(
-                    "Webhook HTTP "
-                    f"{response.status}"
+                    f"Webhook HTTP "
+                    f"{response.status}: "
+                    f"{error[:150]}"
                 )
 
     logger.info(
-        "Alerta enviada correctamente: %s",
+        "Alerta enviada: %s",
         state
     )
 
+    return True
+
 
 # ==========================================
-# MONITOREAR SERVIDOR
+# MONITOREAR PANEL TXADMIN
 # ==========================================
 
 async def monitor_server():
+
     global last_state
     global pending_state
     global pending_since
+    global last_observed_state
 
     await client.wait_until_ready()
 
     last_state = load_state()
 
-    channel = await client.fetch_channel(
-        CHANNEL_ID
-    )
-
     logger.info(
         "Monitor de La Venganza RP iniciado"
     )
 
+    logger.info(
+        "Canal de origen: %s",
+        CONNECT_CHANNEL_ID
+    )
+
+    logger.info(
+        "Mensaje original: %s",
+        PANEL_MESSAGE_ID
+    )
+
+    logger.info(
+        "Canal de alertas: %s",
+        ALERT_CHANNEL_ID
+    )
+
     while not client.is_closed():
+
         try:
+
+            channel = await client.fetch_channel(
+                CONNECT_CHANNEL_ID
+            )
+
             message = await channel.fetch_message(
-                MESSAGE_ID
+                PANEL_MESSAGE_ID
             )
 
             current_state = detect_status(
                 message
             )
 
-            if current_state is None:
-                logger.warning(
-                    "Estado no reconocido."
+            # Registrar solamente cuando
+            # cambia el estado observado.
+
+            if current_state != last_observed_state:
+
+                logger.info(
+                    "Estado observado: %s",
+                    current_state
                 )
+
+                last_observed_state = current_state
+
+            # ==================================
+            # ESTADO DESCONOCIDO
+            # ==================================
+
+            if current_state is None:
 
                 pending_state = None
                 pending_since = None
 
+                logger.warning(
+                    "Estado no reconocido. "
+                    "No se enviara ninguna alerta."
+                )
+
+            # ==================================
+            # ESTADO PARTIAL
+            # ==================================
+
+            elif current_state == "partial":
+
+                pending_state = None
+                pending_since = None
+
+                # Partial no cambia el ultimo
+                # estado confirmado.
+                # No se envia ningun mensaje.
+
+            # ==================================
+            # ESTADO INICIAL
+            # ==================================
+
             elif last_state is None:
+
                 last_state = current_state
-                save_state(current_state)
+
+                save_state(
+                    current_state
+                )
 
                 logger.info(
                     "Estado inicial detectado: %s",
                     current_state
                 )
 
+            # ==================================
+            # SIN CAMBIOS
+            # ==================================
+
             elif current_state == last_state:
+
                 pending_state = None
                 pending_since = None
 
+            # ==================================
+            # NUEVO CAMBIO
+            # ==================================
+
             elif pending_state != current_state:
+
                 pending_state = current_state
+
                 pending_since = time.monotonic()
 
                 logger.info(
                     "Cambio detectado: %s. "
-                    "Esperando confirmacion.",
-                    current_state
+                    "Confirmando durante %s segundos.",
+                    current_state,
+                    CONFIRM_SECONDS
                 )
+
+            # ==================================
+            # CAMBIO CONFIRMADO
+            # ==================================
 
             elif (
-                time.monotonic() - pending_since
+                pending_since is not None
+                and time.monotonic() - pending_since
                 >= CONFIRM_SECONDS
             ):
-                await send_alert(
+
+                logger.info(
+                    "Cambio confirmado: %s",
                     current_state
                 )
 
-                last_state = current_state
-                save_state(current_state)
+                success = await send_alert(
+                    current_state
+                )
 
-                pending_state = None
-                pending_since = None
+                if success:
+
+                    last_state = current_state
+
+                    save_state(
+                        current_state
+                    )
+
+                    pending_state = None
+                    pending_since = None
+
+                    logger.info(
+                        "Estado actualizado: %s",
+                        current_state
+                    )
 
         except discord.Forbidden:
+
             logger.error(
-                "Sin permisos para leer Connect."
+                "El bot no tiene permisos "
+                "para leer Connect."
             )
 
         except discord.NotFound:
+
             logger.error(
-                "Mensaje original no encontrado."
+                "No se encontro el panel "
+                "original de txAdmin."
             )
 
         except Exception:
+
             logger.exception(
-                "Error monitoreando el panel."
+                "Error monitoreando el servidor."
             )
 
         await asyncio.sleep(
@@ -356,11 +508,12 @@ async def monitor_server():
 
 
 # ==========================================
-# EVENTOS
+# EVENTOS DEL BOT
 # ==========================================
 
 @client.event
 async def on_ready():
+
     logger.info(
         "Bot conectado como %s",
         client.user
@@ -368,30 +521,37 @@ async def on_ready():
 
 
 # ==========================================
-# INICIO
+# INICIAR SISTEMA
 # ==========================================
 
 async def main():
-    async with client:
-        await client.login(TOKEN)
 
-        task = asyncio.create_task(
+    async with client:
+
+        await client.login(
+            TOKEN
+        )
+
+        monitor_task = asyncio.create_task(
             monitor_server()
         )
 
         try:
+
             await client.connect(
                 reconnect=True
             )
 
         finally:
-            task.cancel()
+
+            monitor_task.cancel()
 
             await asyncio.gather(
-                task,
+                monitor_task,
                 return_exceptions=True
             )
 
 
 if __name__ == "__main__":
+
     asyncio.run(main())
