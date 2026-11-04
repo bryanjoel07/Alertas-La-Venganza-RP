@@ -9,6 +9,7 @@ import unicodedata
 
 import aiohttp
 import discord
+from discord import app_commands
 
 # ==========================================
 # LA VENGANZA RP | ALERTAS AUTOMATICAS
@@ -29,7 +30,7 @@ TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
 # ==========================================
-# CONFIGURACION DEL SERVIDOR
+# CONFIGURACION
 # ==========================================
 
 GUILD_ID = 1244988345327550565
@@ -43,7 +44,6 @@ ALERT_CHANNEL_ID = 1567618111920807987
 CONNECT_URL = "https://cfx.re/join/57vjg7"
 
 CHECK_INTERVAL = 30
-
 CONFIRM_SECONDS = 90
 
 STATE_FILE = os.getenv(
@@ -51,14 +51,38 @@ STATE_FILE = os.getenv(
     "/tmp/la_venganza_alert_state.json"
 )
 
-# ==========================================
-# CONFIGURACION DISCORD
-# ==========================================
+GUILD = discord.Object(id=GUILD_ID)
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-client = discord.Client(intents=intents)
+# ==========================================
+# CLIENTE DE DISCORD
+# ==========================================
+
+class AlertClient(discord.Client):
+
+    def __init__(self):
+        super().__init__(intents=intents)
+        self.tree = app_commands.CommandTree(self)
+        self.monitor_task = None
+
+    async def setup_hook(self):
+        self.tree.copy_global_to(guild=GUILD)
+
+        commands = await self.tree.sync(guild=GUILD)
+
+        logger.info(
+            "Comandos sincronizados: %s",
+            len(commands)
+        )
+
+        self.monitor_task = asyncio.create_task(
+            monitor_server()
+        )
+
+
+client = AlertClient()
 
 last_state = None
 pending_state = None
@@ -87,14 +111,11 @@ def clean_text(value):
 
 
 # ==========================================
-# IDENTIFICAR ESTADOS
+# DETECTAR ESTADO
 # ==========================================
 
 def parse_status(value):
     text = clean_text(value)
-
-    # Evitar interpretar mensajes ambiguos.
-    # Partial nunca genera una alerta.
 
     if re.search(
         r"\b(partial|degraded|parcial)\b",
@@ -118,11 +139,13 @@ def parse_status(value):
 
 
 # ==========================================
-# LEER ESTADO DEL PANEL ORIGINAL
+# LEER PANEL ORIGINAL
 # ==========================================
 
 def detect_status(message):
+
     for embed in message.embeds:
+
         for field in embed.fields:
 
             field_name = clean_text(
@@ -142,11 +165,13 @@ def detect_status(message):
 
 
 # ==========================================
-# GUARDAR ESTADO
+# ESTADO GUARDADO
 # ==========================================
 
 def load_state():
+
     try:
+
         with open(
             STATE_FILE,
             "r",
@@ -171,7 +196,9 @@ def load_state():
 
 
 def save_state(state):
+
     try:
+
         directory = os.path.dirname(
             STATE_FILE
         )
@@ -201,16 +228,17 @@ def save_state(state):
         )
 
     except OSError:
+
         logger.warning(
             "No se pudo guardar el estado."
         )
 
 
 # ==========================================
-# ENVIAR ALERTAS A DISCORD
+# CREAR EMBED
 # ==========================================
 
-async def send_alert(state):
+def create_alert_embed(state, test=False):
 
     if state == "down":
 
@@ -259,7 +287,48 @@ async def send_alert(state):
         color = 0x22C55E
 
     else:
-        return False
+
+        raise ValueError(
+            "Estado no valido"
+        )
+
+    if test:
+
+        title = "🧪 PRUEBA | " + title
+
+        description = (
+            "⚠️ **ESTO ES UNA PRUEBA DEL BOT.**\n"
+            "**NO REPRESENTA EL ESTADO REAL "
+            "DEL SERVIDOR.**\n\n"
+            + description
+        )
+
+    embed = discord.Embed(
+        title=title,
+        description=description,
+        color=color
+    )
+
+    embed.set_footer(
+        text=(
+            "La Venganza RP | "
+            "Sistema de Alertas"
+        )
+    )
+
+    return embed
+
+
+# ==========================================
+# ENVIAR ALERTA POR WEBHOOK
+# ==========================================
+
+async def send_alert(state, test=False):
+
+    embed = create_alert_embed(
+        state,
+        test=test
+    )
 
     payload = {
         "username": "La Venganza RP | Alertas",
@@ -267,17 +336,7 @@ async def send_alert(state):
             "parse": []
         },
         "embeds": [
-            {
-                "title": title,
-                "description": description,
-                "color": color,
-                "footer": {
-                    "text": (
-                        "La Venganza RP | "
-                        "Sistema de Alertas"
-                    )
-                }
-            }
+            embed.to_dict()
         ]
     }
 
@@ -308,15 +367,131 @@ async def send_alert(state):
                 )
 
     logger.info(
-        "Alerta enviada: %s",
-        state
+        "Alerta enviada: %s | Prueba: %s",
+        state,
+        test
     )
 
     return True
 
 
 # ==========================================
-# MONITOREAR PANEL TXADMIN
+# COMANDO /TESTALERT
+# ==========================================
+
+@client.tree.command(
+    name="testalert",
+    description=(
+        "Enviar una alerta de prueba "
+        "sin cambiar el estado real."
+    )
+)
+@app_commands.guild_only()
+@app_commands.default_permissions(
+    administrator=True
+)
+@app_commands.checks.has_permissions(
+    administrator=True
+)
+@app_commands.describe(
+    estado="Tipo de alerta que deseas probar"
+)
+@app_commands.choices(
+    estado=[
+        app_commands.Choice(
+            name="🔴 Server Down",
+            value="down"
+        ),
+        app_commands.Choice(
+            name="🟢 Server Restored",
+            value="up"
+        )
+    ]
+)
+async def testalert(
+    interaction: discord.Interaction,
+    estado: app_commands.Choice[str]
+):
+
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    try:
+
+        await send_alert(
+            estado.value,
+            test=True
+        )
+
+        await interaction.followup.send(
+            "✅ Alerta de prueba enviada "
+            "a 🚨 Alertas-Servidor.",
+            ephemeral=True
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Error enviando alerta de prueba."
+        )
+
+        await interaction.followup.send(
+            "❌ No se pudo enviar la alerta. "
+            "Revisa los registros de Railway.",
+            ephemeral=True
+        )
+
+
+# ==========================================
+# ERRORES DE COMANDOS
+# ==========================================
+
+@client.tree.error
+async def on_app_command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+
+    if isinstance(
+        error,
+        app_commands.MissingPermissions
+    ):
+
+        message = (
+            "❌ Solo los administradores "
+            "pueden utilizar este comando."
+        )
+
+    else:
+
+        logger.error(
+            "Error en comando: %s",
+            error
+        )
+
+        message = (
+            "❌ Ocurrio un error "
+            "ejecutando el comando."
+        )
+
+    if interaction.response.is_done():
+
+        await interaction.followup.send(
+            message,
+            ephemeral=True
+        )
+
+    else:
+
+        await interaction.response.send_message(
+            message,
+            ephemeral=True
+        )
+
+
+# ==========================================
+# MONITOREAR TXADMIN
 # ==========================================
 
 async def monitor_server():
@@ -365,9 +540,6 @@ async def monitor_server():
                 message
             )
 
-            # Registrar solamente cuando
-            # cambia el estado observado.
-
             if current_state != last_observed_state:
 
                 logger.info(
@@ -377,9 +549,7 @@ async def monitor_server():
 
                 last_observed_state = current_state
 
-            # ==================================
             # ESTADO DESCONOCIDO
-            # ==================================
 
             if current_state is None:
 
@@ -387,26 +557,17 @@ async def monitor_server():
                 pending_since = None
 
                 logger.warning(
-                    "Estado no reconocido. "
-                    "No se enviara ninguna alerta."
+                    "Estado no reconocido."
                 )
 
-            # ==================================
-            # ESTADO PARTIAL
-            # ==================================
+            # PARTIAL NO GENERA ALERTAS
 
             elif current_state == "partial":
 
                 pending_state = None
                 pending_since = None
 
-                # Partial no cambia el ultimo
-                # estado confirmado.
-                # No se envia ningun mensaje.
-
-            # ==================================
             # ESTADO INICIAL
-            # ==================================
 
             elif last_state is None:
 
@@ -421,18 +582,14 @@ async def monitor_server():
                     current_state
                 )
 
-            # ==================================
             # SIN CAMBIOS
-            # ==================================
 
             elif current_state == last_state:
 
                 pending_state = None
                 pending_since = None
 
-            # ==================================
-            # NUEVO CAMBIO
-            # ==================================
+            # CAMBIO DETECTADO
 
             elif pending_state != current_state:
 
@@ -441,15 +598,11 @@ async def monitor_server():
                 pending_since = time.monotonic()
 
                 logger.info(
-                    "Cambio detectado: %s. "
-                    "Confirmando durante %s segundos.",
-                    current_state,
-                    CONFIRM_SECONDS
+                    "Cambio detectado: %s",
+                    current_state
                 )
 
-            # ==================================
             # CAMBIO CONFIRMADO
-            # ==================================
 
             elif (
                 pending_since is not None
@@ -457,49 +610,40 @@ async def monitor_server():
                 >= CONFIRM_SECONDS
             ):
 
+                await send_alert(
+                    current_state
+                )
+
+                last_state = current_state
+
+                save_state(
+                    current_state
+                )
+
+                pending_state = None
+                pending_since = None
+
                 logger.info(
-                    "Cambio confirmado: %s",
+                    "Estado actualizado: %s",
                     current_state
                 )
-
-                success = await send_alert(
-                    current_state
-                )
-
-                if success:
-
-                    last_state = current_state
-
-                    save_state(
-                        current_state
-                    )
-
-                    pending_state = None
-                    pending_since = None
-
-                    logger.info(
-                        "Estado actualizado: %s",
-                        current_state
-                    )
 
         except discord.Forbidden:
 
             logger.error(
-                "El bot no tiene permisos "
-                "para leer Connect."
+                "Sin permisos para leer Connect."
             )
 
         except discord.NotFound:
 
             logger.error(
-                "No se encontro el panel "
-                "original de txAdmin."
+                "Panel original no encontrado."
             )
 
         except Exception:
 
             logger.exception(
-                "Error monitoreando el servidor."
+                "Error monitoreando el panel."
             )
 
         await asyncio.sleep(
@@ -508,7 +652,7 @@ async def monitor_server():
 
 
 # ==========================================
-# EVENTOS DEL BOT
+# BOT CONECTADO
 # ==========================================
 
 @client.event
@@ -521,37 +665,12 @@ async def on_ready():
 
 
 # ==========================================
-# INICIAR SISTEMA
+# INICIAR BOT
 # ==========================================
-
-async def main():
-
-    async with client:
-
-        await client.login(
-            TOKEN
-        )
-
-        monitor_task = asyncio.create_task(
-            monitor_server()
-        )
-
-        try:
-
-            await client.connect(
-                reconnect=True
-            )
-
-        finally:
-
-            monitor_task.cancel()
-
-            await asyncio.gather(
-                monitor_task,
-                return_exceptions=True
-            )
-
 
 if __name__ == "__main__":
 
-    asyncio.run(main())
+    client.run(
+        TOKEN,
+        log_handler=None
+    )
