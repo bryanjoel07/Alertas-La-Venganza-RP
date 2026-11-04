@@ -30,15 +30,12 @@ TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
 # ==========================================
-# CONFIGURACION
+# CONFIGURACION DEL SERVIDOR
 # ==========================================
 
 GUILD_ID = 1244988345327550565
-
 CONNECT_CHANNEL_ID = 1513421828415164546
-
 PANEL_MESSAGE_ID = 1536621817471696907
-
 ALERT_CHANNEL_ID = 1567618111920807987
 
 CONNECT_URL = "https://cfx.re/join/57vjg7"
@@ -56,21 +53,88 @@ GUILD = discord.Object(id=GUILD_ID)
 intents = discord.Intents.default()
 intents.message_content = True
 
+
 # ==========================================
-# CLIENTE DE DISCORD
+# MAQUINA DE ESTADOS
+# ==========================================
+
+class StateTracker:
+
+    def __init__(self, initial=None):
+        self.last_state = initial
+        self.pending_state = None
+        self.pending_since = None
+
+    def observe(self, state, now):
+
+        # Partial o valores desconocidos no
+        # generan alertas y cancelan cambios
+        # que no hayan sido confirmados.
+
+        if state not in ("up", "down"):
+            self.pending_state = None
+            self.pending_since = None
+            return None
+
+        # Primer estado conocido:
+        # establecer referencia sin alertar.
+
+        if self.last_state is None:
+            self.last_state = state
+            return None
+
+        # Estado sin cambios.
+
+        if state == self.last_state:
+            self.pending_state = None
+            self.pending_since = None
+            return None
+
+        # Cambio detectado por primera vez.
+
+        if self.pending_state != state:
+            self.pending_state = state
+            self.pending_since = now
+            return None
+
+        # Todavia no se ha confirmado.
+
+        if (
+            self.pending_since is None
+            or now - self.pending_since
+            < CONFIRM_SECONDS
+        ):
+            return None
+
+        # Cambio confirmado.
+        # El llamador debe enviar la alerta
+        # y despues registrar el nuevo estado.
+
+        return state
+
+    def confirm_sent(self, state):
+        self.last_state = state
+        self.pending_state = None
+        self.pending_since = None
+
+
+# ==========================================
+# BOT DE DISCORD
 # ==========================================
 
 class AlertClient(discord.Client):
 
     def __init__(self):
         super().__init__(intents=intents)
+
         self.tree = app_commands.CommandTree(self)
         self.monitor_task = None
 
     async def setup_hook(self):
-        self.tree.copy_global_to(guild=GUILD)
 
-        commands = await self.tree.sync(guild=GUILD)
+        commands = await self.tree.sync(
+            guild=GUILD
+        )
 
         logger.info(
             "Comandos sincronizados: %s",
@@ -84,37 +148,30 @@ class AlertClient(discord.Client):
 
 client = AlertClient()
 
-last_state = None
-pending_state = None
-pending_since = None
-last_observed_state = None
-
 
 # ==========================================
-# LIMPIAR TEXTO
+# LIMPIEZA DE TEXTO
 # ==========================================
 
 def clean_text(value):
-    text = str(value or "")
 
     text = unicodedata.normalize(
         "NFKC",
-        text
+        str(value or "")
     )
 
-    text = text.replace("```", "")
-    text = text.replace("`", "")
-    text = text.replace("**", "")
-    text = text.replace("__", "")
+    for marker in ("```", "`", "**", "__"):
+        text = text.replace(marker, "")
 
     return text.strip().lower()
 
 
 # ==========================================
-# DETECTAR ESTADO
+# DETECTAR ONLINE / OFFLINE / PARTIAL
 # ==========================================
 
 def parse_status(value):
+
     text = clean_text(value)
 
     if re.search(
@@ -139,7 +196,7 @@ def parse_status(value):
 
 
 # ==========================================
-# LEER PANEL ORIGINAL
+# LEER PANEL ORIGINAL DEL PROGRAMADOR
 # ==========================================
 
 def detect_status(message):
@@ -148,30 +205,24 @@ def detect_status(message):
 
         for field in embed.fields:
 
-            field_name = clean_text(
-                field.name
-            )
+            name = clean_text(field.name)
 
             if re.search(
                 r"\b(status|estado)\b",
-                field_name
+                name
             ):
-
-                return parse_status(
-                    field.value
-                )
+                return parse_status(field.value)
 
     return None
 
 
 # ==========================================
-# ESTADO GUARDADO
+# PERSISTENCIA DEL ESTADO REAL
 # ==========================================
 
 def load_state():
 
     try:
-
         with open(
             STATE_FILE,
             "r",
@@ -185,11 +236,7 @@ def load_state():
         if state in ("up", "down"):
             return state
 
-    except (
-        OSError,
-        ValueError,
-        TypeError
-    ):
+    except (OSError, ValueError, TypeError):
         pass
 
     return None
@@ -198,10 +245,7 @@ def load_state():
 def save_state(state):
 
     try:
-
-        directory = os.path.dirname(
-            STATE_FILE
-        )
+        directory = os.path.dirname(STATE_FILE)
 
         if directory:
             os.makedirs(
@@ -209,10 +253,10 @@ def save_state(state):
                 exist_ok=True
             )
 
-        temporary_file = STATE_FILE + ".tmp"
+        temporary = STATE_FILE + ".tmp"
 
         with open(
-            temporary_file,
+            temporary,
             "w",
             encoding="utf-8"
         ) as file:
@@ -222,20 +266,16 @@ def save_state(state):
                 file
             )
 
-        os.replace(
-            temporary_file,
-            STATE_FILE
-        )
+        os.replace(temporary, STATE_FILE)
 
     except OSError:
-
         logger.warning(
             "No se pudo guardar el estado."
         )
 
 
 # ==========================================
-# CREAR EMBED
+# CREAR COMUNICADOS
 # ==========================================
 
 def create_alert_embed(state, test=False):
@@ -249,14 +289,13 @@ def create_alert_embed(state, test=False):
         description = (
             "🔴 **LA CIUDAD SE ENCUENTRA "
             "FUERA DE SERVICIO**\n\n"
-            "🛠️ Mi gente, nuestro servidor "
-            "se encuentra temporalmente "
+            "🛠️ Mi gente, el servidor se "
+            "encuentra temporalmente "
             "fuera de servicio.\n\n"
             "🔧 Nuestro equipo estará "
             "verificando la situación.\n\n"
             "📢 Les notificaremos cuando "
-            "la ciudad esté disponible "
-            "nuevamente.\n\n"
+            "la ciudad vuelva a estar disponible.\n\n"
             "🔴 **LA VENGANZA RP**\n"
             "*La ciudad más real • "
             "El rol más duro*"
@@ -274,9 +313,8 @@ def create_alert_embed(state, test=False):
             "✅ **¡LA CIUDAD ESTÁ "
             "DISPONIBLE NUEVAMENTE!**\n\n"
             "🌴 ¡Mi gente, ya estamos de vuelta!\n\n"
-            "🚗 Preparen sus máquinas, "
-            "reúnan al corillo y entren "
-            "a disfrutar del roleplay.\n\n"
+            "🚗 Preparen sus máquinas y "
+            "entren a disfrutar del roleplay.\n\n"
             "🎮 **CONÉCTATE AQUÍ:**\n"
             f"{CONNECT_URL}\n\n"
             "🔴 **LA VENGANZA RP**\n"
@@ -287,19 +325,15 @@ def create_alert_embed(state, test=False):
         color = 0x22C55E
 
     else:
-
-        raise ValueError(
-            "Estado no valido"
-        )
+        raise ValueError("Estado invalido.")
 
     if test:
-
         title = "🧪 PRUEBA | " + title
 
         description = (
-            "⚠️ **ESTO ES UNA PRUEBA DEL BOT.**\n"
-            "**NO REPRESENTA EL ESTADO REAL "
-            "DEL SERVIDOR.**\n\n"
+            "⚠️ **SIMULACIÓN DEL BOT**\n"
+            "**ESTO NO REPRESENTA EL ESTADO "
+            "REAL DEL SERVIDOR.**\n\n"
             + description
         )
 
@@ -320,7 +354,7 @@ def create_alert_embed(state, test=False):
 
 
 # ==========================================
-# ENVIAR ALERTA POR WEBHOOK
+# ENVIAR ALERTA AL WEBHOOK
 # ==========================================
 
 async def send_alert(state, test=False):
@@ -358,21 +392,16 @@ async def send_alert(state, test=False):
                 204
             ):
 
-                error = await response.text()
-
                 raise RuntimeError(
-                    f"Webhook HTTP "
-                    f"{response.status}: "
-                    f"{error[:150]}"
+                    "Error del webhook: "
+                    f"HTTP {response.status}"
                 )
 
     logger.info(
-        "Alerta enviada: %s | Prueba: %s",
+        "Alerta enviada | Estado: %s | Prueba: %s",
         state,
         test
     )
-
-    return True
 
 
 # ==========================================
@@ -381,12 +410,9 @@ async def send_alert(state, test=False):
 
 @client.tree.command(
     name="testalert",
-    description=(
-        "Enviar una alerta de prueba "
-        "sin cambiar el estado real."
-    )
+    description="Enviar una alerta de prueba."
 )
-@app_commands.guild_only()
+@app_commands.guilds(GUILD)
 @app_commands.default_permissions(
     administrator=True
 )
@@ -394,7 +420,7 @@ async def send_alert(state, test=False):
     administrator=True
 )
 @app_commands.describe(
-    estado="Tipo de alerta que deseas probar"
+    estado="Selecciona el comunicado de prueba"
 )
 @app_commands.choices(
     estado=[
@@ -418,7 +444,6 @@ async def testalert(
     )
 
     try:
-
         await send_alert(
             estado.value,
             test=True
@@ -426,18 +451,188 @@ async def testalert(
 
         await interaction.followup.send(
             "✅ Alerta de prueba enviada "
-            "a 🚨 Alertas-Servidor.",
+            "a Alertas-Servidor.",
             ephemeral=True
+        )
+
+    except Exception:
+        logger.exception(
+            "Error ejecutando /testalert"
+        )
+
+        await interaction.followup.send(
+            "❌ No se pudo enviar la prueba. "
+            "Revisa Railway.",
+            ephemeral=True
+        )
+
+
+# ==========================================
+# SIMULACION COMPLETA DEL SISTEMA
+# ==========================================
+
+def run_simulation():
+
+    # Esta instancia es independiente.
+    # No modifica el estado real del bot.
+
+    tracker = StateTracker()
+
+    results = []
+
+    def check(state, simulated_second):
+
+        event = tracker.observe(
+            state,
+            simulated_second
+        )
+
+        results.append(
+            (state, simulated_second, event)
+        )
+
+        if event is not None:
+            tracker.confirm_sent(event)
+
+        return event
+
+    # Establecer Online como estado inicial.
+
+    assert check("up", 0) is None
+
+    # Una caida momentanea debe cancelarse.
+
+    assert check("down", 10) is None
+    assert check("up", 50) is None
+
+    # Caida confirmada despues de 90 segundos.
+
+    assert check("down", 100) is None
+    assert check("down", 189) is None
+    assert check("down", 190) == "down"
+
+    # Evitar alertas duplicadas.
+
+    assert check("down", 220) is None
+    assert check("down", 250) is None
+
+    # Partial debe ignorarse.
+
+    assert check("partial", 260) is None
+
+    # Recuperacion confirmada.
+
+    assert check("up", 300) is None
+    assert check("up", 389) is None
+    assert check("up", 390) == "up"
+
+    # Evitar duplicados de recuperacion.
+
+    assert check("up", 420) is None
+
+    # Verificar secuencia exacta.
+
+    emitted = [
+        event
+        for _, _, event in results
+        if event is not None
+    ]
+
+    assert emitted == ["down", "up"]
+
+    return {
+        "success": True,
+        "checks": len(results),
+        "alerts": emitted,
+        "confirmation_seconds": CONFIRM_SECONDS,
+        "partial_ignored": True,
+        "duplicates_prevented": True
+    }
+
+
+# ==========================================
+# COMANDO /SIMULAR-CICLO
+# ==========================================
+
+@client.tree.command(
+    name="simular-ciclo",
+    description=(
+        "Simular una caida y recuperacion "
+        "sin apagar FiveM."
+    )
+)
+@app_commands.guilds(GUILD)
+@app_commands.default_permissions(
+    administrator=True
+)
+@app_commands.checks.has_permissions(
+    administrator=True
+)
+async def simular_ciclo(
+    interaction: discord.Interaction
+):
+
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    try:
+
+        # Comprobar la logica primero.
+
+        result = run_simulation()
+
+        if not result["success"]:
+            raise RuntimeError(
+                "La simulacion no fue exitosa."
+            )
+
+        # Enviar solamente comunicados
+        # identificados como simulacion.
+
+        await send_alert(
+            "down",
+            test=True
+        )
+
+        await send_alert(
+            "up",
+            test=True
+        )
+
+        message = (
+            "✅ **SIMULACIÓN COMPLETADA**\n\n"
+            "🔴 Server Down: enviado.\n"
+            "🟢 Server Restored: enviado.\n"
+            "🟠 Partial: ignorado.\n"
+            "🛡️ Duplicados: bloqueados.\n"
+            f"⏱️ Confirmación: "
+            f"{CONFIRM_SECONDS} segundos "
+            "simulados.\n\n"
+            "✅ El estado real del servidor "
+            "no fue modificado.\n\n"
+            "📢 Revisa el canal "
+            "Alertas-Servidor."
+        )
+
+        await interaction.followup.send(
+            message,
+            ephemeral=True
+        )
+
+        logger.info(
+            "Simulacion completada por %s",
+            interaction.user.id
         )
 
     except Exception:
 
         logger.exception(
-            "Error enviando alerta de prueba."
+            "Error ejecutando /simular-ciclo"
         )
 
         await interaction.followup.send(
-            "❌ No se pudo enviar la alerta. "
+            "❌ La simulación falló. "
             "Revisa los registros de Railway.",
             ephemeral=True
         )
@@ -448,7 +643,7 @@ async def testalert(
 # ==========================================
 
 @client.tree.error
-async def on_app_command_error(
+async def command_error(
     interaction: discord.Interaction,
     error: app_commands.AppCommandError
 ):
@@ -459,69 +654,70 @@ async def on_app_command_error(
     ):
 
         message = (
-            "❌ Solo los administradores "
-            "pueden utilizar este comando."
+            "❌ Este comando requiere "
+            "permisos de administrador."
         )
 
     else:
 
         logger.error(
-            "Error en comando: %s",
+            "Error de comando: %s",
             error
         )
 
         message = (
-            "❌ Ocurrio un error "
+            "❌ Ocurrió un error "
             "ejecutando el comando."
         )
 
-    if interaction.response.is_done():
+    try:
 
-        await interaction.followup.send(
-            message,
-            ephemeral=True
-        )
+        if interaction.response.is_done():
 
-    else:
+            await interaction.followup.send(
+                message,
+                ephemeral=True
+            )
 
-        await interaction.response.send_message(
-            message,
-            ephemeral=True
+        else:
+
+            await interaction.response.send_message(
+                message,
+                ephemeral=True
+            )
+
+    except discord.HTTPException:
+        logger.exception(
+            "No se pudo responder al comando."
         )
 
 
 # ==========================================
-# MONITOREAR TXADMIN
+# MONITOREO AUTOMATICO REAL
 # ==========================================
 
 async def monitor_server():
 
-    global last_state
-    global pending_state
-    global pending_since
-    global last_observed_state
-
     await client.wait_until_ready()
 
-    last_state = load_state()
+    tracker = StateTracker(
+        initial=load_state()
+    )
+
+    last_observed = None
 
     logger.info(
-        "Monitor de La Venganza RP iniciado"
+        "Monitor automatico iniciado."
     )
 
     logger.info(
-        "Canal de origen: %s",
-        CONNECT_CHANNEL_ID
-    )
-
-    logger.info(
-        "Mensaje original: %s",
+        "Origen: %s | Mensaje: %s",
+        CONNECT_CHANNEL_ID,
         PANEL_MESSAGE_ID
     )
 
     logger.info(
-        "Canal de alertas: %s",
-        ALERT_CHANNEL_ID
+        "Alertas por webhook configuradas."
     )
 
     while not client.is_closed():
@@ -540,92 +736,51 @@ async def monitor_server():
                 message
             )
 
-            if current_state != last_observed_state:
+            if current_state != last_observed:
 
                 logger.info(
                     "Estado observado: %s",
                     current_state
                 )
 
-                last_observed_state = current_state
+                last_observed = current_state
 
-            # ESTADO DESCONOCIDO
+            event = tracker.observe(
+                current_state,
+                time.monotonic()
+            )
 
-            if current_state is None:
-
-                pending_state = None
-                pending_since = None
-
-                logger.warning(
-                    "Estado no reconocido."
-                )
-
-            # PARTIAL NO GENERA ALERTAS
-
-            elif current_state == "partial":
-
-                pending_state = None
-                pending_since = None
-
-            # ESTADO INICIAL
-
-            elif last_state is None:
-
-                last_state = current_state
-
-                save_state(
-                    current_state
-                )
+            if event is not None:
 
                 logger.info(
-                    "Estado inicial detectado: %s",
-                    current_state
+                    "Cambio confirmado: %s",
+                    event
                 )
 
-            # SIN CAMBIOS
-
-            elif current_state == last_state:
-
-                pending_state = None
-                pending_since = None
-
-            # CAMBIO DETECTADO
-
-            elif pending_state != current_state:
-
-                pending_state = current_state
-
-                pending_since = time.monotonic()
-
-                logger.info(
-                    "Cambio detectado: %s",
-                    current_state
-                )
-
-            # CAMBIO CONFIRMADO
-
-            elif (
-                pending_since is not None
-                and time.monotonic() - pending_since
-                >= CONFIRM_SECONDS
-            ):
+                # No confirmar la transicion
+                # hasta que el webhook responda.
 
                 await send_alert(
-                    current_state
+                    event,
+                    test=False
                 )
 
-                last_state = current_state
+                tracker.confirm_sent(event)
 
-                save_state(
-                    current_state
-                )
-
-                pending_state = None
-                pending_since = None
+                save_state(event)
 
                 logger.info(
                     "Estado actualizado: %s",
-                    current_state
+                    event
+                )
+
+            elif (
+                tracker.last_state is not None
+                and load_state() is None
+            ):
+
+                save_state(
+                    tracker.last_state
                 )
 
         except discord.Forbidden:
@@ -637,13 +792,13 @@ async def monitor_server():
         except discord.NotFound:
 
             logger.error(
-                "Panel original no encontrado."
+                "No se encontro el panel original."
             )
 
         except Exception:
 
             logger.exception(
-                "Error monitoreando el panel."
+                "Error monitoreando el servidor."
             )
 
         await asyncio.sleep(
@@ -652,7 +807,7 @@ async def monitor_server():
 
 
 # ==========================================
-# BOT CONECTADO
+# EVENTO BOT ONLINE
 # ==========================================
 
 @client.event
