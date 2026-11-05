@@ -355,24 +355,37 @@ async def refresh_event(event_id, message=None):
     if message is None:
         channel = await client.fetch_channel(event["channel_id"])
         message = await channel.fetch_message(event["message_id"])
-    # Preservar el archivo al actualizar el contador de inscritos.
-    # Usar la URL real de Discord, no attachment:// en mensajes editados.
-    image_url = event["image_url"]
+
+    # Al editar un embed con un archivo adjunto, Discord puede invalidar la
+    # referencia anterior. Volvemos a adjuntar los bytes en la misma edición.
+    # Si falla la descarga, NO editamos el anuncio: así no perdemos el banner.
     if message.attachments:
-        image_url = message.attachments[0].url
-    elif image_url and image_url.startswith("attachment://"):
-        image_url = None
-    await message.edit(
-        embed=event_embed(event, registered_count(event_id), image_url),
-        view=EventButtons(),
-        attachments=list(message.attachments)
-    )
-    if image_url and image_url != event["image_url"]:
-        with database() as db:
-            db.execute(
-                "UPDATE events SET image_url=? WHERE id=?",
-                (image_url, event_id)
-            )
+        attachment = message.attachments[0]
+        banner_bytes = await attachment.read(use_cached=True)
+        filename = attachment.filename
+        embed = event_embed(
+            event, registered_count(event_id), f"attachment://{filename}"
+        )
+        updated = await message.edit(
+            embed=embed,
+            view=EventButtons(),
+            attachments=[discord.File(io.BytesIO(banner_bytes), filename=filename)]
+        )
+        if updated.attachments:
+            with database() as db:
+                db.execute(
+                    "UPDATE events SET image_url=? WHERE id=?",
+                    (updated.attachments[0].url, event_id)
+                )
+    else:
+        # No hay archivo en el anuncio. Evitamos usar una URL caducada.
+        image_url = event["image_url"]
+        if image_url and image_url.startswith("attachment://"):
+            image_url = None
+        await message.edit(
+            embed=event_embed(event, registered_count(event_id), image_url),
+            view=EventButtons()
+        )
 
 
 # ==========================================
