@@ -449,11 +449,19 @@ class EventButtons(discord.ui.View):
                         db.execute("DELETE FROM registrations WHERE event_id=? AND user_id=?", (event["id"], interaction.user.id))
                         answer, changed = "✅ Inscripción cancelada.", True
                 if changed:
+                    # Actualizar SOLAMENTE el texto del mensaje.
+                    # No editar el embed ni los archivos: así Discord conserva
+                    # el banner original sin volver a cargarlo o reemplazarlo.
                     try:
-                        await refresh_event(event["id"], interaction.message)
+                        count_now = registered_count(event["id"])
+                        await interaction.message.edit(
+                            content=f"👥 **Inscripciones actuales: {count_now}/{event['capacity']}**"
+                        )
                     except Exception:
-                        log.exception("Error actualizando panel de evento")
-                        answer += "\n⚠️ El contador no se actualizó; tu inscripción sí quedó guardada."
+                        log.exception("Error actualizando contador de evento")
+                        answer += "\n⚠️ La inscripción quedó guardada; consulta Participantes para el total."
+                if event:
+                    answer += f"\n👥 Inscritos actualmente: **{registered_count(event['id'])}/{event['capacity']}**"
         await interaction.followup.send(answer, ephemeral=True)
 
 
