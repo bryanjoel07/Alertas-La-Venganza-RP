@@ -316,7 +316,25 @@ def event_embed(event, count, image_url=None):
         title=f"🏎️ {safe(event['title'])} | LA VENGANZA RP",
         description=safe(event["description"]), color=0xD60000
     )
-    embed.add_field(name="📅 Fecha y hora", value=f"<t:{epoch(event['starts_at'])}:F>\n🇵🇷 Puerto Rico", inline=False)
+    # Hora oficial fija de Puerto Rico; Discord adapta el timestamp al espectador.
+    event_pr = datetime.fromisoformat(event["starts_at"]).astimezone(PR_TZ)
+    weekdays = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+    months = ("enero", "febrero", "marzo", "abril", "mayo", "junio",
+              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+    date_pr = (
+        f"{weekdays[event_pr.weekday()].capitalize()}, {event_pr.day} de "
+        f"{months[event_pr.month - 1]} de {event_pr.year}"
+    )
+    hour_pr = event_pr.strftime("%I:%M %p").lstrip("0")
+    embed.add_field(
+        name="📅 Fecha y hora",
+        value=(
+            f"📅 {date_pr}\\n"
+            f"⏰ **{hour_pr} — Hora de Puerto Rico 🇵🇷**\\n"
+            f"🌎 Tu hora local: <t:{epoch(event['starts_at'])}:t>"
+        ),
+        inline=False
+    )
     embed.add_field(name="📍 Lugar", value=safe(event["location"]), inline=True)
     embed.add_field(name="👥 Inscritos", value=f"**{count}/{event['capacity']}**", inline=True)
     embed.add_field(name="📋 Estado", value=statuses.get(event["status"], "Desconocido"), inline=False)
