@@ -313,7 +313,7 @@ def prize_text(first, second, third):
 def event_embed(event, count, image_url=None):
     statuses = {"open": "🟢 Inscripciones abiertas", "closed": "🔒 Inscripciones cerradas", "finished": "🏆 Finalizado"}
     embed = discord.Embed(
-        title=f"🏎️ {safe(event['title'])} | LA VENGANZA RP",
+        title=f"🎉 {safe(event['title'])} | LA VENGANZA RP",
         description=safe(event["description"]), color=0xD60000
     )
     # Hora oficial fija de Puerto Rico; Discord adapta el timestamp al espectador.
@@ -493,7 +493,7 @@ def purge_drafts():
 
 
 class DetailsModal(discord.ui.Modal, title="Evento - Datos principales"):
-    name = discord.ui.TextInput(label="Nombre", placeholder="CAR SHOW", max_length=90)
+    name = discord.ui.TextInput(label="Nombre", placeholder="Ej.: Torneo, concierto, carrera o reunión", max_length=90)
     date = discord.ui.TextInput(label="Fecha AAAA-MM-DD", placeholder="2026-11-06", max_length=10)
     hour = discord.ui.TextInput(label="Hora de Puerto Rico (24 h)", placeholder="23:00", max_length=5)
     location = discord.ui.TextInput(label="Lugar", placeholder="Pista de Salinas | Sandy Shores", max_length=200)
@@ -746,7 +746,7 @@ async def evento_finalizar(
                 podio = discord.Embed(
                     title="🏆 PODIO OFICIAL | LA VENGANZA RP",
                     description=(
-                        f"🏎️ **{safe(event['title'])}**\n"
+                        f"🎉 **{safe(event['title'])}**\n"
                         f"🎉 ¡Felicidades a los ganadores del evento #{evento_id}!"
                     ),
                     color=0xD60000,
