@@ -1,20 +1,20 @@
 
 import asyncio
-import json
 import logging
 import os
 import re
+import sqlite3
 import time
 import unicodedata
 from datetime import datetime, timezone
-from pathlib import Path
 
 import aiohttp
 import discord
 from discord import app_commands
 
 # ==========================================
-# LA VENGANZA RP | ALERTAS AUTOMATICAS
+# LA VENGANZA RP
+# ALERTAS, MANTENIMIENTO E HISTORIAL
 # ==========================================
 
 logging.basicConfig(
@@ -22,7 +22,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-logger = logging.getLogger("LaVenganzaRP")
+log = logging.getLogger("LaVenganzaRP")
 
 # ==========================================
 # VARIABLES PRIVADAS DE RAILWAY
@@ -36,8 +36,11 @@ WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 # ==========================================
 
 GUILD_ID = 1244988345327550565
+
 CONNECT_CHANNEL_ID = 1513421828415164546
+
 PANEL_MESSAGE_ID = 1536621817471696907
+
 ALERT_CHANNEL_ID = 1567618111920807987
 
 CONNECT_URL = "https://cfx.re/join/57vjg7"
@@ -45,17 +48,222 @@ CONNECT_URL = "https://cfx.re/join/57vjg7"
 CHECK_INTERVAL = 30
 CONFIRM_SECONDS = 90
 
-STATE_FILE = Path(
+DATA_DIR = os.getenv(
+    "DATA_DIR",
     os.getenv(
-        "STATE_FILE",
-        "/tmp/la_venganza_alert_state.json"
+        "RAILWAY_VOLUME_MOUNT_PATH",
+        "/tmp"
     )
+)
+
+DB_PATH = os.path.join(
+    DATA_DIR,
+    "lavenganza_alertas.sqlite3"
 )
 
 GUILD = discord.Object(id=GUILD_ID)
 
+
 # ==========================================
-# LIMPIAR TEXTO
+# FECHAS Y TIEMPOS
+# ==========================================
+
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
+def stamp():
+    return utcnow().isoformat()
+
+
+def elapsed(start, end):
+    start_dt = datetime.fromisoformat(start)
+    end_dt = datetime.fromisoformat(end)
+
+    seconds = max(
+        0,
+        int(
+            (end_dt - start_dt).total_seconds()
+        )
+    )
+
+    hours, remaining = divmod(seconds, 3600)
+    minutes, seconds = divmod(remaining, 60)
+
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+
+    return f"{minutes}m {seconds}s"
+
+
+# ==========================================
+# BASE DE DATOS SQLITE
+# ==========================================
+
+def connect_db():
+    return sqlite3.connect(
+        DB_PATH,
+        timeout=10
+    )
+
+
+def init_db():
+    os.makedirs(
+        DATA_DIR,
+        exist_ok=True
+    )
+
+    with connect_db() as db:
+
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started TEXT NOT NULL,
+                ended TEXT,
+                duration_seconds INTEGER
+            )
+            """
+        )
+
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS maintenance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started TEXT NOT NULL,
+                ended TEXT,
+                reason TEXT NOT NULL,
+                author_id TEXT NOT NULL
+            )
+            """
+        )
+
+
+# ==========================================
+# CONFIGURACIONES GUARDADAS
+# ==========================================
+
+def setting(key, default=""):
+    with connect_db() as db:
+
+        result = db.execute(
+            "SELECT value FROM settings WHERE key=?",
+            (key,)
+        ).fetchone()
+
+        return result[0] if result else default
+
+
+def put_setting(key, value):
+    with connect_db() as db:
+
+        db.execute(
+            """
+            INSERT OR REPLACE INTO settings
+            (key, value)
+            VALUES (?, ?)
+            """,
+            (
+                key,
+                str(value)
+            )
+        )
+
+
+# ==========================================
+# REGISTRAR CAIDAS REALES
+# ==========================================
+
+def outage_confirmed(state):
+    now = stamp()
+
+    with connect_db() as db:
+
+        db.execute(
+            """
+            INSERT OR REPLACE INTO settings
+            (key, value)
+            VALUES (?, ?)
+            """,
+            (
+                "last_state",
+                state
+            )
+        )
+
+        if state == "down":
+
+            existing = db.execute(
+                """
+                SELECT id
+                FROM outages
+                WHERE ended IS NULL
+                LIMIT 1
+                """
+            ).fetchone()
+
+            if not existing:
+
+                db.execute(
+                    """
+                    INSERT INTO outages(started)
+                    VALUES (?)
+                    """,
+                    (now,)
+                )
+
+        elif state == "up":
+
+            open_row = db.execute(
+                """
+                SELECT id, started
+                FROM outages
+                WHERE ended IS NULL
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+            if open_row:
+
+                duration = max(
+                    0,
+                    int(
+                        (
+                            datetime.fromisoformat(now)
+                            - datetime.fromisoformat(
+                                open_row[1]
+                            )
+                        ).total_seconds()
+                    )
+                )
+
+                db.execute(
+                    """
+                    UPDATE outages
+                    SET ended=?,
+                        duration_seconds=?
+                    WHERE id=?
+                    """,
+                    (
+                        now,
+                        duration,
+                        open_row[0]
+                    )
+                )
+
+
+# ==========================================
+# LIMPIAR TEXTO DEL PANEL
 # ==========================================
 
 def clean_text(value):
@@ -64,8 +272,16 @@ def clean_text(value):
         str(value or "")
     )
 
-    for marker in ("```", "`", "**", "__"):
-        text = text.replace(marker, "")
+    for marker in (
+        "```",
+        "`",
+        "**",
+        "__"
+    ):
+        text = text.replace(
+            marker,
+            ""
+        )
 
     return text.strip().lower()
 
@@ -75,23 +291,23 @@ def clean_text(value):
 # ==========================================
 
 def parse_status(value):
-    text = clean_text(value)
+    value = clean_text(value)
 
     if re.search(
         r"\b(partial|degraded|parcial)\b",
-        text
+        value
     ):
         return "partial"
 
     if re.search(
         r"\b(offline|down|cerrado|caido|caído)\b",
-        text
+        value
     ):
         return "down"
 
     if re.search(
         r"\b(online|up|abierto|operativo)\b",
-        text
+        value
     ):
         return "up"
 
@@ -99,25 +315,33 @@ def parse_status(value):
 
 
 # ==========================================
-# LEER PANEL ORIGINAL DE TXADMIN
+# LEER PANEL ORIGINAL DEL PROGRAMADOR
 # ==========================================
 
 def detect_status(message):
+
     for embed in message.embeds:
+
         for field in embed.fields:
-            field_name = clean_text(field.name)
+
+            field_name = clean_text(
+                field.name
+            )
 
             if re.search(
                 r"\b(status|estado)\b",
                 field_name
             ):
-                return parse_status(field.value)
+
+                return parse_status(
+                    field.value
+                )
 
     return None
 
 
 # ==========================================
-# MAQUINA DE ESTADOS
+# PROTECCION CONTRA FALSAS ALERTAS
 # ==========================================
 
 class StateTracker:
@@ -133,147 +357,106 @@ class StateTracker:
 
     def observe(self, state, now):
 
-        # Partial y valores desconocidos
-        # nunca generan alertas.
+        # Ignorar Partial o estados desconocidos.
 
         if state not in ("up", "down"):
+
             self.reset_pending()
             return None
 
-        # Primer estado reconocido.
+        # Primer estado conocido.
 
         if self.last_state is None:
-            self.last_state = state
-            self.reset_pending()
-            return "baseline"
 
-        # No hubo cambio.
+            self.last_state = state
+            return "initial"
+
+        # Sin cambio de estado.
 
         if state == self.last_state:
+
             self.reset_pending()
             return None
 
-        # Empezar confirmacion.
+        # Nuevo cambio detectado.
 
         if self.pending_state != state:
+
             self.pending_state = state
             self.pending_since = now
+
             return None
 
-        # Confirmar despues de 90 segundos.
+        # Confirmar durante 90 segundos.
 
         if (
             self.pending_since is not None
             and now - self.pending_since
             >= CONFIRM_SECONDS
         ):
+
             return state
 
         return None
 
-    def confirm_sent(self, state):
+    def mark_sent(self, state):
+
         self.last_state = state
         self.reset_pending()
 
 
 # ==========================================
-# CARGAR DATOS GUARDADOS
+# CLIENTE DISCORD
 # ==========================================
 
-def load_state():
-    try:
-        data = json.loads(
-            STATE_FILE.read_text(
-                encoding="utf-8"
+intents = discord.Intents.default()
+intents.message_content = True
+
+
+class AlertClient(discord.Client):
+
+    def __init__(self):
+
+        super().__init__(intents=intents)
+
+        self.tree = app_commands.CommandTree(
+            self
+        )
+
+        self.lock = asyncio.Lock()
+
+        self.tracker = None
+        self.monitor_task = None
+
+    async def setup_hook(self):
+
+        init_db()
+
+        saved = setting("last_state")
+
+        self.tracker = StateTracker(
+            saved if saved in ("up", "down")
+            else None
+        )
+
+        commands = await self.tree.sync(
+            guild=GUILD
+        )
+
+        log.info(
+            "Comandos registrados: %s",
+            ", ".join(
+                command.name
+                for command in commands
             )
         )
 
-        if isinstance(data, dict):
-            return data
-
-    except (OSError, ValueError, TypeError):
-        pass
-
-    return {}
-
-
-saved = load_state()
-
-initial = saved.get("state")
-
-if initial not in ("up", "down"):
-    initial = None
-
-tracker = StateTracker(initial=initial)
-
-# ==========================================
-# ESTADO DEL MANTENIMIENTO
-# ==========================================
-
-maintenance = {
-    "active": (
-        saved.get("maintenance_active") is True
-    ),
-    "reason": str(
-        saved.get("maintenance_reason") or ""
-    ),
-    "started_at": str(
-        saved.get("maintenance_started_at") or ""
-    ),
-    "started_by": str(
-        saved.get("maintenance_started_by") or ""
-    )
-}
-
-state_lock = asyncio.Lock()
-
-
-def utc_now():
-    return datetime.now(
-        timezone.utc
-    ).isoformat(timespec="seconds")
-
-
-# ==========================================
-# GUARDAR ESTADO
-# ==========================================
-
-def save_state():
-    data = {
-        "state": tracker.last_state,
-        "maintenance_active": maintenance["active"],
-        "maintenance_reason": maintenance["reason"],
-        "maintenance_started_at": maintenance["started_at"],
-        "maintenance_started_by": maintenance["started_by"]
-    }
-
-    try:
-        STATE_FILE.parent.mkdir(
-            parents=True,
-            exist_ok=True
+        self.monitor_task = asyncio.create_task(
+            monitor_server()
         )
 
-        temporary = STATE_FILE.with_name(
-            STATE_FILE.name + ".tmp"
-        )
 
-        temporary.write_text(
-            json.dumps(
-                data,
-                ensure_ascii=False
-            ),
-            encoding="utf-8"
-        )
-
-        os.replace(
-            temporary,
-            STATE_FILE
-        )
-
-    except OSError:
-        logger.exception(
-            "No se pudo guardar el estado local"
-        )
+client = AlertClient()
 
 
 # ==========================================
@@ -291,14 +474,13 @@ def alert_embed(state, test=False):
         description = (
             "🔴 **LA CIUDAD SE ENCUENTRA "
             "FUERA DE SERVICIO**\n\n"
-            "🛠️ Mi gente, el servidor se encuentra "
-            "temporalmente fuera de servicio.\n\n"
-            "🔧 Nuestro equipo estará verificando "
-            "la situación.\n\n"
-            "📢 Avisaremos cuando la ciudad esté "
-            "disponible nuevamente.\n\n"
+            "🛠️ El servidor no está disponible "
+            "en este momento.\n\n"
+            "📢 Informaremos cuando vuelva "
+            "a funcionar.\n\n"
             "🔴 **LA VENGANZA RP**\n"
-            "*La ciudad más real • El rol más duro*"
+            "*La ciudad más real • "
+            "El rol más duro*"
         )
 
         color = 0xFF0000
@@ -312,27 +494,30 @@ def alert_embed(state, test=False):
         description = (
             "✅ **¡LA CIUDAD ESTÁ DISPONIBLE "
             "NUEVAMENTE!**\n\n"
-            "🌴 ¡Mi gente, ya estamos de vuelta!\n\n"
-            "🚗 Preparen sus máquinas y entren "
-            "a disfrutar del roleplay.\n\n"
+            "🌴 ¡Mi gente, ya pueden volver "
+            "a entrar!\n\n"
             "🎮 **CONÉCTATE AQUÍ:**\n"
             f"{CONNECT_URL}\n\n"
             "🔴 **LA VENGANZA RP**\n"
-            "*La ciudad más real • El rol más duro*"
+            "*La ciudad más real • "
+            "El rol más duro*"
         )
 
         color = 0x22C55E
 
     else:
-        raise ValueError("Estado inválido")
+
+        raise ValueError(
+            "Estado no válido."
+        )
 
     if test:
+
         title = "🧪 PRUEBA | " + title
 
         description = (
-            "⚠️ **SIMULACIÓN DEL BOT. "
-            "NO REPRESENTA EL ESTADO REAL "
-            "DEL SERVIDOR.**\n\n"
+            "⚠️ **SIMULACIÓN: NO REPRESENTA "
+            "EL ESTADO REAL DEL SERVIDOR.**\n\n"
             + description
         )
 
@@ -343,91 +528,20 @@ def alert_embed(state, test=False):
     )
 
     embed.set_footer(
-        text="La Venganza RP | Sistema de Alertas"
+        text=(
+            "La Venganza RP | "
+            "Sistema de Alertas"
+        )
     )
 
     return embed
 
 
 # ==========================================
-# CREAR COMUNICADOS DE MANTENIMIENTO
+# PUBLICAR MEDIANTE WEBHOOK
 # ==========================================
 
-def maintenance_embed(
-    action,
-    reason="",
-    started_at=""
-):
-
-    if action == "start":
-
-        title = (
-            "🛠️ MANTENIMIENTO INICIADO "
-            "| LA VENGANZA RP"
-        )
-
-        description = (
-            "⚠️ **AVISO OFICIAL**\n\n"
-            "Mi gente, la administración ha "
-            "iniciado un mantenimiento en "
-            "nuestra ciudad.\n\n"
-            "🔧 Estaremos realizando ajustes "
-            "y mejoras en el servidor.\n\n"
-            "⛔ Durante este proceso podrían "
-            "presentarse interrupciones de acceso.\n\n"
-            f"📋 **Motivo:** "
-            f"{discord.utils.escape_mentions(reason)}\n\n"
-            "📢 Les notificaremos cuando "
-            "finalice el mantenimiento.\n\n"
-            "❤️ Gracias por la paciencia "
-            "y el apoyo de siempre.\n\n"
-            "🔴 **LA VENGANZA RP**\n"
-            "*La ciudad más real • El rol más duro*"
-        )
-
-        color = 0xF59E0B
-
-    else:
-
-        title = (
-            "✅ MANTENIMIENTO FINALIZADO "
-            "| LA VENGANZA RP"
-        )
-
-        description = (
-            "🛠️ **MANTENIMIENTO FINALIZADO**\n\n"
-            "Mi gente, la administración ha "
-            "dado por finalizados los trabajos "
-            "de mantenimiento.\n\n"
-            "✅ Los ajustes programados "
-            "han concluido.\n\n"
-            "🎮 **COMPRUEBA EL ACCESO AQUÍ:**\n"
-            f"{CONNECT_URL}\n\n"
-            "❤️ Gracias por la paciencia.\n\n"
-            "🔴 **LA VENGANZA RP**\n"
-            "*La ciudad más real • El rol más duro*"
-        )
-
-        color = 0x22C55E
-
-    embed = discord.Embed(
-        title=title,
-        description=description,
-        color=color
-    )
-
-    embed.set_footer(
-        text="La Venganza RP | Aviso administrativo"
-    )
-
-    return embed
-
-
-# ==========================================
-# ENVIAR WEBHOOK A ALERTAS-SERVIDOR
-# ==========================================
-
-async def post_webhook(embed):
+async def post_embed(embed):
 
     payload = {
         "username": "La Venganza RP | Alertas",
@@ -456,33 +570,37 @@ async def post_webhook(embed):
                 200,
                 204
             ):
+
+                error = await response.text()
+
                 raise RuntimeError(
-                    "Webhook devolvió HTTP "
-                    f"{response.status}"
+                    f"Webhook HTTP "
+                    f"{response.status}: "
+                    f"{error[:120]}"
                 )
 
 
 async def send_alert(state, test=False):
 
-    embed = alert_embed(
-        state,
-        test=test
+    await post_embed(
+        alert_embed(
+            state,
+            test=test
+        )
     )
 
-    await post_webhook(embed)
-
-    logger.info(
-        "Alerta enviada: %s; prueba=%s",
+    log.info(
+        "Alerta enviada: %s (prueba=%s)",
         state,
         test
     )
 
 
 # ==========================================
-# OBTENER ESTADO ACTUAL DEL PANEL
+# CONSULTAR EL PANEL CONNECT
 # ==========================================
 
-async def fetch_panel_status():
+async def fetch_panel_state():
 
     channel = await client.fetch_channel(
         CONNECT_CHANNEL_ID
@@ -496,95 +614,100 @@ async def fetch_panel_status():
 
 
 # ==========================================
-# MONITOREO AUTOMATICO
+# MONITOR AUTOMATICO
 # ==========================================
 
 async def monitor_server():
 
     await client.wait_until_ready()
 
-    logger.info(
-        "Monitor iniciado | Connect: %s",
-        CONNECT_CHANNEL_ID
-    )
-
-    logger.info(
-        "Mensaje original: %s",
+    log.info(
+        "Monitor iniciado; panel %s",
         PANEL_MESSAGE_ID
     )
 
-    last_observed = None
+    last_observed = object()
 
     while not client.is_closed():
 
         try:
 
-            current_state = await fetch_panel_status()
+            state = await fetch_panel_state()
 
-            async with state_lock:
+            if state != last_observed:
 
-                if current_state != last_observed:
+                log.info(
+                    "Estado observado: %s",
+                    state
+                )
 
-                    logger.info(
-                        "Estado observado: %s",
-                        current_state
-                    )
+                last_observed = state
 
-                    last_observed = current_state
+            async with client.lock:
 
-                # Durante mantenimiento no
-                # se envian alertas automaticas.
+                # Suspender alertas durante mantenimiento.
 
-                if maintenance["active"]:
+                if setting(
+                    "maintenance_active",
+                    "0"
+                ) == "1":
 
-                    tracker.reset_pending()
+                    client.tracker.reset_pending()
 
                 else:
 
-                    event = tracker.observe(
-                        current_state,
+                    event = client.tracker.observe(
+                        state,
                         time.monotonic()
                     )
 
-                    if event == "baseline":
+                    if event == "initial":
 
-                        save_state()
+                        put_setting(
+                            "last_state",
+                            client.tracker.last_state
+                        )
 
-                        logger.info(
+                        log.info(
                             "Estado inicial: %s",
-                            tracker.last_state
+                            client.tracker.last_state
                         )
 
                     elif event in ("up", "down"):
 
-                        await send_alert(event)
+                        # Confirmar solo después de
+                        # publicar correctamente.
 
-                        tracker.confirm_sent(event)
+                        await send_alert(
+                            event
+                        )
 
-                        save_state()
+                        outage_confirmed(
+                            event
+                        )
 
-                        logger.info(
+                        client.tracker.mark_sent(
+                            event
+                        )
+
+                        log.info(
                             "Cambio confirmado: %s",
                             event
                         )
 
-        except discord.Forbidden:
+        except (
+            discord.Forbidden,
+            discord.NotFound
+        ):
 
-            logger.error(
-                "Sin permisos para leer Connect"
-            )
-
-        except discord.NotFound:
-
-            logger.error(
-                "No se encontro el panel original"
+            log.exception(
+                "No se puede acceder al panel original."
             )
 
         except Exception:
 
-            logger.exception(
-                "Error leyendo el panel "
-                "o enviando una alerta"
+            log.exception(
+                "Error consultando el panel."
             )
 
         await asyncio.sleep(
@@ -593,99 +716,27 @@ async def monitor_server():
 
 
 # ==========================================
-# SIMULACION SIN APAGAR FIVE M
+# PERMISOS ADMINISTRATIVOS
 # ==========================================
 
-def run_simulation():
+async def only_admin(interaction):
 
-    simulated = StateTracker()
+    if (
+        not interaction.guild
+        or interaction.guild.id != GUILD_ID
+    ):
 
-    assert simulated.observe(
-        "up", 0
-    ) == "baseline"
+        raise app_commands.CheckFailure(
+            "Servidor incorrecto."
+        )
 
-    assert simulated.observe(
-        "down", 10
-    ) is None
+    if not interaction.user.guild_permissions.administrator:
 
-    assert simulated.observe(
-        "up", 50
-    ) is None
-
-    assert simulated.observe(
-        "down", 100
-    ) is None
-
-    assert simulated.observe(
-        "down", 189
-    ) is None
-
-    assert simulated.observe(
-        "down", 190
-    ) == "down"
-
-    simulated.confirm_sent("down")
-
-    assert simulated.observe(
-        "down", 220
-    ) is None
-
-    assert simulated.observe(
-        "partial", 250
-    ) is None
-
-    assert simulated.observe(
-        "up", 300
-    ) is None
-
-    assert simulated.observe(
-        "up", 390
-    ) == "up"
-
-    simulated.confirm_sent("up")
-
-    assert simulated.observe(
-        "up", 420
-    ) is None
+        raise app_commands.MissingPermissions(
+            ["administrator"]
+        )
 
     return True
-
-
-# ==========================================
-# CLIENTE DE DISCORD
-# ==========================================
-
-class AlertClient(discord.Client):
-
-    def __init__(self):
-
-        intents = discord.Intents.default()
-        intents.message_content = True
-
-        super().__init__(
-            intents=intents
-        )
-
-        self.tree = app_commands.CommandTree(self)
-        self.monitor_task = None
-
-    async def setup_hook(self):
-
-        synced = await self.tree.sync(
-            guild=GUILD
-        )
-
-        logger.info(
-            "Comandos sincronizados: %s",
-            [command.name for command in synced]
-        )
-
-        self.monitor_task = asyncio.create_task(
-            monitor_server()
-        )
-
-
-client = AlertClient()
 
 
 # ==========================================
@@ -694,15 +745,16 @@ client = AlertClient()
 
 @client.tree.command(
     name="testalert",
-    description="Enviar una alerta de prueba"
+    description=(
+        "Enviar una alerta de prueba "
+        "al canal configurado."
+    )
 )
 @app_commands.guilds(GUILD)
 @app_commands.default_permissions(
     administrator=True
 )
-@app_commands.checks.has_permissions(
-    administrator=True
-)
+@app_commands.check(only_admin)
 @app_commands.choices(
     estado=[
         app_commands.Choice(
@@ -724,29 +776,81 @@ async def testalert(
         ephemeral=True
     )
 
-    try:
+    await send_alert(
+        estado.value,
+        test=True
+    )
 
-        await send_alert(
-            estado.value,
-            test=True
-        )
+    await interaction.followup.send(
+        "✅ Prueba enviada sin modificar "
+        "el monitor.",
+        ephemeral=True
+    )
 
-        await interaction.followup.send(
-            "✅ Alerta de prueba enviada "
-            "a Alertas-Servidor.",
-            ephemeral=True
-        )
 
-    except Exception:
+# ==========================================
+# SIMULAR CAIDA Y RECUPERACION
+# ==========================================
 
-        logger.exception(
-            "Error ejecutando /testalert"
-        )
+def simulated_cycle():
 
-        await interaction.followup.send(
-            "❌ Falló el envío. Revisa Railway.",
-            ephemeral=True
-        )
+    tracker = StateTracker()
+
+    assert tracker.observe(
+        "up", 0
+    ) == "initial"
+
+    assert tracker.observe(
+        "down", 10
+    ) is None
+
+    assert tracker.observe(
+        "up", 30
+    ) is None
+
+    assert tracker.observe(
+        "partial", 40
+    ) is None
+
+    assert tracker.observe(
+        "down", 100
+    ) is None
+
+    assert tracker.observe(
+        "down", 189
+    ) is None
+
+    assert tracker.observe(
+        "down", 190
+    ) == "down"
+
+    tracker.mark_sent("down")
+
+    assert tracker.observe(
+        "down", 240
+    ) is None
+
+    assert tracker.observe(
+        "partial", 245
+    ) is None
+
+    assert tracker.observe(
+        "up", 300
+    ) is None
+
+    assert tracker.observe(
+        "up", 389
+    ) is None
+
+    assert tracker.observe(
+        "up", 390
+    ) == "up"
+
+    tracker.mark_sent("up")
+
+    assert tracker.observe(
+        "up", 450
+    ) is None
 
 
 # ==========================================
@@ -756,17 +860,15 @@ async def testalert(
 @client.tree.command(
     name="simular-ciclo",
     description=(
-        "Simular una caida y recuperacion "
-        "sin apagar FiveM"
+        "Probar caída y recuperación "
+        "sin apagar FiveM."
     )
 )
 @app_commands.guilds(GUILD)
 @app_commands.default_permissions(
     administrator=True
 )
-@app_commands.checks.has_permissions(
-    administrator=True
-)
+@app_commands.check(only_admin)
 async def simular_ciclo(
     interaction: discord.Interaction
 ):
@@ -775,42 +877,27 @@ async def simular_ciclo(
         ephemeral=True
     )
 
-    try:
+    simulated_cycle()
 
-        run_simulation()
+    await send_alert(
+        "down",
+        test=True
+    )
 
-        await send_alert(
-            "down",
-            test=True
-        )
+    await send_alert(
+        "up",
+        test=True
+    )
 
-        await send_alert(
-            "up",
-            test=True
-        )
-
-        await interaction.followup.send(
-            "✅ **SIMULACIÓN COMPLETADA**\n\n"
-            "🔴 Server Down: enviado.\n"
-            "🟢 Server Restored: enviado.\n"
-            "🟠 Partial: ignorado.\n"
-            "🛡️ Duplicados: bloqueados.\n"
-            "⏱️ Confirmación: 90 segundos "
-            "simulados.\n\n"
-            "El estado real no fue modificado.",
-            ephemeral=True
-        )
-
-    except Exception:
-
-        logger.exception(
-            "Error ejecutando /simular-ciclo"
-        )
-
-        await interaction.followup.send(
-            "❌ Simulación fallida. Revisa Railway.",
-            ephemeral=True
-        )
+    await interaction.followup.send(
+        "✅ **Simulación completada**\n\n"
+        "🔴 Server Down: enviado.\n"
+        "🟢 Server Restored: enviado.\n"
+        "🟠 Partial: ignorado.\n"
+        "🛡️ Duplicados: bloqueados.\n\n"
+        "El estado real no fue modificado.",
+        ephemeral=True
+    )
 
 
 # ==========================================
@@ -819,8 +906,11 @@ async def simular_ciclo(
 
 maintenance_group = app_commands.Group(
     name="mantenimiento",
-    description="Comunicados manuales de mantenimiento",
-    guild_only=True,
+    description=(
+        "Publicar y finalizar "
+        "mantenimientos manuales."
+    ),
+    guild_ids=[GUILD_ID],
     default_permissions=discord.Permissions(
         administrator=True
     )
@@ -833,14 +923,15 @@ maintenance_group = app_commands.Group(
 
 @maintenance_group.command(
     name="iniciar",
-    description="Anunciar inicio de mantenimiento"
-)
-@app_commands.checks.has_permissions(
-    administrator=True
+    description=(
+        "Anunciar el inicio "
+        "de un mantenimiento."
+    )
 )
 @app_commands.describe(
-    motivo="Motivo del mantenimiento"
+    motivo="Motivo breve del mantenimiento"
 )
+@app_commands.check(only_admin)
 async def mantenimiento_iniciar(
     interaction: discord.Interaction,
     motivo: str
@@ -850,21 +941,23 @@ async def mantenimiento_iniciar(
         ephemeral=True
     )
 
-    motivo = motivo.strip()
+    motivo = motivo.strip()[:300]
 
-    if not motivo or len(motivo) > 250:
+    if not motivo:
 
         await interaction.followup.send(
-            "❌ El motivo debe tener entre "
-            "1 y 250 caracteres.",
+            "❌ Escribe un motivo.",
             ephemeral=True
         )
 
         return
 
-    async with state_lock:
+    async with client.lock:
 
-        if maintenance["active"]:
+        if setting(
+            "maintenance_active",
+            "0"
+        ) == "1":
 
             await interaction.followup.send(
                 "⚠️ Ya existe un mantenimiento activo.",
@@ -873,49 +966,79 @@ async def mantenimiento_iniciar(
 
             return
 
-        try:
+        embed = discord.Embed(
+            title=(
+                "🛠️ MANTENIMIENTO INICIADO "
+                "| LA VENGANZA RP"
+            ),
+            description=(
+                "🔧 **Motivo:** "
+                f"{discord.utils.escape_markdown(motivo)}"
+                "\n\n"
+                "⛔ El acceso a la ciudad podría "
+                "estar limitado temporalmente.\n\n"
+                "📢 Avisaremos cuando termine "
+                "el mantenimiento."
+            ),
+            color=0xF59E0B
+        )
 
-            embed = maintenance_embed(
-                "start",
-                reason=motivo
+        embed.set_footer(
+            text=(
+                "La Venganza RP | Administración"
+            )
+        )
+
+        await post_embed(embed)
+
+        with connect_db() as db:
+
+            # Si había una caída abierta,
+            # cerrarla como interrumpida.
+            # No atribuir al incidente el
+            # tiempo del mantenimiento.
+
+            db.execute(
+                """
+                UPDATE outages
+                SET ended=?,
+                    duration_seconds=NULL
+                WHERE ended IS NULL
+                """,
+                (stamp(),)
             )
 
-            await post_webhook(embed)
-
-            maintenance.update({
-                "active": True,
-                "reason": motivo,
-                "started_at": utc_now(),
-                "started_by": str(
-                    interaction.user.id
+            db.execute(
+                """
+                INSERT INTO maintenance
+                (started, reason, author_id)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    stamp(),
+                    motivo,
+                    str(interaction.user.id)
                 )
-            })
-
-            tracker.reset_pending()
-
-            save_state()
-
-        except Exception:
-
-            logger.exception(
-                "Error anunciando mantenimiento"
             )
 
-            await interaction.followup.send(
-                "❌ No se pudo anunciar el "
-                "mantenimiento. Revisa Railway.",
-                ephemeral=True
+            db.execute(
+                """
+                INSERT OR REPLACE INTO settings
+                (key, value)
+                VALUES (?, ?)
+                """,
+                (
+                    "maintenance_active",
+                    "1"
+                )
             )
 
-            return
+        client.tracker.reset_pending()
 
     await interaction.followup.send(
-        "✅ **MANTENIMIENTO INICIADO**\n\n"
-        "El comunicado fue publicado en "
-        "Alertas-Servidor.\n\n"
-        "🛡️ Las alertas automáticas quedan "
-        "suspendidas mientras dure "
-        "el mantenimiento.",
+        "✅ Mantenimiento anunciado.\n"
+        "Las alertas automáticas "
+        "están suspendidas.",
         ephemeral=True
     )
 
@@ -926,11 +1049,12 @@ async def mantenimiento_iniciar(
 
 @maintenance_group.command(
     name="finalizar",
-    description="Anunciar fin de mantenimiento"
+    description=(
+        "Anunciar el final "
+        "de un mantenimiento."
+    )
 )
-@app_commands.checks.has_permissions(
-    administrator=True
-)
+@app_commands.check(only_admin)
 async def mantenimiento_finalizar(
     interaction: discord.Interaction
 ):
@@ -939,188 +1063,264 @@ async def mantenimiento_finalizar(
         ephemeral=True
     )
 
-    async with state_lock:
+    async with client.lock:
 
-        if not maintenance["active"]:
+        if setting(
+            "maintenance_active",
+            "0"
+        ) != "1":
 
             await interaction.followup.send(
-                "ℹ️ No hay mantenimiento activo.",
+                "⚠️ No hay mantenimiento activo.",
                 ephemeral=True
             )
 
             return
+
+        # Consultar el estado actual
+        # sin asumir que Partial es Online.
 
         try:
 
-            # Publicar finalizacion.
-            # Esto no confirma por si mismo
-            # que el servidor este Online.
-
-            embed = maintenance_embed("end")
-
-            await post_webhook(embed)
-
-            # Crear una nueva referencia de estado
-            # sin publicar alertas retrasadas.
-
-            try:
-
-                observed = await fetch_panel_status()
-
-            except Exception:
-
-                logger.exception(
-                    "No se pudo consultar el panel "
-                    "al finalizar mantenimiento"
-                )
-
-                observed = None
-
-            if observed in ("up", "down"):
-
-                tracker.last_state = observed
-
-            else:
-
-                tracker.last_state = None
-
-            tracker.reset_pending()
-
-            maintenance.update({
-                "active": False,
-                "reason": "",
-                "started_at": "",
-                "started_by": ""
-            })
-
-            save_state()
+            state = await fetch_panel_state()
 
         except Exception:
 
-            logger.exception(
-                "Error finalizando mantenimiento"
+            log.exception(
+                "No se pudo consultar el estado "
+                "al terminar mantenimiento."
             )
 
-            await interaction.followup.send(
-                "❌ No se pudo anunciar el fin "
-                "del mantenimiento. Revisa Railway.",
-                ephemeral=True
+            state = None
+
+        embed = discord.Embed(
+            title=(
+                "✅ MANTENIMIENTO FINALIZADO "
+                "| LA VENGANZA RP"
+            ),
+            description=(
+                "🛠️ La administración ha "
+                "finalizado los trabajos "
+                "anunciados.\n\n"
+                "📡 Consulta el panel de Connect "
+                "para conocer el estado actual.\n\n"
+                f"🎮 {CONNECT_URL}"
+            ),
+            color=0x22C55E
+        )
+
+        embed.set_footer(
+            text=(
+                "La Venganza RP | Administración"
+            )
+        )
+
+        await post_embed(embed)
+
+        with connect_db() as db:
+
+            db.execute(
+                """
+                UPDATE maintenance
+                SET ended=?
+                WHERE ended IS NULL
+                """,
+                (stamp(),)
             )
 
-            return
+            db.execute(
+                """
+                INSERT OR REPLACE INTO settings
+                (key, value)
+                VALUES (?, ?)
+                """,
+                (
+                    "maintenance_active",
+                    "0"
+                )
+            )
+
+            # Reiniciar referencia del monitor
+            # después del mantenimiento.
+
+            db.execute(
+                """
+                INSERT OR REPLACE INTO settings
+                (key, value)
+                VALUES (?, ?)
+                """,
+                (
+                    "last_state",
+                    state if state in (
+                        "up",
+                        "down"
+                    ) else ""
+                )
+            )
+
+        client.tracker = StateTracker(
+            state if state in (
+                "up",
+                "down"
+            ) else None
+        )
 
     await interaction.followup.send(
-        "✅ **MANTENIMIENTO FINALIZADO**\n\n"
-        "El comunicado fue publicado "
-        "en Alertas-Servidor.\n\n"
-        "🟢 El monitoreo automático "
-        "se ha reanudado.",
+        "✅ Finalización publicada.\n"
+        "Monitor reactivado.",
         ephemeral=True
     )
 
 
+# Registrar grupo de mantenimiento
+
+client.tree.add_command(
+    maintenance_group
+)
+
+
 # ==========================================
-# /MANTENIMIENTO ESTADO
+# /HISTORIAL-CAIDAS
 # ==========================================
 
-@maintenance_group.command(
-    name="estado",
-    description="Consultar mantenimiento actual"
+@client.tree.command(
+    name="historial-caidas",
+    description=(
+        "Ver las últimas caídas "
+        "detectadas del servidor."
+    )
 )
-@app_commands.checks.has_permissions(
+@app_commands.guilds(GUILD)
+@app_commands.default_permissions(
     administrator=True
 )
-async def mantenimiento_estado(
+@app_commands.check(only_admin)
+async def historial_caidas(
     interaction: discord.Interaction
 ):
 
-    async with state_lock:
+    with connect_db() as db:
 
-        if maintenance["active"]:
+        rows = db.execute(
+            """
+            SELECT
+                id,
+                started,
+                ended,
+                duration_seconds
+            FROM outages
+            ORDER BY id DESC
+            LIMIT 10
+            """
+        ).fetchall()
 
-            reply = (
-                "🛠️ **MANTENIMIENTO ACTIVO**\n\n"
-                "📋 **Motivo:** "
-                f"{discord.utils.escape_mentions(maintenance['reason'])}\n"
-                "🕒 **Inicio UTC:** "
-                f"{maintenance['started_at']}"
-            )
+    if not rows:
 
-        else:
-
-            reply = (
-                "🟢 No hay mantenimiento "
-                "manual activo."
-            )
-
-    await interaction.response.send_message(
-        reply,
-        ephemeral=True
-    )
-
-
-# ==========================================
-# REGISTRAR GRUPO DE COMANDOS
-# ==========================================
-
-client.tree.add_command(
-    maintenance_group,
-    guild=GUILD
-)
-
-
-# ==========================================
-# MANEJAR ERRORES DE COMANDOS
-# ==========================================
-
-@client.tree.error
-async def on_command_error(
-    interaction: discord.Interaction,
-    error: app_commands.AppCommandError
-):
-
-    if isinstance(
-        error,
-        app_commands.MissingPermissions
-    ):
-
-        reply = (
-            "❌ Necesitas permisos "
-            "de administrador."
+        text = (
+            "📊 Todavía no hay caídas "
+            "reales registradas.\n\n"
+            "Las simulaciones no cuentan."
         )
 
     else:
 
-        logger.error(
-            "Error en comando: %r",
-            error
-        )
+        lines = []
 
-        reply = (
-            "❌ Ocurrió un error. "
-            "Revisa los registros de Railway."
-        )
+        for (
+            incident_id,
+            started,
+            ended,
+            seconds
+        ) in rows:
 
-    try:
-
-        if interaction.response.is_done():
-
-            await interaction.followup.send(
-                reply,
-                ephemeral=True
+            started_epoch = int(
+                datetime.fromisoformat(
+                    started
+                ).timestamp()
             )
 
-        else:
+            if ended is None:
 
-            await interaction.response.send_message(
-                reply,
-                ephemeral=True
+                result = "🔴 En curso"
+
+            elif seconds is None:
+
+                result = (
+                    "⚪ Interrumpida por mantenimiento; "
+                    "duración no registrada"
+                )
+
+            else:
+
+                result = (
+                    "✅ Duración: "
+                    f"{elapsed(started, ended)}"
+                )
+
+            lines.append(
+                f"**#{incident_id}** "
+                f"<t:{started_epoch}:f> — "
+                f"{result}"
             )
 
-    except discord.HTTPException:
+        text = (
+            "📊 **ÚLTIMAS CAÍDAS CONFIRMADAS**\n\n"
+            + "\n".join(lines)
+        )
 
-        logger.exception(
-            "No se pudo informar del error"
+    await interaction.response.send_message(
+        text,
+        ephemeral=True
+    )
+
+
+# ==========================================
+# ERRORES DE COMANDOS
+# ==========================================
+
+@client.tree.error
+async def command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+
+    log.error(
+        "Error de comando: %s",
+        error
+    )
+
+    if isinstance(
+        error,
+        (
+            app_commands.MissingPermissions,
+            app_commands.CheckFailure
+        )
+    ):
+
+        message = (
+            "❌ Solo administradores autorizados "
+            "pueden usar este comando."
+        )
+
+    else:
+
+        message = (
+            "❌ No se completó la acción. "
+            "Revisa Railway."
+        )
+
+    if interaction.response.is_done():
+
+        await interaction.followup.send(
+            message,
+            ephemeral=True
+        )
+
+    else:
+
+        await interaction.response.send_message(
+            message,
+            ephemeral=True
         )
 
 
@@ -1131,16 +1331,16 @@ async def on_command_error(
 @client.event
 async def on_ready():
 
-    logger.info(
+    log.info(
         "Bot conectado como %s",
         client.user
     )
 
-    if maintenance["active"]:
+    if DATA_DIR == "/tmp":
 
-        logger.warning(
-            "Mantenimiento activo recuperado "
-            "del estado guardado"
+        log.warning(
+            "Datos en /tmp: conecta un "
+            "volumen Railway para persistencia."
         )
 
 
