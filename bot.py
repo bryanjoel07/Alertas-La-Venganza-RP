@@ -711,46 +711,23 @@ async def evento_cerrar(interaction: discord.Interaction, evento_id: int):
     await interaction.followup.send(answer, ephemeral=True)
 
 
-async def resolve_winner(interaction: discord.Interaction, raw: str):
-    """Acepta @mención, <@!ID> o ID numérico; valida miembro del servidor."""
-    value = raw.strip()
-    match = re.fullmatch(r"<@!?(\\d{15,22})>", value) or re.fullmatch(r"(\\d{15,22})", value)
-    if not match:
-        raise ValueError(f"Jugador inválido: {value[:50]}. Usa @usuario o su ID de Discord.")
-    user_id = int(match.group(1))
-    try:
-        member = await interaction.guild.fetch_member(user_id)
-    except discord.NotFound:
-        raise ValueError(f"El usuario {user_id} no pertenece a este servidor.")
-    except discord.HTTPException as exc:
-        raise ValueError(f"No se pudo comprobar el usuario {user_id}: {exc}")
-    return member
-
-
 @event_group.command(name="finalizar", description="Finaliza el evento y publica un podio mencionando a los 3 ganadores")
 @app_commands.describe(
     evento_id="Número del evento, por ejemplo 1 (aparece al final del anuncio)",
-    primero="Ganador del 1.er lugar: @usuario o ID numérico de Discord",
-    segundo="Ganador del 2.º lugar: @usuario o ID numérico de Discord",
-    tercero="Ganador del 3.er lugar: @usuario o ID numérico de Discord"
+    primero="Selecciona el usuario de Discord para el primer lugar",
+    segundo="Selecciona el usuario de Discord para el segundo lugar",
+    tercero="Selecciona el usuario de Discord para el tercer lugar"
 )
 @app_commands.check(only_admin)
 async def evento_finalizar(
     interaction: discord.Interaction,
     evento_id: int,
-    primero: str,
-    segundo: str,
-    tercero: str
+    primero: discord.Member,
+    segundo: discord.Member,
+    tercero: discord.Member
 ):
     await interaction.response.defer(ephemeral=True, thinking=True)
-    try:
-        winners = [
-            await resolve_winner(interaction, value)
-            for value in (primero, segundo, tercero)
-        ]
-    except ValueError as exc:
-        await interaction.followup.send(f"❌ {exc}", ephemeral=True)
-        return
+    winners = [primero, segundo, tercero]
     if len({winner.id for winner in winners}) != 3:
         await interaction.followup.send("❌ Debes elegir tres jugadores diferentes.", ephemeral=True)
         return
@@ -769,7 +746,7 @@ async def evento_finalizar(
                 podio = discord.Embed(
                     title="🏆 PODIO OFICIAL | LA VENGANZA RP",
                     description=(
-                        f"🏎️ **{safe(event['title'])}**\\n"
+                        f"🏎️ **{safe(event['title'])}**\n"
                         f"🎉 ¡Felicidades a los ganadores del evento #{evento_id}!"
                     ),
                     color=0xD60000,
@@ -782,7 +759,7 @@ async def evento_finalizar(
                 ):
                     podio.add_field(
                         name=f"{emoji} {position}",
-                        value=f"{member.mention}\\n**{safe(member.display_name)}**",
+                        value=f"{member.mention}\n**{safe(member.display_name)}**",
                         inline=False
                     )
                 podio.set_footer(text=f"La Venganza RP | Resultados del evento #{evento_id}")
