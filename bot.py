@@ -395,14 +395,13 @@ async def refresh_event(event_id, message=None):
 class EventButtons(discord.ui.View):
     def __init__(self, count=None, capacity=None):
         super().__init__(timeout=None)
-        # Discord permits a disabled button with no custom_id.
-        # Existing persistent interactive buttons keep their custom IDs.
+        # Every component needs a custom_id for persistent views, even disabled buttons.
         if count is not None and capacity is not None:
             self.counter.label = f"Inscritos: {count}/{capacity}"
         else:
             self.counter.label = "Inscritos"
 
-    @discord.ui.button(label="Inscritos", emoji="👥", style=discord.ButtonStyle.secondary, disabled=True, row=1)
+    @discord.ui.button(label="Inscritos", emoji="👥", style=discord.ButtonStyle.secondary, disabled=True, row=1, custom_id="lvrp:event:counter")
     async def counter(self, interaction, button):
         pass
 
