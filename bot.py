@@ -393,8 +393,18 @@ async def refresh_event(event_id, message=None):
 # ==========================================
 
 class EventButtons(discord.ui.View):
-    def __init__(self):
+    def __init__(self, count=None, capacity=None):
         super().__init__(timeout=None)
+        # Discord permits a disabled button with no custom_id.
+        # Existing persistent interactive buttons keep their custom IDs.
+        if count is not None and capacity is not None:
+            self.counter.label = f"Inscritos: {count}/{capacity}"
+        else:
+            self.counter.label = "Inscritos"
+
+    @discord.ui.button(label="Inscritos", emoji="👥", style=discord.ButtonStyle.secondary, disabled=True, row=1)
+    async def counter(self, interaction, button):
+        pass
 
     @discord.ui.button(label="Inscribirme", emoji="✅", style=discord.ButtonStyle.success, custom_id="lvrp:event:join")
     async def join(self, interaction, button):
@@ -448,20 +458,18 @@ class EventButtons(discord.ui.View):
                     else:
                         db.execute("DELETE FROM registrations WHERE event_id=? AND user_id=?", (event["id"], interaction.user.id))
                         answer, changed = "✅ Inscripción cancelada.", True
+                count_now = registered_count(event["id"])
                 if changed:
-                    # Actualizar SOLAMENTE el texto del mensaje.
-                    # No editar el embed ni los archivos: así Discord conserva
-                    # el banner original sin volver a cargarlo o reemplazarlo.
+                    # Only change message components. Do not modify embed or attachments.
                     try:
-                        count_now = registered_count(event["id"])
                         await interaction.message.edit(
-                            content=f"👥 **Inscripciones actuales: {count_now}/{event['capacity']}**"
+                            view=EventButtons(count_now, event["capacity"]),
+                            content=None
                         )
                     except Exception:
-                        log.exception("Error actualizando contador de evento")
+                        log.exception("Error actualizando botón de inscritos")
                         answer += "\n⚠️ La inscripción quedó guardada; consulta Participantes para el total."
-                if event:
-                    answer += f"\n👥 Inscritos actualmente: **{registered_count(event['id'])}/{event['capacity']}**"
+                answer += f"\n👥 Inscritos actualmente: **{count_now}/{event['capacity']}**"
         await interaction.followup.send(answer, ephemeral=True)
 
 
@@ -618,7 +626,7 @@ class PublishView(discord.ui.View):
                     event_id = cursor.lastrowid
                 event = fetch_event(event_id)
                 embed = event_embed(event, 0)
-                kwargs = {"embed": embed, "view": EventButtons(), "allowed_mentions": discord.AllowedMentions.none()}
+                kwargs = {"embed": embed, "view": EventButtons(0, event["capacity"]), "allowed_mentions": discord.AllowedMentions.none()}
                 if draft.get("banner"):
                     data, filename = draft["banner"]
                     kwargs["file"] = discord.File(io.BytesIO(data), filename=filename)
