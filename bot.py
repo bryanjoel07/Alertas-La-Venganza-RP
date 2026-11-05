@@ -630,7 +630,7 @@ async def evento_cerrar(interaction: discord.Interaction, evento_id: int):
                     channel = await client.fetch_channel(event["channel_id"])
                     try:
                         message = await channel.fetch_message(event["message_id"])
-                        await message.delete(reason=f"Evento #{evento_id} cerrado por administrador {interaction.user.id}")
+                        await message.delete()
                     except discord.NotFound:
                         log.warning("Mensaje del evento #%s ya no existe; se cierra el registro.", evento_id)
                 with database() as db:
