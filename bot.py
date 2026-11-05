@@ -336,7 +336,6 @@ def event_embed(event, count, image_url=None):
         inline=False
     )
     embed.add_field(name="📍 Lugar", value=safe(event["location"]), inline=True)
-    embed.add_field(name="👥 Inscritos", value=f"**{count}/{event['capacity']}**", inline=True)
     embed.add_field(name="📋 Estado", value=statuses.get(event["status"], "Desconocido"), inline=False)
     embed.add_field(name="🏆 PREMIOS", value=event["prizes"], inline=False)
     if event["status"] == "finished":
