@@ -340,7 +340,7 @@ def event_embed(event, count, image_url=None):
     embed.add_field(name="📋 Estado", value=statuses.get(event["status"], "Desconocido"), inline=False)
     embed.add_field(name="🏆 PREMIOS", value=event["prizes"], inline=False)
     if event["status"] == "finished":
-        embed.add_field(name="🏅 Ganadores", value=prize_text(event["winner1"], event["winner2"], event["winner3"]), inline=False)
+        embed.add_field(name="🏅 Ganadores", value="\\n".join(f"{medal} <@{event[key]}>" for medal, key in (("🥇", "winner1"), ("🥈", "winner2"), ("🥉", "winner3"))), inline=False)
     image = image_url or event["image_url"]
     if image:
         embed.set_image(url=image)
@@ -662,8 +662,8 @@ class PublishView(discord.ui.View):
 event_group = app_commands.Group(name="evento", description="Eventos de La Venganza RP")
 
 
-@event_group.command(name="crear", description="Abrir el formulario de un evento")
-@app_commands.describe(imagen="Banner opcional desde tu galería (máximo 8 MB)")
+@event_group.command(name="crear", description="Crear evento: fecha/hora PR, lugar, descripción, premios, cupos y banner")
+@app_commands.describe(imagen="Opcional: selecciona una imagen de tu galería (máximo 8 MB)")
 @app_commands.check(only_admin)
 async def evento_crear(interaction: discord.Interaction, imagen: discord.Attachment = None):
     await interaction.response.send_modal(DetailsModal(imagen))
@@ -671,7 +671,8 @@ async def evento_crear(interaction: discord.Interaction, imagen: discord.Attachm
 
 # CAMBIO SOLICITADO: /evento cerrar ELIMINA EL MENSAJE COMPLETO.
 # Conserva el registro y las inscripciones para consulta administrativa.
-@event_group.command(name="cerrar", description="Eliminar el anuncio completo de un evento")
+@event_group.command(name="cerrar", description="Borra el anuncio, banner y botones; conserva los registros")
+@app_commands.describe(evento_id="ID del evento que deseas borrar por completo, por ejemplo 1")
 @app_commands.check(only_admin)
 async def evento_cerrar(interaction: discord.Interaction, evento_id: int):
     await interaction.response.defer(ephemeral=True, thinking=True)
@@ -711,26 +712,124 @@ async def evento_cerrar(interaction: discord.Interaction, evento_id: int):
     await interaction.followup.send(answer, ephemeral=True)
 
 
-@event_group.command(name="finalizar", description="Publicar los ganadores y finalizar")
+async def resolve_winner(interaction: discord.Interaction, raw: str):
+    """Acepta @mención, <@!ID> o ID numérico; valida miembro del servidor."""
+    value = raw.strip()
+    match = re.fullmatch(r"<@!?(\\d{15,22})>", value) or re.fullmatch(r"(\\d{15,22})", value)
+    if not match:
+        raise ValueError(f"Jugador inválido: {value[:50]}. Usa @usuario o su ID de Discord.")
+    user_id = int(match.group(1))
+    try:
+        member = await interaction.guild.fetch_member(user_id)
+    except discord.NotFound:
+        raise ValueError(f"El usuario {user_id} no pertenece a este servidor.")
+    except discord.HTTPException as exc:
+        raise ValueError(f"No se pudo comprobar el usuario {user_id}: {exc}")
+    return member
+
+
+@event_group.command(name="finalizar", description="Finaliza el evento y publica un podio mencionando a los 3 ganadores")
+@app_commands.describe(
+    evento_id="Número del evento, por ejemplo 1 (aparece al final del anuncio)",
+    primero="Ganador del 1.er lugar: @usuario o ID numérico de Discord",
+    segundo="Ganador del 2.º lugar: @usuario o ID numérico de Discord",
+    tercero="Ganador del 3.er lugar: @usuario o ID numérico de Discord"
+)
 @app_commands.check(only_admin)
-async def evento_finalizar(interaction: discord.Interaction, evento_id: int, primero: str, segundo: str, tercero: str):
-    await interaction.response.defer(ephemeral=True)
+async def evento_finalizar(
+    interaction: discord.Interaction,
+    evento_id: int,
+    primero: str,
+    segundo: str,
+    tercero: str
+):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        winners = [
+            await resolve_winner(interaction, value)
+            for value in (primero, segundo, tercero)
+        ]
+    except ValueError as exc:
+        await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+        return
+    if len({winner.id for winner in winners}) != 3:
+        await interaction.followup.send("❌ Debes elegir tres jugadores diferentes.", ephemeral=True)
+        return
+
     async with client.lock:
         event = fetch_event(evento_id)
         if not event:
             answer = "❌ Evento no encontrado."
         elif event["status"] == "finished":
-            answer = "ℹ️ Ya está finalizado."
+            answer = "ℹ️ Este evento ya fue finalizado."
+        elif event["status"] == "closed":
+            answer = "❌ Este evento fue cerrado y su anuncio eliminado."
         else:
-            with database() as db:
-                db.execute("UPDATE events SET status='finished',winner1=?,winner2=?,winner3=? WHERE id=?",
-                           (primero[:120], segundo[:120], tercero[:120], evento_id))
-            await refresh_event(evento_id)
-            answer = f"🏆 Evento #{evento_id} finalizado y ganadores publicados."
+            try:
+                channel = await client.fetch_channel(event["channel_id"])
+                podio = discord.Embed(
+                    title="🏆 PODIO OFICIAL | LA VENGANZA RP",
+                    description=(
+                        f"🏎️ **{safe(event['title'])}**\\n"
+                        f"🎉 ¡Felicidades a los ganadores del evento #{evento_id}!"
+                    ),
+                    color=0xD60000,
+                    timestamp=datetime.now(timezone.utc)
+                )
+                for position, emoji, member in zip(
+                    ("PRIMER LUGAR", "SEGUNDO LUGAR", "TERCER LUGAR"),
+                    ("🥇", "🥈", "🥉"),
+                    winners
+                ):
+                    podio.add_field(
+                        name=f"{emoji} {position}",
+                        value=f"{member.mention}\\n**{safe(member.display_name)}**",
+                        inline=False
+                    )
+                podio.set_footer(text=f"La Venganza RP | Resultados del evento #{evento_id}")
+                await channel.send(
+                    embed=podio,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=False, users=True
+                    )
+                )
+                with database() as db:
+                    db.execute(
+                        "UPDATE events SET status='finished', winner1=?, winner2=?, winner3=? WHERE id=?",
+                        (str(winners[0].id), str(winners[1].id), str(winners[2].id), evento_id)
+                    )
+                # Deshabilitar las inscripciones sin editar embed ni banner.
+                if event["message_id"]:
+                    try:
+                        original = await channel.fetch_message(event["message_id"])
+                        finished_view = EventButtons(
+                            registered_count(evento_id), event["capacity"]
+                        )
+                        for item in finished_view.children:
+                            if isinstance(item, discord.ui.Button):
+                                item.disabled = True
+                        await original.edit(view=finished_view)
+                    except (discord.HTTPException, discord.NotFound):
+                        log.exception("No se pudieron desactivar los botones del evento #%s", evento_id)
+                answer = (
+                    f"🏆 Evento #{evento_id} finalizado. "
+                    "Podio publicado con las menciones y nombres de Discord. "
+                    "Las inscripciones quedaron cerradas."
+                )
+            except discord.Forbidden:
+                log.exception("Sin permisos para publicar ganadores del evento #%s", evento_id)
+                answer = "❌ No tengo permiso para publicar el podio en el canal de eventos."
+            except discord.HTTPException:
+                log.exception("Error publicando podio del evento #%s", evento_id)
+                answer = "❌ Discord rechazó la publicación del podio. Revisa Railway."
+            except Exception:
+                log.exception("Error finalizando evento #%s", evento_id)
+                answer = "❌ No se pudo finalizar el evento. Revisa Railway."
     await interaction.followup.send(answer, ephemeral=True)
 
 
-@event_group.command(name="participantes", description="Consultar todos los inscritos")
+@event_group.command(name="participantes", description="Muestra la lista de jugadores inscritos en el evento indicado")
+@app_commands.describe(evento_id="ID del evento para consultar los jugadores inscritos")
 @app_commands.check(only_admin)
 async def evento_participantes(interaction: discord.Interaction, evento_id: int):
     event = fetch_event(evento_id)
@@ -785,7 +884,8 @@ class EditEventModal(discord.ui.Modal, title="Editar evento"):
         await interaction.followup.send("✅ Evento actualizado sin perder inscripciones.", ephemeral=True)
 
 
-@event_group.command(name="editar", description="Abrir formulario para editar un evento")
+@event_group.command(name="editar", description="Edita fecha, hora, lugar, título y descripción del evento")
+@app_commands.describe(evento_id="ID del evento que deseas editar sin perder inscritos")
 @app_commands.check(only_admin)
 async def evento_editar(interaction: discord.Interaction, evento_id: int):
     event = fetch_event(evento_id)
@@ -831,7 +931,8 @@ class EditPrizesModal(discord.ui.Modal, title="Editar premios y cupos"):
         await interaction.followup.send("✅ Premios y cupos actualizados.", ephemeral=True)
 
 
-@event_group.command(name="premios", description="Editar premios y cupos")
+@event_group.command(name="premios", description="Cambia los premios de los tres lugares y el máximo de inscritos")
+@app_commands.describe(evento_id="ID del evento cuyos premios y cupos deseas cambiar")
 @app_commands.check(only_admin)
 async def evento_premios(interaction: discord.Interaction, evento_id: int):
     event = fetch_event(evento_id)
@@ -841,7 +942,8 @@ async def evento_premios(interaction: discord.Interaction, evento_id: int):
     await interaction.response.send_modal(EditPrizesModal(event))
 
 
-@event_group.command(name="banner", description="Cambiar banner de un evento")
+@event_group.command(name="banner", description="Reemplaza la imagen del anuncio sin perder inscripciones")
+@app_commands.describe(evento_id="ID del evento que tendrá nuevo banner", imagen="Nueva imagen de tu galería, máximo 8 MB")
 @app_commands.check(only_admin)
 async def evento_banner(interaction: discord.Interaction, evento_id: int, imagen: discord.Attachment):
     await interaction.response.defer(ephemeral=True, thinking=True)
@@ -882,7 +984,7 @@ client.tree.add_command(event_group, guild=GUILD)
 # ALERTAS DE PRUEBA
 # ==========================================
 
-@client.tree.command(name="testalert", description="Enviar una alerta de prueba", guild=GUILD)
+@client.tree.command(name="testalert", description="Envía una alerta de prueba DOWN o RESTORED sin cambiar el estado real", guild=GUILD)
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(only_admin)
 @app_commands.choices(estado=[
@@ -911,7 +1013,7 @@ def simulate_cycle():
     assert tracker.observe("up", 450) is None
 
 
-@client.tree.command(name="simular-ciclo", description="Simular caída y recuperación", guild=GUILD)
+@client.tree.command(name="simular-ciclo", description="Prueba DOWN/RESTORED y confirma que el monitor real no cambia", guild=GUILD)
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(only_admin)
 async def simular_ciclo(interaction: discord.Interaction):
@@ -929,7 +1031,8 @@ async def simular_ciclo(interaction: discord.Interaction):
 maintenance_group = app_commands.Group(name="mantenimiento", description="Administrar mantenimientos")
 
 
-@maintenance_group.command(name="iniciar", description="Anunciar mantenimiento")
+@maintenance_group.command(name="iniciar", description="Anuncia mantenimiento y suspende las alertas automáticas")
+@app_commands.describe(motivo="Explica brevemente por qué la ciudad estará en mantenimiento")
 @app_commands.check(only_admin)
 async def mantenimiento_iniciar(interaction: discord.Interaction, motivo: str):
     await interaction.response.defer(ephemeral=True)
@@ -957,7 +1060,7 @@ async def mantenimiento_iniciar(interaction: discord.Interaction, motivo: str):
     await interaction.followup.send(answer, ephemeral=True)
 
 
-@maintenance_group.command(name="finalizar", description="Finalizar mantenimiento")
+@maintenance_group.command(name="finalizar", description="Anuncia el fin del mantenimiento y reactiva el monitor")
 @app_commands.check(only_admin)
 async def mantenimiento_finalizar(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -991,7 +1094,7 @@ client.tree.add_command(maintenance_group, guild=GUILD)
 # HISTORIAL DE CAIDAS
 # ==========================================
 
-@client.tree.command(name="historial-caidas", description="Consultar últimas caídas", guild=GUILD)
+@client.tree.command(name="historial-caidas", description="Consulta las 10 caídas más recientes y su duración", guild=GUILD)
 @app_commands.default_permissions(administrator=True)
 @app_commands.check(only_admin)
 async def historial_caidas(interaction: discord.Interaction):
