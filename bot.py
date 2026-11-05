@@ -329,8 +329,8 @@ def event_embed(event, count, image_url=None):
     embed.add_field(
         name="📅 Fecha y hora",
         value=(
-            f"📅 {date_pr}\\n"
-            f"⏰ **{hour_pr} — Hora de Puerto Rico 🇵🇷**\\n"
+            f"📅 {date_pr}\n"
+            f"⏰ **{hour_pr} — Hora de Puerto Rico 🇵🇷**\n"
             f"🌎 Tu hora local: <t:{epoch(event['starts_at'])}:t>"
         ),
         inline=False
@@ -355,13 +355,24 @@ async def refresh_event(event_id, message=None):
     if message is None:
         channel = await client.fetch_channel(event["channel_id"])
         message = await channel.fetch_message(event["message_id"])
+    # Preservar el archivo al actualizar el contador de inscritos.
+    # Usar la URL real de Discord, no attachment:// en mensajes editados.
     image_url = event["image_url"]
     if message.attachments:
-        image_url = f"attachment://{message.attachments[0].filename}"
+        image_url = message.attachments[0].url
+    elif image_url and image_url.startswith("attachment://"):
+        image_url = None
     await message.edit(
         embed=event_embed(event, registered_count(event_id), image_url),
-        view=EventButtons(), attachments=message.attachments
+        view=EventButtons(),
+        attachments=list(message.attachments)
     )
+    if image_url and image_url != event["image_url"]:
+        with database() as db:
+            db.execute(
+                "UPDATE events SET image_url=? WHERE id=?",
+                (image_url, event_id)
+            )
 
 
 # ==========================================
@@ -597,7 +608,7 @@ class PublishView(discord.ui.View):
                     with database() as db:
                         db.execute("DELETE FROM events WHERE id=? AND message_id IS NULL", (event_id,))
                     raise
-                image_ref = f"attachment://{message.attachments[0].filename}" if message.attachments else None
+                image_ref = message.attachments[0].url if message.attachments else None
                 with database() as db:
                     db.execute("UPDATE events SET message_id=?,image_url=? WHERE id=?", (message.id, image_ref, event_id))
                 DRAFTS.pop(self.owner, None)
@@ -819,9 +830,20 @@ async def evento_banner(interaction: discord.Interaction, evento_id: int, imagen
         channel = await client.fetch_channel(event["channel_id"])
         message = await channel.fetch_message(event["message_id"])
         embed = event_embed(event, registered_count(evento_id), f"attachment://{filename}")
-        await message.edit(embed=embed, attachments=[discord.File(io.BytesIO(data), filename=filename)], view=EventButtons())
+        edited_message = await message.edit(
+            embed=embed,
+            attachments=[discord.File(io.BytesIO(data), filename=filename)],
+            view=EventButtons()
+        )
+        updated_url = (
+            edited_message.attachments[0].url
+            if edited_message.attachments else None
+        )
+        if updated_url:
+            embed.set_image(url=updated_url)
+            await edited_message.edit(embed=embed, attachments=edited_message.attachments)
         with database() as db:
-            db.execute("UPDATE events SET image_url=? WHERE id=?", (f"attachment://{filename}", evento_id))
+            db.execute("UPDATE events SET image_url=? WHERE id=?", (updated_url, evento_id))
     await interaction.followup.send("✅ Banner actualizado.", ephemeral=True)
 
 
