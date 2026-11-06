@@ -1,0 +1,76 @@
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import discord
+
+from stream_proof import supported_url
+from streamers import Streamers, decision
+
+
+class VerificationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.system = Streamers(str(Path(self.tmp.name) / "test.db"))
+        self.system.start()
+        self.role = MagicMock(name="role", id=45, permissions=discord.Permissions.none())
+        self.role.name = "Streamer"
+        self.member = MagicMock(id=100, roles=[], add_roles=AsyncMock())
+        self.guild = MagicMock(id=23, roles=[self.role], fetch_member=AsyncMock(return_value=self.member))
+        self.guild.me.guild_permissions = discord.Permissions(manage_roles=True)
+        self.interaction = SimpleNamespace(guild=self.guild, guild_id=23, user=self.member,
+                                           response=AsyncMock(), followup=AsyncMock())
+
+    async def invoke(self, name, *args):
+        await self.system.get_command(name).callback(self.system, self.interaction, *args)
+
+    def row(self):
+        return self.system.request(23, self.interaction.user.id)
+
+    def test_evidence(self):
+        data = {"owner": "youtube:123", "followers": 50, "title": "La Venganza RP LVRP-ABC"}
+        self.assertEqual(decision(data, "LVRP-ABC", 50), "verificada")
+        self.assertEqual(decision(data, "LVRP-XYZ", 50), "falta_titulo")
+        self.assertEqual(decision(data, "LVRP-ABC", 51), "faltan_seguidores")
+        self.assertEqual(decision(None, "LVRP-ABC", 50), "pendiente")
+        self.assertIsNone(supported_url("https://youtube.com.evil.example/watch?v=12345678901"))
+        self.assertIsNone(supported_url("https://twitch.tv/creator/clip/trending"))
+
+    async def test_grant_retry_and_duplicate_owner(self):
+        await self.invoke("solicitar")
+        code = self.row()["code"]
+        proof = {"owner": "youtube:123", "followers": 50, "title": f"La Venganza RP {code}"}
+        self.guild.me.guild_permissions = discord.Permissions.none()
+        with patch("streamers.inspect_stream", AsyncMock(return_value=proof)):
+            await self.invoke("verificar", "https://youtu.be/12345678901")
+        self.assertEqual(self.row()["state"], "verificada")
+        self.member.add_roles.assert_not_awaited()
+        self.guild.me.guild_permissions = discord.Permissions(manage_roles=True)
+        await self.invoke("estado")
+        await self.invoke("estado")
+        self.member.add_roles.assert_awaited_once()
+        self.assertEqual(self.row()["state"], "entregada")
+        self.interaction.user = SimpleNamespace(id=101)
+        await self.invoke("solicitar")
+        proof["title"] = f"La Venganza RP {self.row()['code']}"
+        with patch("streamers.inspect_stream", AsyncMock(return_value=proof)):
+            await self.invoke("verificar", "https://youtu.be/12345678901")
+        self.assertEqual(self.row()["state"], "canal_en_uso")
+
+    async def test_unknown_platform_requires_independent_review(self):
+        await self.invoke("solicitar")
+        with patch("streamers.inspect_stream", AsyncMock()) as inspect:
+            await self.invoke("verificar", "https://another.example/creator/live")
+            inspect.assert_not_awaited()
+        row = self.row()
+        review = f"{row['id']}-{row['checked']}"
+        await self.invoke("revisar", review, True, 50, "https://another.example/creator")
+        self.member.add_roles.assert_not_awaited()
+        self.interaction.user = SimpleNamespace(id=200)
+        await self.invoke("revisar", review, True, 49, "https://another.example/creator")
+        self.member.add_roles.assert_not_awaited()
+        await self.invoke("revisar", review, True, 50, "https://another.example/creator")
+        self.member.add_roles.assert_awaited_once()

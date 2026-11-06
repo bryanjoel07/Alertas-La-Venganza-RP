@@ -22,6 +22,7 @@ from diagnostics import read_database, status_embed
 from backup_meta import read_backup
 from backup_service import BackupService
 from link_spam import LinkSpamGuard
+from streamers import Streamers
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -209,9 +210,12 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.meetings.group, guild=GUILD)
         self.backups = BackupService(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.backups.group, guild=GUILD)
+        self.streamers = Streamers(DB_PATH)
+        self.tree.add_command(self.streamers, guild=GUILD)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
+        await asyncio.to_thread(self.streamers.start)
         if self.link_spam:
             await self.link_spam.start()
         state = get_setting("last_state")
