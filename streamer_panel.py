@@ -7,22 +7,23 @@ from discord.ext import tasks
 
 CHANNEL_ID = 1568403146219454586
 ROLE_ID = 1568399564887826486
-ACCENT = 0xFF3CAC
+PANEL_RED = 0xD60000
+ROLE_COLOR = 0xFF3CAC
 log = logging.getLogger(__name__)
 
 
 def application_embed(minimum):
     embed = discord.Embed(
-        title="📺 Solicitar el rol Streamer",
-        description=f"¿Transmites en **La Venganza RP**? Necesitas **{minimum} seguidores en una plataforma** "
-                    f"(o **{minimum} suscriptores en YouTube**) y un directo o una repetición pública de la ciudad.",
-        colour=ACCENT)
-    embed.add_field(name="1 · Solicitar código", value="Recibe tu código personal. Tienes 24 horas para usarlo.", inline=False)
-    embed.add_field(name="2 · Enviar enlace", value="Pon **La Venganza RP** y tu código en el título del directo. "
-                    "Pulsa el botón y pega el enlace al directo o a su repetición.", inline=False)
-    embed.add_field(name="3 · Ver mi estado", value="Consulta tu resultado en privado. Si se verifican los requisitos, "
-                    "recibirás el rol. Si faltan datos públicos, el staff revisará tu solicitud.", inline=False)
-    embed.set_footer(text="Twitch · TikTok · YouTube · Otras plataformas")
+        title="📺 SOLICITAR ROL STREAMER",
+        description=f"👥 **{minimum} seguidores** en una plataforma o **{minimum} suscriptores** en YouTube.\n"
+                    "🎥 Un directo o una repetición pública de **La Venganza RP** en tu canal.",
+        colour=PANEL_RED)
+    embed.add_field(name="🎟️ Solicitar código", value="Pulsa el botón para recibir tu código personal. Dura **24 horas**.", inline=False)
+    embed.add_field(name="🔗 Enviar enlace", value="Añade **La Venganza RP** y tu código al título del directo. "
+                    "Luego pega el enlace al directo o a la repetición.", inline=False)
+    embed.add_field(name="📋 Ver mi estado", value="Consulta tu solicitud en privado. Si cumples los requisitos, "
+                    "el bot te dará el rol. Si faltan datos públicos, el staff revisará tu enlace.", inline=False)
+    embed.set_footer(text="LA VENGANZA RP | Twitch · TikTok · YouTube · Otras plataformas")
     return embed
 
 
@@ -109,8 +110,8 @@ class StreamerPanel:
             role = channel.guild.get_role(ROLE_ID)
             if role and role.is_assignable():
                 try:
-                    if role.colour.value != ACCENT:
-                        await role.edit(colour=discord.Colour(ACCENT), reason="Color del rol Streamer")
+                    if role.colour.value != ROLE_COLOR:
+                        await role.edit(colour=discord.Colour(ROLE_COLOR), reason="Color del rol Streamer")
                     with self.streamers.db() as db:
                         db.execute("UPDATE streamer_panel SET colored=1 WHERE channel=?", (CHANNEL_ID,))
                     colored = True
