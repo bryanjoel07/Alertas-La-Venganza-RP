@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 
 from stream_proof import supported_url
+from streamer_panel import ApplicationButtons
 from streamers import Streamers, decision
 
 
@@ -29,6 +30,30 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
 
     def row(self):
         return self.system.request(23, self.interaction.user.id)
+
+    async def test_profile_link_only_after_approval(self):
+        panel = ApplicationButtons(self.system)
+        self.assertTrue(panel.is_persistent())
+        self.assertEqual([b.label for b in panel.children], ["Solicitar rol", "Ver mi estado"])
+        await self.invoke("solicitar")
+        proof_buttons = self.interaction.response.send_message.await_args.kwargs["view"]
+        self.assertEqual([b.label for b in proof_buttons.children], ["Verificar requisitos"])
+        link = "https://www.twitch.tv/example"
+        await self.system.save_profile(self.interaction, link)
+        with self.system.db() as db:
+            self.assertFalse(db.execute("SELECT 1 FROM streamer_profiles").fetchone())
+        data = {"owner": "twitch:111", "profile": link, "followers": 55,
+                "title": f"La Venganza RP {self.row()['code']}"}
+        with patch("streamers.inspect_stream", AsyncMock(return_value=data)):
+            await self.invoke("verificar", link)
+        controls = self.interaction.followup.send.await_args.kwargs["view"]
+        self.assertEqual(controls.children[0].label, "Enviar enlace")
+        await self.system.save_profile(self.interaction, "https://www.twitch.tv/another")
+        with self.system.db() as db:
+            self.assertIsNone(db.execute("SELECT saved_url FROM streamer_profiles").fetchone()[0])
+        await self.system.save_profile(self.interaction, link)
+        with self.system.db() as db:
+            self.assertEqual(db.execute("SELECT saved_url FROM streamer_profiles").fetchone()[0], link)
 
     def test_evidence(self):
         data = {"owner": "youtube:123", "followers": 50, "title": "La Venganza RP LVRP-ABC"}

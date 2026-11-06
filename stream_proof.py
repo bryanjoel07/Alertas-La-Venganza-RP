@@ -53,10 +53,11 @@ def metadata(url):
             if info.get("availability") != "public":
                 return None
             platform = "youtube"
+            profile = f"https://www.youtube.com/channel/{owner}"
         elif extractor.startswith("Twitch"):
             platform = "twitch"
             ie = client.get_info_extractor(extractor)
-            fields = "id followers { totalCount }"
+            fields = "id login followers { totalCount }"
             if extractor == "TwitchVod":
                 query = "query($id:ID!){video(id:$id){broadcastType title owner{" + fields + "}}}"
                 video = ie._download_base_gql("proof", {"query": query, "variables": {"id": canonical.split("/")[-1]}}, "Public archive")["data"]["video"]
@@ -70,6 +71,7 @@ def metadata(url):
                     return None
                 title = user["broadcastSettings"]["title"]
             owner, followers = user["id"], user["followers"]["totalCount"]
+            profile = "https://www.twitch.tv/" + user["login"]
         else:
             platform = "tiktok"
             ie = client.get_info_extractor(extractor)
@@ -83,12 +85,24 @@ def metadata(url):
             followers = stats.get("followerCount")
         if not owner or followers is None:
             return None
-        return {"owner": f"{platform}:{owner}", "title": title, "followers": int(followers)}
+        return {"owner": f"{platform}:{owner}", "title": title, "followers": int(followers), "profile": profile}
+
+
+def twitch_profile(owner):
+    from yt_dlp import YoutubeDL
+
+    if not re.fullmatch(r"twitch:[0-9]+", owner):
+        return None
+    with YoutubeDL({"quiet": True, "socket_timeout": 5, "cachedir": False}) as client:
+        ie = client.get_info_extractor("TwitchStream")
+        query = {"query": "query($id:ID!){user(id:$id){login}}", "variables": {"id": owner.split(":")[1]}}
+        user = ie._download_base_gql("profile", query, "Public channel")["data"]["user"]
+        return "https://www.twitch.tv/" + user["login"]
 
 
 if __name__ == "__main__":
     try:
-        print(json.dumps(metadata(sys.argv[1])))
+        print(json.dumps(twitch_profile(sys.argv[1]) if sys.argv[1].startswith("twitch:") else metadata(sys.argv[1])))
     except Exception:
         # An unavailable platform is a review case, never a successful check.
         print("null")

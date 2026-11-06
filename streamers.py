@@ -12,6 +12,7 @@ import discord
 from discord import app_commands
 
 from stream_proof import public_link, supported_url
+from streamer_panel import ApprovedButtons, ProofButtons
 
 
 SCHEMA = """
@@ -23,6 +24,9 @@ CREATE TABLE IF NOT EXISTS streamer_requests (
  code TEXT NOT NULL UNIQUE, issued INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'nueva',
  proof TEXT, owner TEXT, followers INTEGER, reviewer INTEGER, checked INTEGER DEFAULT 0,
  UNIQUE(guild,member), UNIQUE(guild,owner)
+);
+CREATE TABLE IF NOT EXISTS streamer_profiles (
+ request_id INTEGER PRIMARY KEY, owner TEXT NOT NULL, verified_url TEXT NOT NULL, saved_url TEXT
 );
 """
 
@@ -74,6 +78,60 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         with self.db() as db:
             return db.execute("SELECT * FROM streamer_requests WHERE guild=? AND member=?", (guild, member)).fetchone()
 
+    @staticmethod
+    def is_approved(row):
+        return row is not None and row["state"] in {"verificada", "entregada"}
+
+    def profile(self, row):
+        with self.db() as db:
+            stored = db.execute("SELECT verified_url FROM streamer_profiles WHERE request_id=? AND owner=?",
+                                (row["id"], row["owner"])).fetchone()
+        if stored:
+            return stored[0]
+        owner = row["owner"]
+        if owner.startswith("perfil:"):
+            return "https://" + owner.removeprefix("perfil:")
+        if owner.startswith("youtube:"):
+            return "https://www.youtube.com/channel/" + owner.removeprefix("youtube:")
+        proof = supported_url(row["proof"])
+        if proof and proof[0] in {"TwitchStream", "TikTokLive"}:
+            return proof[1].removesuffix("/live") if proof[0] == "TikTokLive" else proof[1]
+        return None
+
+    def approved_controls(self, row):
+        return {"view": ApprovedButtons(self)} if self.is_approved(row) else {}
+
+    async def save_profile(self, interaction, enlace):
+        row = self.request(interaction.guild_id, interaction.user.id)
+        if not self.is_approved(row):
+            return await interaction.response.send_message("Tu solicitud debe estar aprobada para guardar un canal.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            supplied = public_link(enlace)
+        except ValueError:
+            return await interaction.followup.send("Pega la dirección HTTPS de tu canal.", ephemeral=True)
+        expected = self.profile(row)
+        if expected is None and row["owner"].startswith("twitch:"):
+            expected = await inspect_stream(row["owner"])
+        if not expected:
+            return await interaction.followup.send("El perfil verificado aún no está disponible. Vuelve a intentarlo desde Ver mi estado.", ephemeral=True)
+        known = public_link(expected)
+        host = supplied.hostname.removeprefix("www.")
+        path, expected_path = supplied.path.rstrip("/"), known.path.rstrip("/")
+        if host in {"twitch.tv", "tiktok.com"}:
+            path, expected_path = path.casefold(), expected_path.casefold()
+        if (host, path) != (known.hostname.removeprefix("www."), expected_path):
+            return await interaction.followup.send(f"Usa la dirección de tu canal verificado: <{expected}>.", ephemeral=True)
+        with self.db() as db:
+            current = self.request(interaction.guild_id, interaction.user.id)
+            if self.is_approved(current) and current["owner"] == row["owner"]:
+                db.execute("INSERT OR REPLACE INTO streamer_profiles VALUES (?,?,?,?)",
+                           (row["id"], row["owner"], expected, expected))
+                msg = f"✅ Guardé tu canal para futuros avisos: <{expected}>."
+            else:
+                msg = "La solicitud cambió. Consulta Ver mi estado."
+        await interaction.followup.send(msg, ephemeral=True)
+
     def config(self, guild):
         with self.db() as db:
             row = db.execute("SELECT * FROM streamer_config WHERE guild=?", (guild.id,)).fetchone()
@@ -116,7 +174,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             row = self.request(guild, member)
             now = int(time.time())
             if row and row["state"] in {"verificada", "entregada", "pendiente"}:
-                return await interaction.response.send_message(f"Tu solicitud está {row['state']}. Pulsa **Ver mi estado** en el panel.", ephemeral=True)
+                return await interaction.response.send_message(f"Tu solicitud está {row['state']}. Pulsa **Ver mi estado** para ver los detalles.", ephemeral=True, **self.approved_controls(row))
             if not row or row["state"] == "rechazada" or now-row["issued"] >= 86400:
                 code = "LVRP-" + secrets.token_hex(5).upper()
                 with self.db() as db:
@@ -129,8 +187,8 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         await interaction.response.send_message(
             f"Necesitas **{minimum} seguidores** (suscriptores en YouTube) en un canal. "
             f"Pon **La Venganza RP {code}** en el título de tu directo o repetición pública de la ciudad. "
-            "Luego pulsa **Enviar enlace** en el panel o usa **/streamer verificar**. Tu código dura 24 horas. "
-            "Aceptamos Twitch, YouTube, TikTok y otras plataformas.", ephemeral=True)
+            "Pulsa **Verificar requisitos** y pega el enlace al directo como prueba. Tu código dura 24 horas.",
+            ephemeral=True, view=ProofButtons(self))
 
     @app_commands.command(description="Comprueba el enlace de tu directo o repetición pública")
     async def verificar(self, interaction: discord.Interaction, enlace: app_commands.Range[str, 1, 500]):
@@ -147,9 +205,10 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             row = self.request(guild, member)
             now = int(time.time())
             if not row or row["state"] == "rechazada":
-                return await interaction.followup.send("Pulsa **Solicitar código** en el panel para empezar.", ephemeral=True)
+                return await interaction.followup.send("Pulsa **Solicitar rol** en el panel para empezar.", ephemeral=True)
             if row["state"] in {"verificada", "entregada"}:
-                return await interaction.followup.send(await self.deliver(interaction.guild, row), ephemeral=True)
+                result = await self.deliver(interaction.guild, row)
+                return await interaction.followup.send(result, ephemeral=True, **self.approved_controls(self.request(guild, member)))
             if now-row["issued"] >= 86400:
                 return await interaction.followup.send("Código vencido. Consulta /streamer estado si está pendiente de revisión, o usa /streamer solicitar para renovarlo.", ephemeral=True)
             if now-row["checked"] < 60 or self.slots.locked():
@@ -170,6 +229,9 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
                     db.execute("UPDATE streamer_requests SET state=?,owner=?,followers=? WHERE id=?",
                                (state, data["owner"] if state == "verificada" else None,
                                 data["followers"] if data else None, row["id"]))
+                    if state == "verificada" and data.get("profile"):
+                        db.execute("INSERT OR REPLACE INTO streamer_profiles VALUES (?,?,?,NULL)",
+                                   (row["id"], data["owner"], data["profile"]))
             except sqlite3.IntegrityError:
                 with self.db() as db:
                     db.execute("UPDATE streamer_requests SET state='canal_en_uso' WHERE id=?", (row["id"],))
@@ -184,7 +246,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
                 msg = "Este canal ya está vinculado a otra solicitud."
             else:
                 msg = f"El canal muestra {data['followers']} seguidores. El mínimo actual es {minimum}."
-        await interaction.followup.send(msg, ephemeral=True)
+        await interaction.followup.send(msg, ephemeral=True, **self.approved_controls(self.request(guild, member)))
 
     async def deliver(self, guild, row):
         if row["state"] == "entregada":
@@ -230,8 +292,8 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             elif row:
                 msg = "Estado de tu solicitud: **" + row["state"].replace("_", " ") + "**."
             else:
-                msg = "Pulsa **Solicitar código** en el panel para empezar."
-        await interaction.followup.send(msg, ephemeral=True)
+                msg = "Pulsa **Solicitar rol** en el panel para empezar."
+        await interaction.followup.send(msg, ephemeral=True, **self.approved_controls(self.request(interaction.guild_id, interaction.user.id)))
 
     @app_commands.command(description="Lista privada de pruebas pendientes para administración")
     @app_commands.checks.has_permissions(administrator=True)

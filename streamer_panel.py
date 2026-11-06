@@ -18,16 +18,17 @@ def application_embed(minimum):
         description=f"👥 **{minimum} seguidores** en una plataforma o **{minimum} suscriptores** en YouTube.\n"
                     "🎥 Un directo o una repetición pública de **La Venganza RP** en tu canal.",
         colour=PANEL_RED)
-    embed.add_field(name="🎟️ Solicitar código", value="Pulsa el botón para recibir tu código personal. Dura **24 horas**.", inline=False)
-    embed.add_field(name="🔗 Enviar enlace", value="Añade **La Venganza RP** y tu código al título del directo. "
-                    "Luego pega el enlace al directo o a la repetición.", inline=False)
-    embed.add_field(name="📋 Ver mi estado", value="Consulta tu solicitud en privado. Si cumples los requisitos, "
-                    "el bot te dará el rol. Si faltan datos públicos, el staff revisará tu enlace.", inline=False)
+    embed.add_field(name="🎟️ Solicitar rol", value="Recibe un código privado válido por 24 horas. Ponlo junto a "
+                    "**La Venganza RP** en el título y usa **Verificar requisitos** para presentar el directo como prueba.", inline=False)
+    embed.add_field(name="📋 Ver mi estado", value="Consulta el resultado en privado. Si faltan datos públicos, "
+                    "el staff revisará tu prueba.", inline=False)
+    embed.add_field(name="✅ Al aprobarse tu solicitud", value="Aparecerá **🔗 Enviar enlace** en tu respuesta privada. "
+                    "Ahí podrás guardar tu canal de creador para futuros avisos.", inline=False)
     embed.set_footer(text="LA VENGANZA RP | Twitch · TikTok · YouTube · Otras plataformas")
     return embed
 
 
-class StreamLinkForm(discord.ui.Modal, title="Enviar mi directo"):
+class StreamLinkForm(discord.ui.Modal, title="Verificar requisitos"):
     link = discord.ui.TextInput(label="Enlace del directo o la repetición",
                                 placeholder="https://…", max_length=500)
 
@@ -39,18 +40,49 @@ class StreamLinkForm(discord.ui.Modal, title="Enviar mi directo"):
         await self.streamers.check_link(interaction, self.link.value.strip())
 
 
+class ProofButtons(discord.ui.View):
+    def __init__(self, streamers):
+        super().__init__(timeout=900)
+        self.streamers = streamers
+
+    @discord.ui.button(label="Verificar requisitos", emoji="🔎", style=discord.ButtonStyle.primary)
+    async def verify(self, interaction, button):
+        await interaction.response.send_modal(StreamLinkForm(self.streamers))
+
+
+class CreatorForm(discord.ui.Modal, title="Guardar mi canal de creador"):
+    link = discord.ui.TextInput(label="Enlace a tu canal verificado", max_length=500)
+
+    def __init__(self, streamers, profile):
+        super().__init__()
+        self.streamers = streamers
+        self.link.default = profile
+
+    async def on_submit(self, interaction):
+        await self.streamers.save_profile(interaction, self.link.value.strip())
+
+
+class ApprovedButtons(discord.ui.View):
+    def __init__(self, streamers):
+        super().__init__(timeout=900)
+        self.streamers = streamers
+
+    @discord.ui.button(label="Enviar enlace", emoji="🔗", style=discord.ButtonStyle.primary)
+    async def open_form(self, interaction, button):
+        row = self.streamers.request(interaction.guild_id, interaction.user.id)
+        if not self.streamers.is_approved(row):
+            return await interaction.response.send_message("Este paso se habilita cuando tu solicitud queda aprobada.", ephemeral=True)
+        await interaction.response.send_modal(CreatorForm(self.streamers, self.streamers.profile(row)))
+
+
 class ApplicationButtons(discord.ui.View):
     def __init__(self, streamers):
         super().__init__(timeout=None)
         self.streamers = streamers
 
-    @discord.ui.button(label="Solicitar código", emoji="🎟️", style=discord.ButtonStyle.success, custom_id="streamer:apply:v1")
+    @discord.ui.button(label="Solicitar rol", emoji="🎟️", style=discord.ButtonStyle.success, custom_id="streamer:apply:v1")
     async def request_code(self, interaction, button):
         await self.streamers.issue_code(interaction)
-
-    @discord.ui.button(label="Enviar enlace", emoji="🔗", style=discord.ButtonStyle.primary, custom_id="streamer:link:v1")
-    async def open_form(self, interaction, button):
-        await interaction.response.send_modal(StreamLinkForm(self.streamers))
 
     @discord.ui.button(label="Ver mi estado", emoji="📋", style=discord.ButtonStyle.secondary, custom_id="streamer:status:v1")
     async def show_status(self, interaction, button):
