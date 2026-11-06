@@ -100,16 +100,23 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             with self.db() as db:
                 db.execute("INSERT OR REPLACE INTO streamer_config VALUES(?,?,?)", (interaction.guild_id, rol.id, minimo))
         await interaction.response.send_message(f"Las nuevas verificaciones entregarán {rol.mention} con un mínimo de {minimo} seguidores en un canal.", ephemeral=True)
+        panel = interaction.client.streamer_panel
+        panel.published = False
+        if not panel.install.is_running():
+            panel.install.start()
 
     @app_commands.command(description="Recibe el código personal para verificar tu directo o repetición")
     async def solicitar(self, interaction: discord.Interaction):
+        await self.issue_code(interaction)
+
+    async def issue_code(self, interaction):
         guild, member = interaction.guild_id, interaction.user.id
         _, minimum = self.config(interaction.guild)
         async with self.lock:
             row = self.request(guild, member)
             now = int(time.time())
             if row and row["state"] in {"verificada", "entregada", "pendiente"}:
-                return await interaction.response.send_message(f"Tu solicitud está {row['state']}. Consulta /streamer estado.", ephemeral=True)
+                return await interaction.response.send_message(f"Tu solicitud está {row['state']}. Pulsa **Ver mi estado** en el panel.", ephemeral=True)
             if not row or row["state"] == "rechazada" or now-row["issued"] >= 86400:
                 code = "LVRP-" + secrets.token_hex(5).upper()
                 with self.db() as db:
@@ -122,11 +129,14 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         await interaction.response.send_message(
             f"Necesitas **{minimum} seguidores** (suscriptores en YouTube) en un canal. "
             f"Pon **La Venganza RP {code}** en el título de tu directo o repetición pública de la ciudad. "
-            "Luego usa **/streamer verificar** con ese enlace. Tu código dura 24 horas. "
+            "Luego pulsa **Enviar enlace** en el panel o usa **/streamer verificar**. Tu código dura 24 horas. "
             "Aceptamos Twitch, YouTube, TikTok y otras plataformas.", ephemeral=True)
 
     @app_commands.command(description="Comprueba el enlace de tu directo o repetición pública")
     async def verificar(self, interaction: discord.Interaction, enlace: app_commands.Range[str, 1, 500]):
+        await self.check_link(interaction, enlace)
+
+    async def check_link(self, interaction, enlace):
         try:
             supported = supported_url(enlace)
         except ValueError:
@@ -137,7 +147,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             row = self.request(guild, member)
             now = int(time.time())
             if not row or row["state"] == "rechazada":
-                return await interaction.followup.send("Empieza con /streamer solicitar.", ephemeral=True)
+                return await interaction.followup.send("Pulsa **Solicitar código** en el panel para empezar.", ephemeral=True)
             if row["state"] in {"verificada", "entregada"}:
                 return await interaction.followup.send(await self.deliver(interaction.guild, row), ephemeral=True)
             if now-row["issued"] >= 86400:
@@ -209,6 +219,9 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
 
     @app_commands.command(description="Consulta tu solicitud o reintenta la entrega del rol verificado")
     async def estado(self, interaction: discord.Interaction):
+        await self.show_status(interaction)
+
+    async def show_status(self, interaction):
         await interaction.response.defer(ephemeral=True)
         async with self.lock:
             row = self.request(interaction.guild_id, interaction.user.id)
@@ -217,7 +230,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             elif row:
                 msg = "Estado de tu solicitud: **" + row["state"].replace("_", " ") + "**."
             else:
-                msg = "Empieza con /streamer solicitar."
+                msg = "Pulsa **Solicitar código** en el panel para empezar."
         await interaction.followup.send(msg, ephemeral=True)
 
     @app_commands.command(description="Lista privada de pruebas pendientes para administración")
