@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 import aiohttp
 import discord
 from discord import app_commands
+from meetings import MeetingSystem
+from storage import database_path
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -29,8 +31,8 @@ GUILD = discord.Object(id=GUILD_ID)
 PR_TZ = ZoneInfo("America/Puerto_Rico")
 CHECK_INTERVAL = 30
 CONFIRM_SECONDS = 90
-DATA_DIR = os.getenv("DATA_DIR") or os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "/tmp"
-DB_PATH = os.path.join(DATA_DIR, "lavenganza.sqlite3")
+DB_PATH = database_path()
+DATA_DIR = os.path.dirname(DB_PATH)
 DRAFT_SECONDS = 1800
 DRAFTS = {}
 
@@ -52,7 +54,7 @@ def duration(start, end):
 
 @contextmanager
 def database():
-    db = sqlite3.connect(DB_PATH, timeout=20)
+    db = sqlite3.connect(DB_PATH, timeout=1)
     db.row_factory = sqlite3.Row
     try:
         yield db
@@ -189,15 +191,26 @@ class LaVenganzaBot(discord.Client):
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
+        self.meetings = MeetingSystem(self, DB_PATH)
+        self.tree.add_command(self.meetings.group, guild=GUILD)
 
     async def setup_hook(self):
-        init_db()
+        await asyncio.to_thread(init_db)
         state = get_setting("last_state")
         self.tracker = StateTracker(state if state in ("up", "down") else None)
         self.add_view(EventButtons())
+        await self.meetings.start()
         commands = await self.tree.sync(guild=GUILD)
         log.info("Comandos sincronizados: %s", ", ".join(c.name for c in commands))
-        self.monitor_task = asyncio.create_task(monitor_server())
+        if self.monitor_task is None or self.monitor_task.done():
+            self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
+
+    async def close(self):
+        tasks = [task for task in (self.monitor_task, self.meetings.task) if task]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await super().close()
 
 
 client = LaVenganzaBot()
@@ -208,7 +221,7 @@ async def post_webhook(embed):
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
         async with session.post(WEBHOOK_URL, json=payload) as response:
             if response.status not in (200, 204):
-                raise RuntimeError(f"Webhook HTTP {response.status}: {(await response.text())[:120]}")
+                raise RuntimeError(f"Webhook HTTP {response.status}")
 
 
 def make_alert(state, test=False):
@@ -277,6 +290,23 @@ async def only_admin(interaction):
 # EVENTOS — CONSULTAS
 # ==========================================
 
+class AdminModal(discord.ui.Modal):
+    async def interaction_check(self, interaction):
+        return await only_admin(interaction)
+
+    async def on_error(self, interaction, error):
+        await command_error(interaction, error)
+
+
+class AdminView(discord.ui.View):
+    async def interaction_check(self, interaction):
+        return await only_admin(interaction)
+
+    async def on_error(self, interaction, error, item):
+        await command_error(interaction, error)
+
+
+
 def fetch_event(event_id):
     with database() as db:
         return db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
@@ -337,9 +367,9 @@ def event_embed(event, count, image_url=None):
     )
     embed.add_field(name="📍 Lugar", value=safe(event["location"]), inline=True)
     embed.add_field(name="📋 Estado", value=statuses.get(event["status"], "Desconocido"), inline=False)
-    embed.add_field(name="🏆 PREMIOS", value=event["prizes"], inline=False)
+    embed.add_field(name="🏆 PREMIOS", value=event["prizes"][:1024], inline=False)
     if event["status"] == "finished":
-        embed.add_field(name="🏅 Ganadores", value="\\n".join(f"{medal} <@{event[key]}>" for medal, key in (("🥇", "winner1"), ("🥈", "winner2"), ("🥉", "winner3"))), inline=False)
+        embed.add_field(name="🏅 Ganadores", value="\n".join(f"{medal} <@{event[key]}>" for medal, key in (("🥇", "winner1"), ("🥈", "winner2"), ("🥉", "winner3"))), inline=False)
     image = image_url or event["image_url"]
     if image:
         embed.set_image(url=image)
@@ -367,7 +397,7 @@ async def refresh_event(event_id, message=None):
         )
         updated = await message.edit(
             embed=embed,
-            view=EventButtons(),
+            view=EventButtons(registered_count(event_id), event["capacity"]),
             attachments=[discord.File(io.BytesIO(banner_bytes), filename=filename)]
         )
         if updated.attachments:
@@ -383,7 +413,7 @@ async def refresh_event(event_id, message=None):
             image_url = None
         await message.edit(
             embed=event_embed(event, registered_count(event_id), image_url),
-            view=EventButtons()
+            view=EventButtons(registered_count(event_id), event["capacity"])
         )
 
 
@@ -492,7 +522,7 @@ def purge_drafts():
             DRAFTS.pop(owner, None)
 
 
-class DetailsModal(discord.ui.Modal, title="Evento - Datos principales"):
+class DetailsModal(AdminModal, title="Evento - Datos principales"):
     name = discord.ui.TextInput(label="Nombre", placeholder="Ej.: Torneo, concierto, carrera o reunión", max_length=90)
     date = discord.ui.TextInput(label="Fecha AAAA-MM-DD", placeholder="2026-11-06", max_length=10)
     hour = discord.ui.TextInput(label="Hora de Puerto Rico (24 h)", placeholder="23:00", max_length=5)
@@ -537,7 +567,7 @@ class DetailsModal(discord.ui.Modal, title="Evento - Datos principales"):
         )
 
 
-class ContinueView(discord.ui.View):
+class ContinueView(AdminView):
     def __init__(self, owner):
         super().__init__(timeout=900)
         self.owner = owner
@@ -553,7 +583,7 @@ class ContinueView(discord.ui.View):
         await interaction.response.send_modal(PrizesModal(self.owner))
 
 
-class PrizesModal(discord.ui.Modal, title="Evento - Premios y participantes"):
+class PrizesModal(AdminModal, title="Evento - Premios y participantes"):
     capacity = discord.ui.TextInput(label="Cupos disponibles", placeholder="30", max_length=3)
     first = discord.ui.TextInput(label="Primer lugar", placeholder="$250,000 o Proximamente", max_length=200)
     second = discord.ui.TextInput(label="Segundo lugar", placeholder="$100,000 o Proximamente", max_length=200)
@@ -592,7 +622,7 @@ class PrizesModal(discord.ui.Modal, title="Evento - Premios y participantes"):
         await interaction.response.send_message(**options)
 
 
-class PublishView(discord.ui.View):
+class PublishView(AdminView):
     def __init__(self, owner):
         super().__init__(timeout=900)
         self.owner = owner
@@ -607,6 +637,9 @@ class PublishView(discord.ui.View):
             draft = DRAFTS.get(self.owner)
             if not draft or "capacity" not in draft:
                 await interaction.followup.send("❌ Borrador caducado. Crea el evento otra vez.", ephemeral=True)
+                return
+            if datetime.fromisoformat(draft["starts_at"]) <= datetime.now(timezone.utc):
+                await interaction.followup.send("❌ La fecha del borrador ya pasó. Crea uno nuevo.", ephemeral=True)
                 return
             if draft.get("publishing"):
                 await interaction.followup.send("⚠️ Ya se está publicando este evento.", ephemeral=True)
@@ -824,7 +857,7 @@ async def evento_participantes(interaction: discord.Interaction, evento_id: int)
 # EDITAR EVENTO CON FORMULARIO
 # ==========================================
 
-class EditEventModal(discord.ui.Modal, title="Editar evento"):
+class EditEventModal(AdminModal, title="Editar evento"):
     name = discord.ui.TextInput(label="Nombre", max_length=90)
     date = discord.ui.TextInput(label="Fecha AAAA-MM-DD", max_length=10)
     hour = discord.ui.TextInput(label="Hora Puerto Rico HH:MM", max_length=5)
@@ -850,7 +883,7 @@ class EditEventModal(discord.ui.Modal, title="Editar evento"):
         await interaction.response.defer(ephemeral=True)
         async with client.lock:
             event = fetch_event(self.event_id)
-            if not event or event["status"] == "finished":
+            if not event or event["status"] != "open":
                 await interaction.followup.send("❌ Evento inexistente o finalizado.", ephemeral=True)
                 return
             with database() as db:
@@ -865,13 +898,13 @@ class EditEventModal(discord.ui.Modal, title="Editar evento"):
 @app_commands.check(only_admin)
 async def evento_editar(interaction: discord.Interaction, evento_id: int):
     event = fetch_event(evento_id)
-    if not event or event["status"] == "finished":
+    if not event or event["status"] != "open":
         await interaction.response.send_message("❌ Evento no encontrado o finalizado.", ephemeral=True)
         return
     await interaction.response.send_modal(EditEventModal(event))
 
 
-class EditPrizesModal(discord.ui.Modal, title="Editar premios y cupos"):
+class EditPrizesModal(AdminModal, title="Editar premios y cupos"):
     capacity = discord.ui.TextInput(label="Cupos", max_length=3)
     first = discord.ui.TextInput(label="Primer lugar", max_length=200)
     second = discord.ui.TextInput(label="Segundo lugar", max_length=200)
@@ -893,7 +926,7 @@ class EditPrizesModal(discord.ui.Modal, title="Editar premios y cupos"):
         await interaction.response.defer(ephemeral=True)
         async with client.lock:
             event = fetch_event(self.event_id)
-            if not event or event["status"] == "finished":
+            if not event or event["status"] != "open":
                 await interaction.followup.send("❌ Evento no encontrado o finalizado.", ephemeral=True)
                 return
             total = registered_count(self.event_id)
@@ -912,7 +945,7 @@ class EditPrizesModal(discord.ui.Modal, title="Editar premios y cupos"):
 @app_commands.check(only_admin)
 async def evento_premios(interaction: discord.Interaction, evento_id: int):
     event = fetch_event(evento_id)
-    if not event or event["status"] == "finished":
+    if not event or event["status"] != "open":
         await interaction.response.send_message("❌ Evento no encontrado o finalizado.", ephemeral=True)
         return
     await interaction.response.send_modal(EditPrizesModal(event))
@@ -930,7 +963,7 @@ async def evento_banner(interaction: discord.Interaction, evento_id: int, imagen
     filename = "banner_actualizado.png"
     async with client.lock:
         event = fetch_event(evento_id)
-        if not event or event["status"] == "finished":
+        if not event or event["status"] != "open":
             await interaction.followup.send("❌ Evento no encontrado o finalizado.", ephemeral=True)
             return
         channel = await client.fetch_channel(event["channel_id"])
@@ -939,7 +972,7 @@ async def evento_banner(interaction: discord.Interaction, evento_id: int, imagen
         edited_message = await message.edit(
             embed=embed,
             attachments=[discord.File(io.BytesIO(data), filename=filename)],
-            view=EventButtons()
+            view=EventButtons(registered_count(evento_id), event["capacity"])
         )
         updated_url = (
             edited_message.attachments[0].url
@@ -1115,8 +1148,9 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 @client.event
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
+    log.info("Base SQLite activa: %s", DB_PATH)
     if DATA_DIR == "/tmp":
-        log.warning("SQLite está en /tmp. Conecta un volumen Railway en /data para conservar inscripciones.")
+        log.warning("SQLite está en /tmp. Antes de reiniciar o montar un volumen, exporta y verifica un respaldo externo; consulta DESPLIEGUE_IPHONE.md.")
 
 
 if __name__ == "__main__":

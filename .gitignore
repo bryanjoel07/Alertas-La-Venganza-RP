@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+*.sqlite3*
+*.db*
+backups/
+__pycache__/
+.venv/
+*credentials*.json
+*service-account*.json
+*.zip
