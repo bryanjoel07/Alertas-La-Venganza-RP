@@ -3,8 +3,10 @@
 Fecha: 6 de noviembre de 2026. Python 3.12, Linux, datos temporales.
 
 - Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py` correcta.
-- 15 pruebas pasan con discord.py 2.7.1 y aiohttp 3.14.5.
-- Las mismas 15 pruebas pasan con discord.py 2.4.0 (mínimo declarado).
+- 17 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
+- La entrega inicial pasó 15 pruebas con discord.py 2.4.0. Esa versión ya no es compatible
+  con el selector de canales dentro del formulario. Se comprobó también 2.6.0 y no admite
+  el parámetro required de ChannelSelect usado aquí: el mínimo se elevó a 2.7.1.
 - `pip check`: sin dependencias incompatibles.
 - Instalación opcional de `google-auth[requests]` verificada; no autenticación ni subida real.
 - `git diff --check`: sin errores de espacios o conflictos.
@@ -24,3 +26,8 @@ Pendiente: token/intents/permisos reales, webhook, presentación móvil, mensaje
 volumen Railway, respaldo externo de producción, autorización y subida/restauración Drive.
 Los respaldos están preparados como herramienta manual; no hay programación automática activada.
 La entrega contiene código completo y documentación, pero no es un despliegue validado en producción.
+
+Selector de voz: probado payload del modal con cinco campos Label, tipo de canal restringido a
+voz, selección única obligatoria, canal preseleccionado al editar, compatibilidad con lugares
+anteriores, enlace del canal y rechazo de selección sin permiso de conexión o de tipo incorrecto.
+El anuncio de Staff conserva como destino 1515887549678223380. Sin cambios de esquema ni datos.

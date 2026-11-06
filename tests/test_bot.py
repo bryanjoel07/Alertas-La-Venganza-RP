@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from backup import snapshot
-from meetings import MeetingStore, MeetingSystem, MeetingButtons, CHANNELS, ROLES, GUILD_ID
+from meetings import MeetingStore, MeetingSystem, MeetingButtons, MeetingModal, meeting_location, CHANNELS, ROLES, GUILD_ID
 from storage import database_path
 
 
@@ -197,6 +197,49 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         member.roles = []
         with self.assertRaises(discord.app_commands.CheckFailure):
             system.admin(interaction)
+
+    async def test_meeting_modal_voice_selector_and_defaults(self):
+        from unittest.mock import Mock
+        import discord
+        modal = MeetingModal(Mock(), 'staff')
+        fields = modal.to_components()
+        self.assertEqual(len(fields), 5)
+        self.assertEqual(fields[2]['label'], 'Canal de voz')
+        select = fields[2]['component']
+        self.assertEqual(select['type'], 8)
+        self.assertEqual(select['channel_types'], [2])
+        self.assertTrue(select['required'])
+        existing = dict(id=1, title='Reunión', starts_at=2000000000, location='<#123456789012345678>', agenda='Agenda', description='Texto')
+        edited = MeetingModal(Mock(), 'staff', existing)
+        self.assertEqual(edited.location.default_values[0].id, 123456789012345678)
+        existing['location'] = 'Lugar anterior'
+        legacy = MeetingModal(Mock(), 'staff', existing)
+        self.assertEqual(legacy.location.default_values, [])
+        self.assertEqual(meeting_location('<#123456789012345678>'), '<#123456789012345678>')
+        self.assertIn('\u200b', meeting_location('@everyone'))
+
+    async def test_meeting_voice_permission_validation(self):
+        from unittest.mock import Mock, AsyncMock
+        from types import SimpleNamespace
+        import discord
+        voice = Mock()
+        voice.id = 123456789012345678
+        voice.type = discord.ChannelType.voice
+        voice.permissions_for.return_value.connect = True
+        system = Mock()
+        system.channel_access = AsyncMock(return_value=voice)
+        modal = MeetingModal(system, 'staff')
+        interaction = Mock()
+        with self.assertRaises(ValueError):
+            await modal.selected_location(interaction)
+        modal.location._values = [SimpleNamespace(id=voice.id)]
+        self.assertEqual(await modal.selected_location(interaction), '<#123456789012345678>')
+        voice.permissions_for.return_value.connect = False
+        with self.assertRaises(discord.app_commands.CheckFailure):
+            await modal.selected_location(interaction)
+        voice.type = discord.ChannelType.text
+        with self.assertRaises(ValueError):
+            await modal.selected_location(interaction)
 
     async def test_setup_initializes_once_and_syncs_without_network(self):
         from unittest.mock import AsyncMock

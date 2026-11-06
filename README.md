@@ -16,7 +16,7 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 - `meetings.py`: reuniones, permisos, confirmaciones, asistencia y recordatorios.
 - `storage.py`: selección de base con protección contra arranque vacío o ambiguo.
 - `backup.py`: copia consistente de SQLite, integridad, manifiesto SHA-256 y subida opcional a Drive.
-- `requirements.txt`: dependencias originales del bot, sin cambios.
+- `requirements.txt`: discord.py 2.7.1 o superior para el selector de voz dentro del formulario.
 - `requirements-backup.txt`: dependencia opcional para Google Drive.
 - `railway.json`: configuración original sin cambios (Railpack, `python bot.py`, diez reintentos ante fallos).
 - `tests/test_bot.py`: pruebas locales sin credenciales reales.
@@ -58,6 +58,9 @@ Los informes usan IDs de Discord para evitar errores con nombres duplicados.
 
 Discord admite cinco campos de texto por formulario: tipo se elige en el comando y fecha/hora
 se escriben juntas (`2026-12-20 19:30`, hora PR, formato de 24 horas).
+El campo Canal de voz permite elegir un único canal de voz del servidor y valida acceso y conexión
+al enviar. El anuncio muestra el enlace al canal elegido. Los lugares de reuniones anteriores
+se conservan; al editarlas se debe elegir un canal si antes tenían un lugar escrito.
 La creación de reunión se confirma al enviar el formulario; eventos mantienen su vista previa.
 
 ## Variables de entorno
@@ -125,7 +128,7 @@ Si falla la subida, se conserva la copia local y el proceso devuelve error; toda
 
 ## Pruebas locales
 
-Python 3.12 usado en la validación; Python 3.9+ es necesario por `zoneinfo`.
+Python 3.12 usado en la validación; Python 3.9+ es necesario por `zoneinfo`; discord.py debe ser 2.7.1 o superior.
 
 ```sh
 python -m venv .venv

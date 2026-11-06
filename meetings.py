@@ -2,6 +2,7 @@
 import asyncio
 import io
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -130,6 +131,11 @@ def escaped(text):
     return discord.utils.escape_markdown(str(text)).replace("@", "@\u200b")
 
 
+def meeting_location(value):
+    """Enlaza solo IDs de canal guardados; conserva texto de reuniones anteriores."""
+    return value if re.fullmatch(r"<#\d+>", value) else escaped(value)
+
+
 class MeetingSystem:
     def __init__(self, bot, path):
         self.bot = bot
@@ -177,7 +183,7 @@ class MeetingSystem:
         status = {"scheduled": "Confirmaciones abiertas", "cancelled": "Cancelada", "finished": "Finalizada"}.get(meeting["status"], "Preparando anuncio")
         embed = discord.Embed(title=f"{'🔒' if meeting['kind'] == 'staff' else '🌎'} {escaped(meeting['title'])}", description=escaped(meeting["description"]), color=0xD60000)
         embed.add_field(name="📅 Fecha y hora", value=f"🇵🇷 {local:%d/%m/%Y · %I:%M %p} — Puerto Rico\n🌎 Tu hora: <t:{meeting['starts_at']}:F>", inline=False)
-        embed.add_field(name="📍 Lugar o canal de voz", value=escaped(meeting["location"]), inline=False)
+        embed.add_field(name="📍 Lugar o canal de voz", value=meeting_location(meeting["location"]), inline=False)
         embed.add_field(name="📋 Agenda", value=escaped(meeting["agenda"]), inline=False)
         embed.add_field(name="Confirmaciones", value=" · ".join(f"{LABELS[k]}: **{counts[k]}**" for k in LABELS), inline=False)
         embed.add_field(name="Estado", value=f"{status}\n👥 Asistencia real registrada: {sum(r['present'] for r in attendance)}", inline=False)
@@ -282,20 +288,47 @@ class MeetingSystem:
 
 
 class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
-    name = discord.ui.TextInput(label="Nombre", max_length=90)
-    when = discord.ui.TextInput(label="Fecha y hora PR: AAAA-MM-DD HH:MM", max_length=16)
-    location = discord.ui.TextInput(label="Lugar o canal de voz", max_length=200)
-    agenda = discord.ui.TextInput(label="Agenda", style=discord.TextStyle.paragraph, max_length=500)
-    description = discord.ui.TextInput(label="Descripción", style=discord.TextStyle.paragraph, max_length=1200)
-
     def __init__(self, system, kind, meeting=None):
         super().__init__(timeout=900)
         self.system, self.kind, self.meeting = system, kind, meeting
+        self.name = discord.ui.TextInput(max_length=90)
+        self.when = discord.ui.TextInput(max_length=16, placeholder="2026-12-20 19:30")
+        defaults = []
+        if meeting and re.fullmatch(r"<#\d+>", meeting["location"]):
+            channel_id = int(meeting["location"][2:-1])
+            defaults = [discord.SelectDefaultValue(id=channel_id, type=discord.SelectDefaultValueType.channel)]
+        self.location = discord.ui.ChannelSelect(
+            custom_id="lvrp:meeting:voice",
+            channel_types=[discord.ChannelType.voice],
+            placeholder="Selecciona el canal de voz",
+            min_values=1, max_values=1, required=True,
+            default_values=defaults,
+        )
+        self.agenda = discord.ui.TextInput(style=discord.TextStyle.paragraph, max_length=500)
+        self.description = discord.ui.TextInput(style=discord.TextStyle.paragraph, max_length=1200)
+        for label, component in (
+            ("Nombre", self.name),
+            ("Fecha y hora PR: AAAA-MM-DD HH:MM", self.when),
+            ("Canal de voz", self.location),
+            ("Agenda", self.agenda),
+            ("Descripción", self.description),
+        ):
+            self.add_item(discord.ui.Label(text=label, component=component))
         if meeting:
             self.name.default = meeting["title"]
             self.when.default = datetime.fromtimestamp(meeting["starts_at"], PR).strftime("%Y-%m-%d %H:%M")
-            for key in ("location", "agenda", "description"):
+            for key in ("agenda", "description"):
                 getattr(self, key).default = meeting[key]
+
+    async def selected_location(self, interaction):
+        if len(self.location.values) != 1:
+            raise ValueError("Selecciona un canal de voz.")
+        voice = await self.system.channel_access(interaction, self.location.values[0].id)
+        if voice.type != discord.ChannelType.voice:
+            raise ValueError("Selecciona un canal de voz válido de este servidor.")
+        if not voice.permissions_for(interaction.user).connect:
+            raise app_commands.CheckFailure("No tienes permiso para conectarte a ese canal de voz.")
+        return f"<#{voice.id}>"
 
     async def on_submit(self, interaction):
         await interaction.response.defer(ephemeral=True)
@@ -307,7 +340,8 @@ class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
             raise ValueError("Usa AAAA-MM-DD HH:MM, hora de Puerto Rico en formato de 24 horas.")
         if date <= datetime.now(PR):
             raise ValueError("Selecciona una fecha futura.")
-        values = (self.name.value.strip(), int(date.timestamp()), self.location.value.strip(), self.agenda.value.strip(), self.description.value.strip())
+        location = await self.selected_location(interaction)
+        values = (self.name.value.strip(), int(date.timestamp()), location, self.agenda.value.strip(), self.description.value.strip())
         if any(not value for value in values):
             raise ValueError("Completa todos los campos.")
         async with system.lock:
