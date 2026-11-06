@@ -222,7 +222,7 @@ class LaVenganzaBot(discord.Client):
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
 
     async def close(self):
-        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task) if task]
+        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -405,7 +405,8 @@ async def refresh_event_summary(event_id):
             await client.summaries.remove("event", event_id, event["channel_id"])
         else:
             rows = await asyncio.to_thread(registered_users, event_id)
-            await client.summaries.update("event", event_id, event["channel_id"], event_summary(event, [row["user_id"] for row in rows]))
+            start = epoch(event["starts_at"]) if event["status"] == "open" else None
+            await client.summaries.update("event", event_id, event["channel_id"], event_summary(event, [row["user_id"] for row in rows]), starts_at=start)
         return ""
     except Exception:
         log.exception("Registro conservado; no se pudo actualizar la lista pública del evento #%s", event_id)
@@ -1286,6 +1287,12 @@ async def on_ready():
                     log.info("Lista de inscritos actualizada para el evento #%s", event["id"])
     except Exception:
         log.exception("No se pudieron sincronizar las listas de inscritos al conectar")
+    try:
+        for meeting in await client.meetings.call("active"):
+            async with client.meetings.lock:
+                await client.meetings.refresh_summary_notice(meeting["id"])
+    except Exception:
+        log.exception("No se pudieron sincronizar las confirmaciones al conectar")
     try:
         await client.meetings.voice_ready()
     except Exception:

@@ -2,13 +2,14 @@ import asyncio
 from pathlib import Path
 import sqlite3
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
 
 import discord
 from meetings import MeetingStore
-from summaries import SummaryMessages, event_summary, meeting_summary, mention_list
+from summaries import SummaryMessages, event_summary, meeting_summary, mention_list, with_countdown
 
 
 class SummaryTests(unittest.IsolatedAsyncioTestCase):
@@ -108,8 +109,11 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(embed.description), 4096)
         self.assertLessEqual(len(embed), 6000)
         self.assertIn('500/500', embed.description)
-        self.assertIn('<t:1798776000:F>', embed.fields[-1].value)
-        self.assertIn('<t:1798776000:R>', embed.fields[-1].value)
+        for kind in ('event', 'meeting'):
+            timed = with_countdown(embed, kind, 1798776000, 1798776000 - 90061)
+            self.assertIn('<t:1798776000:F>', timed.fields[-1].value)
+            self.assertIn('25 h · 01 min · 01 s', timed.fields[-1].value)
+            self.assertIn('Ya comenzó', with_countdown(embed, kind, 1, 1).fields[-1].value)
         self.assertFalse(event_summary(dict(event, status='finished'), []).fields)
         self.assertIn('más.', embed.description)
         meeting = dict(id=1, title='Staff', status='scheduled')
@@ -124,3 +128,14 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(large), 6000)
         self.assertTrue(all(len(field.value) <= 1024 for field in large.fields))
         self.assertNotIn('@everyone', mention_list([]))
+
+    async def test_clock_edits_same_list_and_stops_after_start(self):
+        self.bot.wait_until_ready = AsyncMock()
+        start = int(time.time()) + 2
+        await self.summaries.update('meeting', 9, 99, self.embed, starts_at=start)
+        task = self.summaries.countdowns['meeting', 9]
+        message = next(iter(self.messages.values()))
+        await asyncio.wait_for(task, timeout=5)
+        self.channel.send.assert_awaited_once()
+        self.assertIn('Ya comenzó', message.edit.call_args.kwargs['embed'].fields[-1].value)
+        self.assertFalse(self.summaries.countdowns)

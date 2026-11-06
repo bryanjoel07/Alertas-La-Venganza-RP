@@ -299,7 +299,8 @@ class MeetingSystem:
             if not meeting or not meeting["message_id"]:
                 return ""
             responses, _ = await self.call("lists", meeting_id)
-            await self.summaries.update("meeting", meeting_id, meeting["channel_id"], meeting_summary(meeting, responses))
+            start = meeting["starts_at"] if meeting["status"] == "scheduled" else None
+            await self.summaries.update("meeting", meeting_id, meeting["channel_id"], meeting_summary(meeting, responses), starts_at=start)
             return ""
         except Exception:
             log.exception("Registro conservado; no se pudo actualizar la lista pública de reunión #%s", meeting_id)
