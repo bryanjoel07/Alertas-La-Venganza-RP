@@ -27,10 +27,10 @@ class EventFeaturesTests(unittest.TestCase):
             db.executemany('INSERT INTO registrations VALUES (?,?)', [(key, u) for u in users])
         return key
 
-    def test_all_five_thresholds_once_and_restart(self):
+    def test_all_thresholds_including_start_once_and_restart(self):
         key = self.event()
         self.store.schedule(key, self.base)
-        self.assertEqual(EVENT_THRESHOLDS, (86400, 43200, 21600, 3600, 900))
+        self.assertEqual(EVENT_THRESHOLDS, (86400, 43200, 21600, 3600, 900, 0))
         for seconds in EVENT_THRESHOLDS:
             now = self.base + 100000 - seconds
             current, revision, claimed = self.store.claim(key, now)
@@ -45,7 +45,9 @@ class EventFeaturesTests(unittest.TestCase):
         self.assertIsNone(self.store.claim(key, self.base + 99910))
         expired = self.event(2)
         self.store.schedule(expired, self.base)
-        self.assertIsNone(self.store.claim(expired, self.base + 100001))
+        self.assertIsNone(self.store.claim(expired, self.base + 100090))
+        self.assertEqual(self.store.claim(key, self.base + 100029)[2], 0)
+        self.assertIsNone(EventFeatureStore(self.path).claim(key, self.base + 100059))
         for index, state in enumerate(('finished', 'closed'), 3):
             key = self.event(index, status=state)
             self.assertIsNone(self.store.claim(key, self.base + 99900))

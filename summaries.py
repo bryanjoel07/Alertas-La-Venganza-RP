@@ -3,6 +3,7 @@ import asyncio
 import logging
 import sqlite3
 from contextlib import closing
+from datetime import datetime
 
 import discord
 
@@ -104,6 +105,9 @@ def event_summary(event, users):
     status = {"open": "🟢 Inscripciones abiertas", "finished": "🏆 Evento finalizado", "closed": "🔒 Evento cerrado"}.get(event["status"], "Inscripciones cerradas")
     title = discord.utils.escape_markdown(str(event["title"])).replace("@", "@\u200b")
     embed = discord.Embed(title=f"📋 INSCRITOS — {title}", description=f"👥 **{len(users)}/{event['capacity']} participantes**\n{status}\n\n" + mention_list(users, limit=3400, numbered=True), color=0xD60000)
+    if event["status"] == "open":
+        start = int(datetime.fromisoformat(event["starts_at"]).timestamp())
+        embed.add_field(name="⏰ Inicio del evento", value=f"<t:{start}:F> · **<t:{start}:R>**", inline=False)
     embed.set_footer(text=f"LA VENGANZA RP | Evento #{event['id']} | Lista completa: Participantes o /evento participantes")
     return embed
 

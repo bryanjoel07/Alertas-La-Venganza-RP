@@ -103,11 +103,14 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(db.execute('SELECT state FROM public_summaries').fetchone()[0], 'removed')
 
     async def test_summary_formats_mentions_group_changes_and_discord_limits(self):
-        event = dict(id=1, title='Carrera', capacity=500, status='open')
+        event = dict(id=1, title='Carrera', capacity=500, status='open', starts_at='2027-01-01T00:00:00-04:00')
         embed = event_summary(event, list(range(100000000000000000, 100000000000000500)))
         self.assertLessEqual(len(embed.description), 4096)
         self.assertLessEqual(len(embed), 6000)
         self.assertIn('500/500', embed.description)
+        self.assertIn('<t:1798776000:F>', embed.fields[-1].value)
+        self.assertIn('<t:1798776000:R>', embed.fields[-1].value)
+        self.assertFalse(event_summary(dict(event, status='finished'), []).fields)
         self.assertIn('más.', embed.description)
         meeting = dict(id=1, title='Staff', status='scheduled')
         original = [{'user_id': 123, 'response': 'yes'}]

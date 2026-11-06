@@ -1279,6 +1279,14 @@ async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
     try:
+        for event in await client.event_features.call("active"):
+            async with client.lock:
+                warning = await refresh_event_summary(event["id"])
+                if not warning:
+                    log.info("Lista de inscritos actualizada para el evento #%s", event["id"])
+    except Exception:
+        log.exception("No se pudieron sincronizar las listas de inscritos al conectar")
+    try:
         await client.meetings.voice_ready()
     except Exception:
         log.exception("No se pudo reanudar observación de reuniones Staff")

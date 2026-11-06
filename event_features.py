@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import discord
 
 log = logging.getLogger('LaVenganzaRP.eventos')
-EVENT_THRESHOLDS = (86400, 43200, 21600, 3600, 900)
+EVENT_THRESHOLDS = (86400, 43200, 21600, 3600, 900, 0)
 PR = ZoneInfo('America/Puerto_Rico')
 
 
@@ -69,6 +69,9 @@ class EventFeatureStore:
             due = [s for s in EVENT_THRESHOLDS if starts - s <= now]
             eligible = [s for s in due if starts - s > baseline]
             chosen = min(eligible) if eligible and now < starts else None
+            # El ciclo corre cada 30 s. Tolera un ciclo perdido sin anunciar eventos antiguos.
+            if 0 in eligible and now < starts + 90:
+                chosen = 0
             claimed = False
             for seconds in due:
                 result = db.execute('INSERT OR IGNORE INTO event_reminders VALUES (?,?,?,?,?)', (event_id, revision, seconds, 'claimed' if seconds == chosen else 'skipped', now))
@@ -171,10 +174,13 @@ class EventFeatures:
                             if claim is None:
                                 continue
                             current, revision, seconds = claim
-                            label = {86400: '24 horas', 43200: '12 horas', 21600: '6 horas', 3600: '1 hora', 900: '15 minutos'}[seconds]
+                            heading = '🏁 EL EVENTO HA COMENZADO'
+                            if seconds:
+                                label = {86400: '24 horas', 43200: '12 horas', 21600: '6 horas', 3600: '1 hora', 900: '15 minutos'}[seconds]
+                                heading = f'🔔 EVENTO EN {label.upper()}'
                             name = discord.utils.escape_markdown(current['title']).replace('@', '@\u200b')
                             when = datetime.fromisoformat(current['starts_at']).astimezone(PR)
-                            embed = discord.Embed(title=f'🔔 EVENTO EN {label.upper()} | LA VENGANZA RP', description=f'🎉 **{name}**\n🇵🇷 {when:%d/%m/%Y · %I:%M %p} — Puerto Rico\n🌎 <t:{int(when.timestamp())}:F>\n[Ver evento](https://discord.com/channels/1244988345327550565/{current["channel_id"]}/{current["message_id"]})', color=0xD60000)
+                            embed = discord.Embed(title=f'{heading} | LA VENGANZA RP', description=f'🎉 **{name}**\n🇵🇷 {when:%d/%m/%Y · %I:%M %p} — Puerto Rico\n🌎 <t:{int(when.timestamp())}:F>\n[Ver evento](https://discord.com/channels/1244988345327550565/{current["channel_id"]}/{current["message_id"]})', color=0xD60000)
                             try:
                                 channel = self.bot.get_channel(current['channel_id']) or await self.bot.fetch_channel(current['channel_id'])
                                 await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
