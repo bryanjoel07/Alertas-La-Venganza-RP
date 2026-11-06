@@ -21,6 +21,7 @@ from player_cards import PlayerCard
 from diagnostics import read_database, status_embed
 from backup_meta import read_backup
 from backup_service import BackupService
+from link_spam import LinkSpamGuard
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -203,6 +204,7 @@ class LaVenganzaBot(discord.Client):
         self.monitor_task = None
         self.event_features = EventFeatures(self, DB_PATH, self.lock)
         self.summaries = SummaryMessages(self, DB_PATH)
+        self.link_spam = LinkSpamGuard(self, DB_PATH, GUILD_ID) if os.getenv("LINK_SPAM_ENABLED") == "1" else None
         self.meetings = MeetingSystem(self, DB_PATH, self.summaries)
         self.tree.add_command(self.meetings.group, guild=GUILD)
         self.backups = BackupService(self, DB_PATH, GUILD_ID)
@@ -210,6 +212,8 @@ class LaVenganzaBot(discord.Client):
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
+        if self.link_spam:
+            await self.link_spam.start()
         state = get_setting("last_state")
         self.tracker = StateTracker(state if state in ("up", "down") else None)
         self.add_view(EventButtons())
@@ -1276,9 +1280,19 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 
 
 @client.event
+async def on_message(message):
+    if client.link_spam:
+        await client.link_spam.observe(message)
+
+
+@client.event
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    if client.link_spam:
+        guild = client.get_guild(GUILD_ID)
+        if guild:
+            await client.link_spam.ready(guild)
     try:
         for event in await client.event_features.call("active"):
             async with client.lock:
