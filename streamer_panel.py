@@ -19,12 +19,22 @@ def application_embed(minimum):
                     "🎥 Un directo o una repetición pública de **La Venganza RP** en tu canal.",
         colour=PANEL_RED)
     embed.add_field(name="🎟️ Solicitar rol", value="Recibe un código privado válido por 24 horas. Ponlo junto a "
-                    "**La Venganza RP** en el título y usa **Verificar requisitos** para presentar el directo como prueba.", inline=False)
+                    "**La Venganza RP** en el título. En **Verificar requisitos**, pega el enlace que abre ese "
+                    "directo o su repetición para que el bot compruebe tu solicitud.", inline=False)
     embed.add_field(name="📋 Ver mi estado", value="Consulta el resultado en privado. Si faltan datos públicos, "
                     "el staff revisará tu prueba.", inline=False)
-    embed.add_field(name="✅ Al aprobarse tu solicitud", value="Aparecerá **🔗 Enviar enlace** en tu respuesta privada. "
-                    "Guarda tu canal. En <#1513653533340073994> anunciaremos tus directos de Twitch, YouTube, TikTok "
-                    "o Kick que lleven **La Venganza RP** en el título.", inline=False)
+    embed.add_field(name="🔗 ¿Qué enlace guardo para mis próximos directos?",
+                    value="Cuando te aprueben, pulsa **Ver mi estado → Enviar enlace**. Guarda una sola vez "
+                    "la **dirección principal de tu canal o perfil**, la que puedes abrir incluso cuando estás "
+                    "fuera de línea. Si el bot ya la rellenó, comprueba que sea tu canal y pulsa **Enviar**.", inline=False)
+    embed.add_field(name="📱 Si el campo está vacío", value="Abre tu perfil en la plataforma y copia el enlace "
+                    "desde **Compartir**. Estos son ejemplos de cómo se ve cada dirección:\n"
+                    "🟣 Twitch · `https://www.twitch.tv/tuusuario`\n"
+                    "🎵 TikTok · `https://www.tiktok.com/@tuusuario`\n"
+                    "🔴 YouTube · `https://www.youtube.com/channel/UC…`\n"
+                    "🟢 Kick · `https://kick.com/tuusuario`", inline=False)
+    embed.add_field(name="🔔 ¿Cuándo sale el aviso?", value="Pon **La Venganza RP** en el título de tus próximos "
+                    "directos. El bot usará el canal que guardaste para anunciarlos en <#1513653533340073994>.", inline=False)
     embed.set_footer(text="LA VENGANZA RP | Twitch · TikTok · YouTube · Otras plataformas")
     return embed
 
