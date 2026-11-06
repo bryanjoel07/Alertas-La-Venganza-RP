@@ -369,6 +369,65 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('tardó demasiado', interaction.followup.send.call_args.args[0])
         self.assertIn(42, self.bot.DRAFTS)
 
+    async def test_registration_and_cancel_refresh_public_list_without_losing_rows(self):
+        from unittest.mock import Mock, AsyncMock
+        with self.bot.database() as db:
+            key = db.execute("INSERT INTO events(message_id,channel_id,title,description,location,starts_at,capacity,prizes,status,created_by) VALUES (101,99,'Carrera','Texto','Ciudad','2030-01-01T00:00:00+00:00',30,'Premios','open','1')").lastrowid
+        interaction = Mock()
+        interaction.guild_id = self.bot.GUILD_ID
+        interaction.user.id = 123
+        interaction.message.id = 101
+        interaction.message.edit = AsyncMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        summaries = Mock()
+        summaries.update = AsyncMock()
+        summaries.remove = AsyncMock()
+        with patch.object(self.bot.client, 'summaries', summaries):
+            buttons = self.bot.EventButtons()
+            await buttons.registration(interaction, True)
+            embed = summaries.update.call_args.args[3]
+            self.assertIn('<@123>', embed.description)
+            self.assertEqual(self.bot.registered_count(key), 1)
+            await buttons.registration(interaction, True)
+            self.assertEqual(self.bot.registered_count(key), 1)
+            await buttons.registration(interaction, False)
+            self.assertNotIn('<@123>', summaries.update.call_args.args[3].description)
+            self.assertEqual(self.bot.registered_count(key), 0)
+            self.assertIsNotNone(self.bot.fetch_event(key))
+
+    async def test_meeting_response_updates_same_summary_and_preserves_status_groups(self):
+        from unittest.mock import Mock, AsyncMock
+        summaries = Mock()
+        summaries.update = AsyncMock()
+        system = MeetingSystem(Mock(), self.bot.DB_PATH, summaries)
+        system.store.initialize()
+        key = system.store.save(('Staff', 2000000000, '<#123456789012345678>', 'Agenda', 'Texto'), 1, 'staff')
+        system.store.publication(key, 202)
+        system.channel_access = AsyncMock()
+        system.refresh = AsyncMock()
+        interaction = Mock()
+        interaction.user.id = 456
+        interaction.message.id = 202
+        interaction.channel_id = CHANNELS['staff']
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        buttons = MeetingButtons(system)
+        await buttons.respond(interaction, 'yes')
+        await buttons.respond(interaction, 'no')
+        await buttons.respond(interaction, 'maybe')
+        self.assertEqual(summaries.update.await_count, 3)
+        self.assertTrue(all(call.args[:3] == ('meeting', key, CHANNELS['staff']) for call in summaries.update.call_args_list))
+        embed = summaries.update.call_args.args[3]
+        self.assertNotIn('<@456>', embed.fields[0].value)
+        self.assertNotIn('<@456>', embed.fields[1].value)
+        self.assertIn('<@456>', embed.fields[2].value)
+        self.assertEqual(len(system.store.lists(key)[0]), 1)
+        system.authorized_meeting = AsyncMock(return_value=system.store.get(key))
+        await system.end(interaction, key, 'cancelled')
+        self.assertIn('cancelada', summaries.update.call_args.args[3].description)
+        self.assertEqual(len(system.store.lists(key)[0]), 1)
+
     async def test_setup_initializes_once_and_syncs_without_network(self):
         from unittest.mock import AsyncMock
         bot = self.bot.LaVenganzaBot()

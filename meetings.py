@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
+from summaries import SUMMARY_SCHEMA, SummaryMessages, meeting_summary
 
 log = logging.getLogger("LaVenganzaRP.reuniones")
 GUILD_ID = 1244988345327550565
@@ -45,6 +46,7 @@ class MeetingStore:
         with self.db() as db:
             # Solo tablas nuevas: no se modifican eventos, settings ni inscripciones.
             for sql in (
+                SUMMARY_SCHEMA,
                 "CREATE TABLE IF NOT EXISTS meetings (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, channel_id INTEGER NOT NULL, message_id INTEGER UNIQUE, title TEXT NOT NULL, starts_at INTEGER NOT NULL, location TEXT NOT NULL, agenda TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'publishing', created_by INTEGER NOT NULL, created_at INTEGER NOT NULL, ended_at INTEGER, ended_by INTEGER)",
                 "CREATE TABLE IF NOT EXISTS meeting_responses (meeting_id INTEGER NOT NULL REFERENCES meetings(id), user_id INTEGER NOT NULL, response TEXT NOT NULL CHECK(response IN ('yes','no','maybe')), updated_at INTEGER NOT NULL, PRIMARY KEY(meeting_id,user_id))",
                 "CREATE TABLE IF NOT EXISTS meeting_attendance (meeting_id INTEGER NOT NULL REFERENCES meetings(id), user_id INTEGER NOT NULL, present INTEGER NOT NULL CHECK(present IN (0,1)), recorded_by INTEGER NOT NULL, recorded_at INTEGER NOT NULL, PRIMARY KEY(meeting_id,user_id))",
@@ -139,8 +141,9 @@ def meeting_location(value):
 
 
 class MeetingSystem:
-    def __init__(self, bot, path):
+    def __init__(self, bot, path, summaries=None):
         self.bot = bot
+        self.summaries = summaries if summaries is not None else SummaryMessages(bot, path)
         self.store = MeetingStore(path)
         self.lock = asyncio.Lock()
         self.task = None
@@ -218,13 +221,26 @@ class MeetingSystem:
         message = await channel.fetch_message(meeting["message_id"])
         await message.edit(embed=await self.embed(meeting), view=MeetingButtons(self, disabled=meeting["status"] != "scheduled"))
 
+    async def refresh_summary_notice(self, meeting_id):
+        try:
+            meeting = await self.call("get", meeting_id)
+            if not meeting or not meeting["message_id"]:
+                return ""
+            responses, _ = await self.call("lists", meeting_id)
+            await self.summaries.update("meeting", meeting_id, meeting["channel_id"], meeting_summary(meeting, responses))
+            return ""
+        except Exception:
+            log.exception("Registro conservado; no se pudo actualizar la lista pública de reunión #%s", meeting_id)
+            return "\n⚠️ Datos guardados; no se pudo actualizar la lista pública. Consulta /reunion asistencia."
+
     async def refresh_notice(self, meeting_id):
+        notice = ""
         try:
             await self.refresh(meeting_id)
-            return ""
         except discord.HTTPException:
             log.exception("Registro guardado; no se pudo actualizar reunión #%s", meeting_id)
-            return "\n⚠️ Registro guardado. No se pudo actualizar el anuncio; revisa los permisos del bot."
+            notice = "\n⚠️ Registro guardado. No se pudo actualizar el anuncio; revisa los permisos del bot."
+        return notice + await self.refresh_summary_notice(meeting_id)
 
     def register_commands(self):
         @self.group.command(name="crear", description="Abre el formulario de una reunión oficial")
@@ -381,7 +397,7 @@ class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
                     await system.call("publication", meeting_id)
                     raise
                 await system.call("publication", meeting_id, message.id)
-                notice = ""
+                notice = await system.refresh_summary_notice(meeting_id)
         await interaction.followup.send(f"✅ Reunión #{meeting_id} {'actualizada' if self.meeting else 'publicada'}." + notice, ephemeral=True)
 
     async def on_error(self, interaction, error):

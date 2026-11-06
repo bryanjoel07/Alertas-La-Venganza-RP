@@ -2,8 +2,8 @@
 
 Fecha: 6 de noviembre de 2026. Python 3.12, Linux, datos temporales.
 
-- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py` correcta.
-- 25 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
+- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py summaries.py` correcta.
+- 35 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
 - La entrega inicial pasó 15 pruebas con discord.py 2.4.0. Esa versión ya no es compatible
   con el selector de canales dentro del formulario. Se comprobó también 2.6.0 y no admite
   el parámetro required de ChannelSelect usado aquí: el mínimo se elevó a 2.7.1.
@@ -43,3 +43,11 @@ Canal Staff: se verifica y preselecciona 1515887667298963579 sin cambiar el cana
 por falta de permiso de conexión, conservación del canal anterior al editar y mensajes de
 validación del comando. El tipo y los permisos reales del canal de producción no se consultaron
 desde este entorno: se verifican con el bot al abrir/enviar el formulario.
+
+Listas públicas: se verificaron creación única, edición del mismo mensaje tras reinicio,
+actualizaciones concurrentes, separación por evento/reunión, reposición de lista eliminada,
+retiro al cerrar evento, ausencia de pings, entrega incierta sin duplicados, reintento tras
+rechazo de permisos y límites de Discord con listas grandes. Las pruebas de integración de
+botones verifican inscripción/cancelación, respuestas cambiantes y cancelación de reunión
+sin perder registros. `public_summaries` es una tabla nueva; no altera tablas anteriores.
+No se verificó la entrega/edición real de mensajes públicos en Discord desde este entorno.

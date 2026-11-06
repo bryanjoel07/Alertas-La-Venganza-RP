@@ -15,6 +15,7 @@ import discord
 from discord import app_commands
 from meetings import MeetingSystem, meeting_error
 from storage import database_path
+from summaries import SUMMARY_SCHEMA, SummaryMessages, event_summary
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -92,7 +93,7 @@ def init_db():
             event_id INTEGER NOT NULL,user_id INTEGER NOT NULL,
             joined_at TEXT NOT NULL,PRIMARY KEY(event_id,user_id)
         );
-        """)
+        """ + SUMMARY_SCHEMA)
 
 
 def get_setting(key, default=""):
@@ -191,7 +192,8 @@ class LaVenganzaBot(discord.Client):
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
-        self.meetings = MeetingSystem(self, DB_PATH)
+        self.summaries = SummaryMessages(self, DB_PATH)
+        self.meetings = MeetingSystem(self, DB_PATH, self.summaries)
         self.tree.add_command(self.meetings.group, guild=GUILD)
 
     async def setup_hook(self):
@@ -377,6 +379,23 @@ def event_embed(event, count, image_url=None):
     return embed
 
 
+async def refresh_event_summary(event_id):
+    """Se llama bajo client.lock: guarda los datos aunque Discord no permita editar la lista."""
+    try:
+        event = await asyncio.to_thread(fetch_event, event_id)
+        if not event or not event["message_id"]:
+            return ""
+        if event["status"] == "closed":
+            await client.summaries.remove("event", event_id, event["channel_id"])
+        else:
+            rows = await asyncio.to_thread(registered_users, event_id)
+            await client.summaries.update("event", event_id, event["channel_id"], event_summary(event, [row["user_id"] for row in rows]))
+        return ""
+    except Exception:
+        log.exception("Registro conservado; no se pudo actualizar la lista pública del evento #%s", event_id)
+        return "\n⚠️ Datos guardados; no se pudo actualizar la lista pública. Consulta Participantes."
+
+
 async def refresh_event(event_id, message=None):
     event = fetch_event(event_id)
     if not event or not event["message_id"]:
@@ -415,6 +434,7 @@ async def refresh_event(event_id, message=None):
             embed=event_embed(event, registered_count(event_id), image_url),
             view=EventButtons(registered_count(event_id), event["capacity"])
         )
+    await refresh_event_summary(event_id)
 
 
 # ==========================================
@@ -444,19 +464,19 @@ class EventButtons(discord.ui.View):
 
     @discord.ui.button(label="Participantes", emoji="📋", style=discord.ButtonStyle.primary, custom_id="lvrp:event:list")
     async def participants(self, interaction, button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
         event = event_from_message(interaction.message.id)
         if not event:
-            await interaction.response.send_message("❌ Evento no encontrado.", ephemeral=True)
+            await interaction.followup.send("❌ Evento no encontrado.", ephemeral=True)
             return
-        rows = registered_users(event["id"], 30)
-        total = registered_count(event["id"])
+        rows = await asyncio.to_thread(registered_users, event["id"])
+        total = len(rows)
         lines = "\n".join(f"{i}. <@{row['user_id']}>" for i, row in enumerate(rows, 1)) or "Todavía no hay inscritos."
-        if total > 30:
-            lines += f"\n... y {total - 30} más."
-        await interaction.response.send_message(
-            f"📋 **{safe(event['title'])}**\n👥 {total}/{event['capacity']}\n\n{lines}",
-            ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
-        )
+        text = f"📋 **{safe(event['title'])}**\n👥 {total}/{event['capacity']}\n\n{lines}"
+        if len(text) > 1900:
+            await interaction.followup.send("📋 Lista completa de inscritos (IDs de Discord):", file=discord.File(io.BytesIO(text.encode()), filename=f"participantes-{event['id']}.txt"), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await interaction.followup.send(text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
     async def registration(self, interaction, joining):
         if interaction.guild_id != GUILD_ID:
@@ -497,6 +517,7 @@ class EventButtons(discord.ui.View):
                     except Exception:
                         log.exception("Error actualizando botón de inscritos")
                         answer += "\n⚠️ La inscripción quedó guardada; consulta Participantes para el total."
+                answer += await refresh_event_summary(event["id"])
                 answer += f"\n👥 Inscritos actualmente: **{count_now}/{event['capacity']}**"
         await interaction.followup.send(answer, ephemeral=True)
 
@@ -696,7 +717,8 @@ class PublishView(AdminView):
                 with database() as db:
                     db.execute("UPDATE events SET message_id=?,image_url=? WHERE id=?", (message.id, image_ref, event_id))
                 DRAFTS.pop(self.owner, None)
-                await interaction.followup.send(f"✅ Evento **#{event_id}** publicado: {message.jump_url}", ephemeral=True)
+                notice = await refresh_event_summary(event_id)
+                await interaction.followup.send(f"✅ Evento **#{event_id}** publicado: {message.jump_url}" + notice, ephemeral=True)
             except Exception as error:
                 draft["publishing"] = False
                 log.exception("Error publicando evento")
@@ -737,6 +759,7 @@ async def evento_cerrar(interaction: discord.Interaction, evento_id: int):
             answer = "❌ Evento no encontrado."
         elif event["status"] == "closed":
             answer = f"ℹ️ El evento #{evento_id} ya está cerrado."
+            answer += await refresh_event_summary(evento_id)
         else:
             try:
                 if event["message_id"]:
@@ -754,6 +777,7 @@ async def evento_cerrar(interaction: discord.Interaction, evento_id: int):
                     "🔒 Inscripciones cerradas.\n"
                     "💾 Registro e inscripciones conservados."
                 )
+                answer += await refresh_event_summary(evento_id)
                 log.info("Evento #%s eliminado del canal por administrador %s", evento_id, interaction.user.id)
             except discord.Forbidden:
                 log.exception("Sin permisos para eliminar evento #%s", evento_id)
@@ -794,6 +818,7 @@ async def evento_finalizar(
             answer = "❌ Evento no encontrado."
         elif event["status"] == "finished":
             answer = "ℹ️ Este evento ya fue finalizado."
+            answer += await refresh_event_summary(evento_id)
         elif event["status"] == "closed":
             answer = "❌ Este evento fue cerrado y su anuncio eliminado."
         else:
@@ -848,6 +873,7 @@ async def evento_finalizar(
                     "Podio publicado con las menciones y nombres de Discord. "
                     "Las inscripciones quedaron cerradas."
                 )
+                answer += await refresh_event_summary(evento_id)
             except discord.Forbidden:
                 log.exception("Sin permisos para publicar ganadores del evento #%s", evento_id)
                 answer = "❌ No tengo permiso para publicar el podio en el canal de eventos."
@@ -864,16 +890,18 @@ async def evento_finalizar(
 @app_commands.describe(evento_id="ID del evento para consultar los jugadores inscritos")
 @app_commands.check(only_admin)
 async def evento_participantes(interaction: discord.Interaction, evento_id: int):
-    event = fetch_event(evento_id)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    event = await asyncio.to_thread(fetch_event, evento_id)
     if not event:
-        await interaction.response.send_message("❌ Evento no encontrado.", ephemeral=True)
+        await interaction.followup.send("❌ Evento no encontrado.", ephemeral=True)
         return
-    rows = registered_users(evento_id)
+    rows = await asyncio.to_thread(registered_users, evento_id)
     lines = [f"{i}. <@{row['user_id']}>" for i, row in enumerate(rows, 1)]
     text = f"📋 **{safe(event['title'])}**\n👥 {len(rows)} inscritos\n\n" + ("\n".join(lines) or "No hay inscritos.")
     if len(text) > 1900:
-        text = text[:1850] + "\n... Lista truncada."
-    await interaction.response.send_message(text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+        await interaction.followup.send("📋 Lista completa de inscritos (IDs de Discord):", file=discord.File(io.BytesIO(text.encode()), filename=f"participantes-{evento_id}.txt"), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+    else:
+        await interaction.followup.send(text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 # ==========================================

@@ -15,6 +15,7 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 - `bot.py`: conserva comandos y tablas originales; conecta el módulo de reuniones, protege formularios y corrige contadores al editar.
 - `meetings.py`: reuniones, permisos, confirmaciones, asistencia y recordatorios.
 - `storage.py`: selección de base con protección contra arranque vacío o ambiguo.
+- `summaries.py`: una lista pública editable y persistente por evento o reunión, sin notificaciones de menciones.
 - `backup.py`: copia consistente de SQLite, integridad, manifiesto SHA-256 y subida opcional a Drive.
 - `requirements.txt`: discord.py 2.7.1 o superior para el selector de voz dentro del formulario.
 - `requirements-backup.txt`: dependencia opcional para Google Drive.
@@ -77,6 +78,34 @@ formulario, para que Discord no tenga que terminar su subida antes de enviar el 
 La velocidad de subida sigue dependiendo de la conexión del usuario y de Discord.
 
 
+## Listas públicas de jugadores
+
+Al publicar un evento o reunión se añade un único mensaje de lista en el mismo canal, debajo
+del anuncio nuevo. En eventos muestra inscritos y cupos; en reuniones separa Asistirán, No
+asistirán y Tal vez. Las menciones se renderizan pero no envían notificaciones. Cambiar una
+respuesta mueve al miembro de grupo; cancelar inscripción lo retira de la lista. La asistencia
+real se mantiene separada y no se deduce de esta lista de confirmaciones.
+
+Cada cambio edita el mismo mensaje cuyo ID se guarda en `public_summaries`. Editar título,
+cupos o estado actualiza también la lista. Finalizar conserva la lista y marca el estado;
+cancelar reunión la conserva como registro. `/evento cerrar` elimina anuncio y lista, pero
+conserva todas las inscripciones y resultados en SQLite. No cambia ninguna tabla anterior.
+
+Los eventos/reuniones que ya existían reciben su lista al siguiente cambio de inscripción,
+respuesta o edición; no se publican mensajes en masa al arrancar. Si alguien elimina solo
+la lista, la siguiente actualización la repone. Las listas extensas muestran un resumen
+dentro del límite de Discord; Participantes y `/evento participantes` entregan la lista
+completa en un archivo cuando no cabe en un mensaje. `/reunion asistencia` conserva el
+informe completo por respuesta y presencia real. El canal privado de Staff no se sustituye
+por un canal público para enviar estas listas.
+
+Ante una entrega incierta (timeout, 5xx, caída entre envío y guardado del ID), la lista queda
+`pending` y no se publica otra automáticamente: revisar logs y mensajes del canal antes de
+reconciliar su ID en `public_summaries`. Esto evita duplicados, pero requiere intervención
+operativa en ese caso excepcional. Los rechazos definitivos por permisos se pueden reintentar
+en la siguiente actualización después de corregir permisos. El registro del jugador se conserva
+aunque falle el mensaje público y se muestra una advertencia privada.
+
 ## Variables de entorno
 
 | Variable | Uso |
@@ -97,7 +126,7 @@ No cambies estas variables ni montes el volumen en producción sin completar el 
 ## Recordatorios y persistencia
 
 El arranque agrega únicamente `meetings`, `meeting_responses`, `meeting_attendance`,
-`meeting_reminders` y un índice. No borra ni altera tablas anteriores.
+`meeting_reminders`, `public_summaries` y un índice. No borra ni altera tablas anteriores.
 Los recordatorios se revisan cada 30 segundos: 24 horas, 1 hora y 15 minutos antes.
 Si se cruzaron varios umbrales durante la desconexión, solo se reserva el más reciente.
 No se recuperan avisos anteriores a la creación ni posteriores al inicio de la reunión.
@@ -147,7 +176,7 @@ Python 3.12 usado en la validación; Python 3.9+ es necesario por `zoneinfo`; di
 ```sh
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py
+.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py summaries.py
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/pip check
 ```
