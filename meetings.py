@@ -14,6 +14,8 @@ from discord import app_commands
 log = logging.getLogger("LaVenganzaRP.reuniones")
 GUILD_ID = 1244988345327550565
 CHANNELS = {"staff": 1515887549678223380, "general": 1513422089162330184}
+STAFF_VOICE_ID = 1515887667298963579
+VOICE_TYPES = (discord.ChannelType.voice, discord.ChannelType.stage_voice)
 ROLES = {1245008186440683530, 1245010156576833536, 1300619682486947931, 1300627506801541230}
 PR = ZoneInfo("America/Puerto_Rico")
 THRESHOLDS = (86400, 3600, 900)
@@ -168,6 +170,26 @@ class MeetingSystem:
             raise app_commands.CheckFailure("No tienes acceso al canal de esta reunión.")
         return channel
 
+    async def voice_access(self, interaction, channel_id):
+        try:
+            voice = await self.channel_access(interaction, channel_id)
+        except discord.NotFound:
+            raise ValueError(f"No se encontró el canal de voz {channel_id} en este servidor.") from None
+        if voice.type not in VOICE_TYPES:
+            raise ValueError(f"El canal {channel_id} es de tipo {voice.type}; debe ser de voz o escenario.")
+        if not voice.permissions_for(interaction.user).connect:
+            raise app_commands.CheckFailure("Tu usuario necesita permiso Conectar en el canal de la reunión; los permisos del bot son independientes.")
+        return voice
+
+    async def preferred_voice(self, interaction, kind, meeting=None):
+        if meeting and re.fullmatch(r"<#\d+>", meeting["location"]):
+            return None  # Se conserva el canal anterior al editar.
+        if kind != "staff":
+            return None
+        voice = await self.voice_access(interaction, STAFF_VOICE_ID)
+        log.info("Canal de reunión Staff verificado: id=%s tipo=%s", voice.id, voice.type)
+        return voice.id
+
     async def authorized_meeting(self, interaction, meeting_id):
         self.admin(interaction)
         meeting = await self.call("get", meeting_id)
@@ -209,14 +231,16 @@ class MeetingSystem:
         @app_commands.choices(tipo=[app_commands.Choice(name="🔒 Staff", value="staff"), app_commands.Choice(name="🌎 General", value="general")])
         async def create(interaction: discord.Interaction, tipo: app_commands.Choice[str]):
             await self.channel_access(interaction, CHANNELS[tipo.value], admin=True)
-            await interaction.response.send_modal(MeetingModal(self, tipo.value))
+            preferred = await self.preferred_voice(interaction, tipo.value)
+            await interaction.response.send_modal(MeetingModal(self, tipo.value, preferred_voice_id=preferred))
 
         @self.group.command(name="editar", description="Edita una reunión sin perder sus confirmaciones")
         async def edit(interaction: discord.Interaction, reunion_id: int):
             meeting = await self.authorized_meeting(interaction, reunion_id)
             if meeting["status"] != "scheduled":
                 raise ValueError("La reunión ya no está activa.")
-            await interaction.response.send_modal(MeetingModal(self, meeting["kind"], meeting))
+            preferred = await self.preferred_voice(interaction, meeting["kind"], meeting)
+            await interaction.response.send_modal(MeetingModal(self, meeting["kind"], meeting, preferred_voice_id=preferred))
 
         @self.group.command(name="cancelar", description="Cancela y conserva el anuncio y los registros")
         async def cancel(interaction: discord.Interaction, reunion_id: int):
@@ -288,18 +312,20 @@ class MeetingSystem:
 
 
 class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
-    def __init__(self, system, kind, meeting=None):
+    def __init__(self, system, kind, meeting=None, preferred_voice_id=None):
         super().__init__(timeout=900)
         self.system, self.kind, self.meeting = system, kind, meeting
         self.name = discord.ui.TextInput(max_length=90)
         self.when = discord.ui.TextInput(max_length=16, placeholder="2026-12-20 19:30")
         defaults = []
+        if preferred_voice_id is not None:
+            defaults = [discord.SelectDefaultValue(id=preferred_voice_id, type=discord.SelectDefaultValueType.channel)]
         if meeting and re.fullmatch(r"<#\d+>", meeting["location"]):
             channel_id = int(meeting["location"][2:-1])
             defaults = [discord.SelectDefaultValue(id=channel_id, type=discord.SelectDefaultValueType.channel)]
         self.location = discord.ui.ChannelSelect(
             custom_id="lvrp:meeting:voice",
-            channel_types=[discord.ChannelType.voice],
+            channel_types=list(VOICE_TYPES),
             placeholder="Selecciona el canal de voz",
             min_values=1, max_values=1, required=True,
             default_values=defaults,
@@ -323,11 +349,7 @@ class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
     async def selected_location(self, interaction):
         if len(self.location.values) != 1:
             raise ValueError("Selecciona un canal de voz.")
-        voice = await self.system.channel_access(interaction, self.location.values[0].id)
-        if voice.type != discord.ChannelType.voice:
-            raise ValueError("Selecciona un canal de voz válido de este servidor.")
-        if not voice.permissions_for(interaction.user).connect:
-            raise app_commands.CheckFailure("No tienes permiso para conectarte a ese canal de voz.")
+        voice = await self.system.voice_access(interaction, self.location.values[0].id)
         return f"<#{voice.id}>"
 
     async def on_submit(self, interaction):

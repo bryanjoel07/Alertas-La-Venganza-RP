@@ -58,8 +58,10 @@ Los informes usan IDs de Discord para evitar errores con nombres duplicados.
 
 Discord admite cinco campos de texto por formulario: tipo se elige en el comando y fecha/hora
 se escriben juntas (`2026-12-20 19:30`, hora PR, formato de 24 horas).
-El campo Canal de voz permite elegir un único canal de voz del servidor y valida acceso y conexión
-al enviar. El anuncio muestra el enlace al canal elegido. Los lugares de reuniones anteriores
+El campo Canal de voz permite elegir un único canal de voz o escenario del servidor y valida acceso y conexión
+al enviar. El anuncio muestra el enlace al canal elegido. En nuevas reuniones Staff se preselecciona
+`1515887667298963579`, después de verificar que sea voz/escenario y que tu usuario tenga acceso
+y permiso de conexión. Los permisos del bot no sustituyen los permisos del usuario. Los lugares de reuniones anteriores
 se conservan; al editarlas se debe elegir un canal si antes tenían un lugar escrito.
 La creación de reunión se confirma al enviar el formulario; eventos mantienen su vista previa.
 

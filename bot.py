@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import aiohttp
 import discord
 from discord import app_commands
-from meetings import MeetingSystem
+from meetings import MeetingSystem, meeting_error
 from storage import database_path
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
@@ -1154,6 +1154,10 @@ async def historial_caidas(interaction: discord.Interaction):
 
 @client.tree.error
 async def command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    command = interaction.command
+    if command is not None and command.root_parent is client.meetings.group:
+        await meeting_error(interaction, getattr(error, "original", error))
+        return
     log.error("Error ejecutando comando: %r", error)
     if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
         answer = "❌ Solo administradores autorizados pueden ejecutar este comando."

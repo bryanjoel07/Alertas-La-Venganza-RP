@@ -207,7 +207,7 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fields[2]['label'], 'Canal de voz')
         select = fields[2]['component']
         self.assertEqual(select['type'], 8)
-        self.assertEqual(select['channel_types'], [2])
+        self.assertEqual(select['channel_types'], [2, 13])
         self.assertTrue(select['required'])
         existing = dict(id=1, title='Reunión', starts_at=2000000000, location='<#123456789012345678>', agenda='Agenda', description='Texto')
         edited = MeetingModal(Mock(), 'staff', existing)
@@ -226,7 +226,7 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         voice.id = 123456789012345678
         voice.type = discord.ChannelType.voice
         voice.permissions_for.return_value.connect = True
-        system = Mock()
+        system = MeetingSystem(Mock(), self.bot.DB_PATH)
         system.channel_access = AsyncMock(return_value=voice)
         modal = MeetingModal(system, 'staff')
         interaction = Mock()
@@ -240,6 +240,54 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         voice.type = discord.ChannelType.text
         with self.assertRaises(ValueError):
             await modal.selected_location(interaction)
+
+    async def test_staff_voice_is_preselected_and_announcement_destination_preserved(self):
+        from unittest.mock import Mock, AsyncMock
+        from types import SimpleNamespace
+        import discord
+        staff_id = 1515887667298963579
+        system = MeetingSystem(Mock(), self.bot.DB_PATH)
+        voice = Mock(id=staff_id)
+        voice.id = staff_id
+        voice.type = discord.ChannelType.stage_voice
+        voice.permissions_for.return_value.connect = True
+        system.channel_access = AsyncMock(return_value=voice)
+        interaction = Mock()
+        preferred = await system.preferred_voice(interaction, 'staff')
+        self.assertEqual(preferred, staff_id)
+        modal = MeetingModal(system, 'staff', preferred_voice_id=preferred)
+        self.assertEqual(modal.location.default_values[0].id, staff_id)
+        self.assertEqual(CHANNELS['staff'], 1515887549678223380)
+        modal.location._values = [SimpleNamespace(id=staff_id)]
+        self.assertEqual(await modal.selected_location(interaction), f'<#{staff_id}>')
+        voice.permissions_for.return_value.connect = False
+        with self.assertRaises(discord.app_commands.CheckFailure):
+            await system.preferred_voice(interaction, 'staff')
+        system.channel_access.reset_mock()
+        self.assertIsNone(await system.preferred_voice(interaction, 'general'))
+        system.channel_access.assert_not_awaited()
+
+    async def test_edit_retains_existing_voice_instead_of_staff_default(self):
+        from unittest.mock import Mock
+        system = MeetingSystem(Mock(), self.bot.DB_PATH)
+        existing = dict(id=1, title='Reunión', starts_at=2000000000, location='<#123456789012345678>', agenda='Agenda', description='Texto')
+        self.assertIsNone(await system.preferred_voice(Mock(), 'staff', existing))
+        modal = MeetingModal(system, 'staff', existing, preferred_voice_id=1515887667298963579)
+        self.assertEqual(modal.location.default_values[0].id, 123456789012345678)
+
+    async def test_meeting_command_reports_actual_validation_error(self):
+        from unittest.mock import Mock, AsyncMock
+        import discord
+        command = self.bot.client.meetings.group.get_command('crear')
+        interaction = Mock()
+        interaction.command = command
+        interaction.response.is_done.return_value = False
+        interaction.response.send_message = AsyncMock()
+        cause = ValueError('El canal elegido no es de voz.')
+        error = discord.app_commands.CommandInvokeError(command, cause)
+        with patch('meetings.log.error'):
+            await self.bot.command_error(interaction, error)
+        interaction.response.send_message.assert_awaited_once_with('❌ El canal elegido no es de voz.', ephemeral=True)
 
     async def test_create_opens_modal_without_waiting_for_attachment(self):
         from unittest.mock import AsyncMock, Mock
