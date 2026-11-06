@@ -11,7 +11,7 @@ from pathlib import Path
 import discord
 from discord import app_commands
 
-from stream_proof import public_link, supported_url
+from stream_proof import public_link, supported_url, live_target
 from streamer_panel import ApprovedButtons, ProofButtons
 
 
@@ -42,9 +42,10 @@ def decision(data, code, minimum):
     return "verificada"
 
 
-async def inspect_stream(url):
+async def inspect_stream(url, *, live=False):
+    args = ["--live", url] if live else [url]
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, str(Path(__file__).with_name("stream_proof.py")), url,
+        sys.executable, str(Path(__file__).with_name("stream_proof.py")), *args,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
     try:
         output, _ = await asyncio.wait_for(proc.communicate(), timeout=35)
@@ -127,7 +128,9 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             if self.is_approved(current) and current["owner"] == row["owner"]:
                 db.execute("INSERT OR REPLACE INTO streamer_profiles VALUES (?,?,?,?)",
                            (row["id"], row["owner"], expected, expected))
-                msg = f"✅ Guardé tu canal para futuros avisos: <{expected}>."
+                msg = f"✅ Guardé tu canal: <{expected}>. "
+                msg += ("Anunciaré en <#1513653533340073994> tus directos que lleven **La Venganza RP** en el título."
+                        if live_target(expected) else "Todavía no puedo detectar directos automáticamente en esta dirección.")
             else:
                 msg = "La solicitud cambió. Consulta Ver mi estado."
         await interaction.followup.send(msg, ephemeral=True)

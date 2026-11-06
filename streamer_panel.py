@@ -23,7 +23,8 @@ def application_embed(minimum):
     embed.add_field(name="📋 Ver mi estado", value="Consulta el resultado en privado. Si faltan datos públicos, "
                     "el staff revisará tu prueba.", inline=False)
     embed.add_field(name="✅ Al aprobarse tu solicitud", value="Aparecerá **🔗 Enviar enlace** en tu respuesta privada. "
-                    "Ahí podrás guardar tu canal de creador para futuros avisos.", inline=False)
+                    "Guarda tu canal. En <#1513653533340073994> anunciaremos tus directos de Twitch, YouTube, TikTok "
+                    "o Kick que lleven **La Venganza RP** en el título.", inline=False)
     embed.set_footer(text="LA VENGANZA RP | Twitch · TikTok · YouTube · Otras plataformas")
     return embed
 

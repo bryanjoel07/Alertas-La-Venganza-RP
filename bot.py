@@ -23,6 +23,7 @@ from backup_meta import read_backup
 from backup_service import BackupService
 from link_spam import LinkSpamGuard
 from streamers import Streamers
+from live_alerts import LiveAlerts
 from streamer_panel import StreamerPanel
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
@@ -214,11 +215,13 @@ class LaVenganzaBot(discord.Client):
         self.streamers = Streamers(DB_PATH)
         self.tree.add_command(self.streamers, guild=GUILD)
         self.streamer_panel = StreamerPanel(self, self.streamers)
+        self.live_alerts = LiveAlerts(self, self.streamers, GUILD_ID)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
+        self.live_alerts.start()
         if self.link_spam:
             await self.link_spam.start()
         state = get_setting("last_state")
@@ -234,6 +237,7 @@ class LaVenganzaBot(discord.Client):
 
     async def close(self):
         self.streamer_panel.install.cancel()
+        self.live_alerts.poll.cancel()
         tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()

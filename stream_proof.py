@@ -100,9 +100,70 @@ def twitch_profile(owner):
         return "https://www.twitch.tv/" + user["login"]
 
 
+def live_target(profile):
+    url = public_link(profile)
+    host = url.hostname.removeprefix("www.")
+    path = url.path.rstrip("/")
+    if host == "twitch.tv" and re.fullmatch(r"/\w{1,25}", path, re.ASCII):
+        return "Twitch", "https://www.twitch.tv" + path.lower()
+    if host in {"youtube.com", "m.youtube.com"} and re.fullmatch(r"/(?:channel/UC[\w-]{22}|@[\w.%-]+)", path):
+        return "YouTube", "https://www.youtube.com" + path + "/live"
+    if host == "tiktok.com" and re.fullmatch(r"/@[A-Za-z0-9_.]{2,24}", path):
+        return "TikTok", "https://www.tiktok.com" + path + "/live"
+    if host == "kick.com" and re.fullmatch(r"/[A-Za-z0-9_-]+", path):
+        return "Kick", "https://kick.com" + path.lower()
+    return None
+
+
+def current_live(profile):
+    from yt_dlp import YoutubeDL
+
+    target = live_target(profile)
+    if not target:
+        return None
+    platform, link = target
+    with YoutubeDL(dict(quiet=True, no_warnings=True, noplaylist=True, socket_timeout=6,
+                        retries=0, extractor_retries=0, cachedir=False)) as client:
+        if platform == "Twitch":
+            ie = client.get_info_extractor("TwitchStream")
+            login = link.rsplit("/", 1)[1]
+            query = {"query": "query($login:String!){user(login:$login){id stream{id type} broadcastSettings{title}}}",
+                     "variables": {"login": login}}
+            user = ie._download_base_gql(login, query, "Public live status")["data"]["user"]
+            if not user or not user.get("stream") or user["stream"].get("type") != "live":
+                return None
+            session, title, owner = user["stream"]["id"], user["broadcastSettings"]["title"], user["id"]
+        else:
+            info = client.extract_info(link, download=False)
+            if info.get("live_status") != "is_live" or info.get("availability") not in {None, "public"}:
+                return None
+            session, title = info.get("id"), info.get("title")
+            owner = info.get("uploader_id" if platform == "TikTok" else "channel_id")
+            if platform == "YouTube":
+                if not re.fullmatch(r"[\w-]{11}", session or ""):
+                    return None
+                if "/channel/" in link and link.split("/")[-2] != owner:
+                    return None
+                if "/@" in link:
+                    from urllib.parse import unquote
+                    if unquote(link.split("/")[-2]).casefold() != (info.get("uploader_id") or "").casefold():
+                        return None
+                link = f"https://www.youtube.com/watch?v={session}"
+        if not session or not owner or not title:
+            return None
+        return {"platform": platform, "session": str(session), "owner": f"{platform.lower()}:{owner}",
+                "title": title, "link": link}
+
+
 if __name__ == "__main__":
     try:
-        print(json.dumps(twitch_profile(sys.argv[1]) if sys.argv[1].startswith("twitch:") else metadata(sys.argv[1])))
+        if sys.argv[1] == "--live":
+            result = current_live(sys.argv[2])
+        elif sys.argv[1].startswith("twitch:"):
+            result = twitch_profile(sys.argv[1])
+        else:
+            result = metadata(sys.argv[1])
+        print(json.dumps(result))
     except Exception:
         # An unavailable platform is a review case, never a successful check.
         print("null")
