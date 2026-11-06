@@ -17,6 +17,9 @@ from meetings import MeetingSystem, meeting_error
 from storage import database_path
 from summaries import SUMMARY_SCHEMA, SummaryMessages, event_summary
 from event_features import EventFeatures
+from player_cards import PlayerCard
+from diagnostics import read_database, status_embed
+from backup_meta import read_backup
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -190,6 +193,9 @@ intents.voice_states = True
 class LaVenganzaBot(discord.Client):
     def __init__(self):
         super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none())
+        self.started_monotonic = time.monotonic()
+        self.monitor_last_read = None
+        self.monitor_last_error = None
         self.tree = app_commands.CommandTree(self)
         self.lock = asyncio.Lock()
         self.tracker = None
@@ -265,6 +271,7 @@ async def monitor_server():
     while not client.is_closed():
         try:
             state = await fetch_panel_state()
+            client.monitor_last_read = int(time.time())
             if state != last_observed:
                 log.info("Estado observado: %s", state)
                 last_observed = state
@@ -280,6 +287,7 @@ async def monitor_server():
                         record_outage(event)
                         client.tracker.confirmed(event)
         except Exception:
+            client.monitor_last_error = int(time.time())
             log.exception("Error monitoreando Connect")
         await asyncio.sleep(CHECK_INTERVAL)
 
@@ -758,6 +766,25 @@ async def event_history_access(interaction):
     channel = client.get_channel(EVENT_CHANNEL_ID) or await client.fetch_channel(EVENT_CHANNEL_ID)
     if not channel.permissions_for(interaction.user).view_channel:
         raise app_commands.CheckFailure("No tienes acceso al canal de eventos")
+
+
+@client.tree.command(name="perfil", description="Tarjeta del jugador con avatar, eventos, podios y posición histórica", guild=GUILD)
+@app_commands.describe(jugador="Opcional: selecciona un jugador; si lo omites se muestra tu perfil")
+async def perfil(interaction: discord.Interaction, jugador: discord.Member = None):
+    await interaction.response.defer(thinking=True)
+    await event_history_access(interaction)
+    member = jugador or interaction.user
+    view = PlayerCard(client, interaction.user.id, member, event_history_access)
+    view.message = await interaction.followup.send(embed=await view.render(), view=view, wait=True, allowed_mentions=discord.AllowedMentions.none())
+
+
+@client.tree.command(name="estado-bot", description="Diagnóstico privado del monitor, tareas, SQLite y último respaldo registrado", guild=GUILD)
+@app_commands.default_permissions(administrator=True)
+@app_commands.check(only_admin)
+async def estado_bot(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    database_info, backup_info = await asyncio.gather(asyncio.to_thread(read_database, DB_PATH), asyncio.to_thread(read_backup, DB_PATH))
+    await interaction.followup.send(embed=status_embed(client, DB_PATH, database_info, backup_info), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 @event_group.command(name="historial", description="Consulta resultados de todos los eventos finalizados, cinco por página")

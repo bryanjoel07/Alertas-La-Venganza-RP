@@ -149,6 +149,7 @@ class MeetingSystem:
         self.store = MeetingStore(path)
         self.staff = StaffReports(path)
         self.initialized = False
+        self.last_check_at = None
         self.lock = asyncio.Lock()
         self.task = None
         self.group = app_commands.Group(name="reunion", description="Reuniones oficiales de LA VENGANZA RP", guild_only=True)
@@ -401,6 +402,7 @@ class MeetingSystem:
     async def reminders(self):
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
+            self.last_check_at = int(datetime.now(timezone.utc).timestamp())
             try:
                 for meeting in await self.call("active"):
                     try:

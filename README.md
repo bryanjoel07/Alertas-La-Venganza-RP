@@ -15,7 +15,10 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 - `bot.py`: conserva comandos y tablas originales; conecta el módulo de reuniones, protege formularios y corrige contadores al editar.
 - `meetings.py`: reuniones, permisos, confirmaciones, asistencia, informes y recordatorios.
 - `staff_reports.py`: presencia observada en voz y comparación con confirmaciones de Staff.
-- `event_features.py`: historial, top 10 y cinco recordatorios de eventos.
+- `event_features.py`: historial, top 10, datos del perfil y cinco recordatorios de eventos.
+- `player_cards.py`: tarjeta con avatar, podios, posición, páginas y descarga completa.
+- `diagnostics.py`: diagnóstico privado de tareas, monitor, SQLite y respaldos.
+- `backup_meta.py`: constancia atómica de copias verificadas, sin credenciales.
 - `storage.py`: selección de base con protección contra arranque vacío o ambiguo.
 - `summaries.py`: una lista pública editable y persistente por evento o reunión, sin notificaciones de menciones.
 - `backup.py`: copia consistente de SQLite, integridad, manifiesto SHA-256 y subida opcional a Drive.
@@ -38,6 +41,8 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 | `/evento editar` | Nombre, fecha, hora, lugar y descripción; conserva inscritos | Administrador Discord |
 | `/evento premios` | Tres premios y cupos; no reduce por debajo de los inscritos | Administrador Discord |
 | `/evento banner` | Cambia imagen del anuncio | Administrador Discord |
+| `/perfil jugador` | Tarjeta propia o de otro jugador; páginas y descarga de eventos | Miembros con acceso al canal de eventos |
+| `/estado-bot` | Diagnóstico privado del proceso, monitor, tareas, base y respaldo | Administrador Discord |
 | `/evento historial pagina` | Resultados de eventos finalizados, cinco por página | Miembros con acceso al canal de eventos |
 | `/evento ranking` | Top 10 por participaciones, con podios y desempate estable | Miembros con acceso al canal de eventos |
 | `/evento participantes` | Lista de inscritos (con límite de texto original) | Administrador Discord |
@@ -122,6 +127,7 @@ aunque falle el mensaje público y se muestra una advertencia privada.
 | `DATA_DIR` | Compatibilidad anterior si no hay `DB_PATH` |
 | `RAILWAY_VOLUME_MOUNT_PATH` | Variable de Railway, último directorio alternativo antes de `/tmp` |
 | `ALLOW_EMPTY_DB` | `0` por defecto. `1` solo para instalar una base nueva o pruebas; nunca como solución a datos desaparecidos |
+| `BACKUP_STATUS_PATH` | Opcional: ruta absoluta de la constancia de respaldo; por defecto `backup-status.json` junto a SQLite |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Solo para respaldos Drive: ruta de archivo secreto OAuth o identidad de servicio compatible con ADC |
 
 `DB_PATH` tiene prioridad. Se conserva la elección anterior de directorio, pero un destino inexistente
@@ -156,6 +162,46 @@ Los eventos abiertos y cerrados sin resultados no suman participaciones. Se calc
 los registros existentes; no se inventa asistencia real de eventos ni se recuperan datos perdidos
 antes de configurar el volumen. Ambas consultas son privadas para quien las ejecuta y requieren
 acceso al canal oficial de eventos. Los comandos administrativos anteriores conservan sus permisos.
+
+## Tarjeta del jugador
+
+`/perfil` abre tu tarjeta y `/perfil jugador:@Miembro` muestra la de otro jugador.
+La tarjeta es un mensaje con identidad roja, avatar de Discord, nombre/usuario, eventos
+registrados, participaciones finalizadas, primeros/segundos/terceros lugares y posición
+en la clasificación completa (también si está fuera del top 10). Usa los mismos desempates
+que `/evento ranking`, sin modificar resultados anteriores.
+
+Incluye cinco eventos por página con fecha, lugar, estado y resultado individual. Los
+botones Anterior/Siguiente editan la misma tarjeta; Actualizar vuelve a consultar los datos
+y Historial completo descarga un archivo privado con todos los eventos de ese jugador,
+su descripción y premios anunciados. Los controles pertenecen a quien abrió la consulta
+y expiran a los 15 minutos; después se puede ejecutar `/perfil` de nuevo. La tarjeta no
+necesita una tabla nueva ni registrar avatares en disco. Solo muestra datos de eventos;
+no expone reuniones privadas ni asistencia de Staff.
+
+La lista de eventos incluye inscripciones activas y eventos cerrados/con resultados.
+Las estadísticas de clasificación suman solo finalizados/con resultados, una vez por evento.
+Una inscripción cancelada que ya no exista no se puede reconstruir; tampoco eventos perdidos
+antes de disponer del volumen. Inscripción o podio no demuestra asistencia real.
+
+## Diagnóstico privado
+
+`/estado-bot` requiere permiso Administrador y responde de forma efímera. Muestra conexión
+a Discord, latencia, tiempo activo del proceso, último estado FiveM confirmado, mantenimiento,
+cambio pendiente y tiempos de última lectura/error del monitor. También muestra el estado
+de las tres tareas automáticas y la última revisión iniciada de avisos de reuniones/eventos.
+
+Lee SQLite en un hilo, con apertura de solo lectura: ruta activa, tamaño del archivo,
+quick_check, tablas esperadas, conteos y si detecta un montaje en el directorio. No revela
+tokens, webhooks, variables de entorno completas ni trazas de errores. Detectar un montaje
+no demuestra por sí solo que se pueda recuperar una base tras una pérdida del volumen.
+
+El último respaldo se obtiene de la constancia creada por `backup.py`. Sin constancia válida
+se muestra «No hay respaldo verificado registrado»; no se presupone que un archivo temporal
+o un volumen sean un respaldo. La integridad indicada corresponde a la comprobación al
+crear la copia, no a una nueva comprobación en cada consulta. La disponibilidad local compara
+existencia/tamaño; el estado de Drive corresponde a la última subida verificada, sin consultar
+si el archivo todavía existe en Drive. Esta función no activa ni programa respaldos.
 
 ## Recordatorios de eventos
 
@@ -211,6 +257,12 @@ python backup.py --source /RUTA/ACTIVA/lavenganza.sqlite3 --output /RUTA/RESPALD
 Usa `sqlite3.Connection.backup`, verifica integridad y crea un manifiesto con SHA-256 y conteos.
 No sobrescribe destinos. No restaura ni borra respaldos. Respalda también el manifiesto.
 Una copia en `/tmp` o en el mismo volumen NO es protección externa.
+Al ejecutar `backup.py` se registra también la fecha, origen, integridad y resultado de Drive
+en `backup-status.json` junto a la base, con permisos privados y reemplazo atómico;
+`BACKUP_STATUS_PATH` permite seleccionar otra ruta absoluta fuera del repositorio.
+Una copia hecha con herramientas antiguas no tendrá esta constancia y no se inventará su estado.
+La subida se distingue como no solicitada, pendiente, verificada o fallida; si falla, se conserva
+la copia local y el diagnóstico lo muestra. La constancia no contiene claves ni refresh tokens.
 El script es manual: no hay un respaldo automático activado silenciosamente.
 Para automatizarlo, un operador debe programar su ejecución en un entorno con acceso a la base
 y a almacenamiento externo, definir frecuencia y revisar fallos. No asumir que otro servicio
@@ -238,7 +290,7 @@ Python 3.12 usado en la validación; Python 3.9+ es necesario por `zoneinfo`; di
 ```sh
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py
+.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py player_cards.py diagnostics.py backup_meta.py
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/pip check
 ```

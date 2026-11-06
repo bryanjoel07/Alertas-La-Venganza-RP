@@ -9,3 +9,6 @@ __pycache__/
 *credentials*.json
 *service-account*.json
 *.zip
+
+backup-status.json
+.backup-status-*.tmp

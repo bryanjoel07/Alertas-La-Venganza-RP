@@ -2,8 +2,8 @@
 
 Fecha: 6 de noviembre de 2026. Python 3.12, Linux, datos temporales.
 
-- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py` correcta.
-- 52 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
+- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py player_cards.py diagnostics.py backup_meta.py` correcta.
+- 66 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
 - La entrega inicial pasó 15 pruebas con discord.py 2.4.0. Esa versión ya no es compatible
   con el selector de canales dentro del formulario. Se comprobó también 2.6.0 y no admite
   el parámetro required de ChannelSelect usado aquí: el mínimo se elevó a 2.7.1.
@@ -61,3 +61,15 @@ publicación del informe al finalizar, conservación de RSVP/visitas, eliminaci�
 panel, cancelación sin informe final y reintento seguro si no se pudo eliminar el panel.
 Se mantiene una única tarea de avisos de eventos tras inicialización repetida.
 No se conectó a voz ni se probaron eventos Gateway o recordatorios reales contra Discord.
+
+Perfiles y estado: se verificaron posición fuera del top 10, coherencia con ranking, eventos
+abiertos/cerrados/finalizados, paginación completa y perfil sin historial. Tarjeta: avatar,
+usuario, límites de Discord, controles exclusivos del solicitante, actualización del mismo
+mensaje, exportación privada y caducidad. Estado: respuesta efímera y control de Administrador,
+SQLite de solo lectura sin crear archivos ausentes, tareas activas/fallidas, diagnóstico sin
+credenciales, respaldo desconocido honesto, constancia privada y atómica, separación local/Drive
+y registro de fallo de subida sin eliminar la copia local. No se añadieron ni migraron tablas.
+No se verificó la presentación real de la tarjeta en iPhone ni una subida real de respaldo a Drive.
+
+Las lecturas de historial, clasificación y perfil abren SQLite en modo de solo lectura; se verificó
+que consultar un perfil no cree una base nueva si el archivo esperado falta.

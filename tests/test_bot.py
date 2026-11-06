@@ -157,7 +157,7 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         import discord
         bot = self.bot.client
         commands = bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))
-        self.assertEqual({c.name for c in commands}, {'evento', 'mantenimiento', 'reunion', 'testalert', 'simular-ciclo', 'historial-caidas'})
+        self.assertEqual({c.name for c in commands}, {'evento', 'mantenimiento', 'reunion', 'testalert', 'simular-ciclo', 'historial-caidas', 'perfil', 'estado-bot'})
         for command in commands:
             payload = command.to_dict(bot.tree)
             self.assertLessEqual(len(payload['description']), 100)
@@ -436,6 +436,20 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         await system.end(interaction, key, 'cancelled')
         self.assertIn('cancelada', summaries.update.call_args.args[3].description)
         self.assertEqual(len(system.store.lists(key)[0]), 1)
+
+    async def test_status_command_is_private_and_admin_checked(self):
+        from unittest.mock import AsyncMock, Mock
+        interaction = Mock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        await self.bot.estado_bot.callback(interaction)
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+        self.assertTrue(interaction.followup.send.call_args.kwargs['ephemeral'])
+        self.assertIn(self.bot.only_admin, self.bot.estado_bot.checks)
+        self.assertTrue(self.bot.estado_bot.default_permissions.administrator)
+        embed = interaction.followup.send.call_args.kwargs['embed']
+        self.assertNotIn('offline-placeholder', str(embed.to_dict()))
+        self.assertNotIn('example.invalid', str(embed.to_dict()))
 
     async def test_setup_initializes_once_and_syncs_without_network(self):
         from unittest.mock import AsyncMock

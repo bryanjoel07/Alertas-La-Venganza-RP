@@ -4,6 +4,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 import logging
 import sqlite3
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import discord
@@ -21,7 +22,9 @@ class EventFeatureStore:
     def __init__(self, path):
         self.path = path
 
-    def connection(self):
+    def connection(self, readonly=False):
+        if readonly:
+            return sqlite3.connect(Path(self.path).resolve().as_uri() + '?mode=ro', uri=True, timeout=5)
         return sqlite3.connect(self.path, timeout=5)
 
     def initialize(self):
@@ -49,7 +52,7 @@ class EventFeatureStore:
                 self._schedule(db, event_id, int(datetime.fromisoformat(row[0]).timestamp()), now)
 
     def active(self):
-        with closing(self.connection()) as db:
+        with closing(self.connection(readonly=True)) as db:
             db.row_factory = sqlite3.Row
             return [dict(r) for r in db.execute("SELECT * FROM events WHERE status='open' AND message_id IS NOT NULL")]
 
@@ -78,31 +81,59 @@ class EventFeatureStore:
             db.execute('UPDATE event_reminders SET state=?,updated_at=? WHERE event_id=? AND revision=? AND seconds=?', (state, timestamp(), event_id, revision, seconds))
 
     def history(self, page=1):
-        with closing(self.connection()) as db:
+        with closing(self.connection(readonly=True)) as db:
             db.row_factory = sqlite3.Row
             condition = "(status='finished' OR NULLIF(winner1,'') IS NOT NULL OR NULLIF(winner2,'') IS NOT NULL OR NULLIF(winner3,'') IS NOT NULL)"
             total = db.execute('SELECT COUNT(*) FROM events WHERE ' + condition).fetchone()[0]
             rows = [dict(r) for r in db.execute('SELECT * FROM events WHERE ' + condition + ' ORDER BY starts_at DESC,id DESC LIMIT 5 OFFSET ?', ((page - 1) * 5,))]
             return rows, total
 
+    def _standings(self, db):
+        completed = list(db.execute("SELECT id,winner1,winner2,winner3 FROM events WHERE status='finished' OR NULLIF(winner1,'') IS NOT NULL OR NULLIF(winner2,'') IS NOT NULL OR NULLIF(winner3,'') IS NOT NULL"))
+        registrations = {}
+        for row in db.execute("SELECT r.event_id,r.user_id FROM registrations r JOIN events e ON e.id=r.event_id WHERE e.status='finished' OR NULLIF(e.winner1,'') IS NOT NULL OR NULLIF(e.winner2,'') IS NOT NULL OR NULLIF(e.winner3,'') IS NOT NULL"):
+            registrations.setdefault(row['event_id'], set()).add(int(row['user_id']))
+        players = {}
+        for event in completed:
+            winners = [int(event[k]) if str(event[k] or '').isdigit() and int(event[k]) > 0 else None for k in ('winner1', 'winner2', 'winner3')]
+            participants = registrations.get(event['id'], set()) | {w for w in winners if w is not None}
+            for user_id in participants:
+                item = players.setdefault(user_id, dict(user_id=user_id, participations=0, first=0, second=0, third=0))
+                item['participations'] += 1
+                for key, winner in zip(('first', 'second', 'third'), winners):
+                    item[key] += int(winner == user_id)
+        # Empates: primeros, segundos, terceros y por último ID estable.
+        return sorted(players.values(), key=lambda p: (-p['participations'], -p['first'], -p['second'], -p['third'], p['user_id'])), len(completed)
+
+
     def ranking(self):
-        with closing(self.connection()) as db:
+        with closing(self.connection(readonly=True)) as db:
             db.row_factory = sqlite3.Row
-            completed = list(db.execute("SELECT id,winner1,winner2,winner3 FROM events WHERE status='finished' OR NULLIF(winner1,'') IS NOT NULL OR NULLIF(winner2,'') IS NOT NULL OR NULLIF(winner3,'') IS NOT NULL"))
-            registrations = {}
-            for row in db.execute("SELECT r.event_id,r.user_id FROM registrations r JOIN events e ON e.id=r.event_id WHERE e.status='finished' OR NULLIF(e.winner1,'') IS NOT NULL OR NULLIF(e.winner2,'') IS NOT NULL OR NULLIF(e.winner3,'') IS NOT NULL"):
-                registrations.setdefault(row['event_id'], set()).add(int(row['user_id']))
-            players = {}
-            for event in completed:
-                winners = [int(event[k]) if str(event[k] or '').isdigit() and int(event[k]) > 0 else None for k in ('winner1', 'winner2', 'winner3')]
-                participants = registrations.get(event['id'], set()) | {w for w in winners if w is not None}
-                for user_id in participants:
-                    item = players.setdefault(user_id, dict(user_id=user_id, participations=0, first=0, second=0, third=0))
-                    item['participations'] += 1
-                    for key, winner in zip(('first', 'second', 'third'), winners):
-                        item[key] += int(winner == user_id)
-            # Empates: primeros, segundos, terceros y por último ID estable.
-            return sorted(players.values(), key=lambda p: (-p['participations'], -p['first'], -p['second'], -p['third'], p['user_id']))[:10], len(completed)
+            players, total = self._standings(db)
+            return players[:10], total
+
+    def _profile_query(self):
+        return "FROM events e WHERE EXISTS(SELECT 1 FROM registrations r WHERE r.event_id=e.id AND r.user_id=?) OR e.winner1=? OR e.winner2=? OR e.winner3=?"
+
+    def profile(self, user_id, page=1):
+        params = (user_id, str(user_id), str(user_id), str(user_id))
+        with closing(self.connection(readonly=True)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute('BEGIN')
+            players, completed = self._standings(db)
+            rank = next((index for index, player in enumerate(players, 1) if player['user_id'] == user_id), None)
+            stats = players[rank - 1] if rank is not None else dict(user_id=user_id, participations=0, first=0, second=0, third=0)
+            total = db.execute('SELECT COUNT(*) ' + self._profile_query(), params).fetchone()[0]
+            pages = max(1, (total + 4) // 5)
+            page = min(max(1, page), pages)
+            events = [dict(r) for r in db.execute('SELECT e.* ' + self._profile_query() + ' ORDER BY e.starts_at DESC,e.id DESC LIMIT 5 OFFSET ?', (*params, (page - 1) * 5))]
+            return dict(stats=dict(stats), rank=rank, ranked_players=len(players), completed_events=completed, total_events=total, page=page, pages=pages, events=events)
+
+    def profile_history(self, user_id):
+        params = (user_id, str(user_id), str(user_id), str(user_id))
+        with closing(self.connection(readonly=True)) as db:
+            db.row_factory = sqlite3.Row
+            return [dict(r) for r in db.execute('SELECT e.* ' + self._profile_query() + ' ORDER BY e.starts_at DESC,e.id DESC', params)]
 
 
 class EventFeatures:
@@ -110,6 +141,7 @@ class EventFeatures:
         self.bot, self.lock = bot, lock
         self.store = EventFeatureStore(path)
         self.task = None
+        self.last_check_at = None
 
     async def call(self, method, *args):
         return await asyncio.to_thread(getattr(self.store, method), *args)
@@ -130,6 +162,7 @@ class EventFeatures:
     async def reminders(self):
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
+            self.last_check_at = timestamp()
             try:
                 for event in await self.call('active'):
                     try:
