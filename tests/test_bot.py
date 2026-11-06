@@ -165,7 +165,7 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue({'historial', 'ranking', 'crear', 'cerrar', 'finalizar'}.issubset(event_commands))
         self.assertTrue(self.bot.intents.voice_states)
         meeting_commands = {c.name for c in bot.meetings.group.commands}
-        self.assertEqual(meeting_commands, {'crear', 'editar', 'cancelar', 'asistencia', 'presente', 'finalizar', 'informe'})
+        self.assertEqual(meeting_commands, {'crear', 'encuesta', 'editar', 'cancelar', 'asistencia', 'presente', 'finalizar', 'informe'})
         views = [self.bot.EventButtons(), MeetingButtons(bot.meetings)]
         ids = [item.custom_id for view in views for item in view.children]
         self.assertEqual(len(ids), len(set(ids)))

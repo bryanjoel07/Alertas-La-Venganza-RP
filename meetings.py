@@ -66,8 +66,7 @@ class MeetingStore:
         now = int(datetime.now(timezone.utc).timestamp())
         with self.db() as db:
             if meeting_id is None:
-                cur = db.execute("INSERT INTO meetings(kind,channel_id,title,starts_at,location,agenda,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)", (kind, CHANNELS[kind], *values, author, now))
-                return cur.lastrowid
+                return self.insert(db, values, author, kind, now)
             old = db.execute("SELECT * FROM meetings WHERE id=?", (meeting_id,)).fetchone()
             if not old or old["status"] != "scheduled":
                 raise ValueError("La reunión ya no está activa.")
@@ -77,6 +76,10 @@ class MeetingStore:
                 db.execute("DELETE FROM meeting_reminders WHERE meeting_id=?", (meeting_id,))
                 db.execute("UPDATE meetings SET created_at=? WHERE id=?", (now, meeting_id))
             return meeting_id
+
+    def insert(self, db, values, author, kind, now):
+        cur = db.execute("INSERT INTO meetings(kind,channel_id,title,starts_at,location,agenda,description,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)", (kind, CHANNELS[kind], *values, author, now))
+        return cur.lastrowid
 
     def publication(self, meeting_id, message_id=None):
         with self.db() as db:
@@ -147,6 +150,8 @@ class MeetingSystem:
         self.bot = bot
         self.summaries = summaries if summaries is not None else SummaryMessages(bot, path)
         self.store = MeetingStore(path)
+        from meeting_polls import MeetingPolls
+        self.polls = MeetingPolls(self)
         self.staff = StaffReports(path)
         self.initialized = False
         self.last_check_at = None
@@ -160,6 +165,7 @@ class MeetingSystem:
 
     async def start(self):
         await self.call("initialize")
+        await self.polls.start()
         self.initialized = True
         self.bot.add_view(MeetingButtons(self))
         if self.task is None or self.task.done():
@@ -316,6 +322,13 @@ class MeetingSystem:
         return notice + await self.refresh_summary_notice(meeting_id)
 
     def register_commands(self):
+        @self.group.command(name="encuesta", description="Propón tres horarios y crea la reunión con el más votado")
+        @app_commands.choices(tipo=[app_commands.Choice(name="🔒 Staff", value="staff"), app_commands.Choice(name="🌎 General", value="general")])
+        async def poll(interaction: discord.Interaction, tipo: app_commands.Choice[str]):
+            await self.channel_access(interaction, CHANNELS[tipo.value], admin=True)
+            preferred = await self.preferred_voice(interaction, tipo.value)
+            await interaction.response.send_modal(MeetingModal(self, tipo.value, preferred_voice_id=preferred, poll=True))
+
         @self.group.command(name="crear", description="Abre el formulario de una reunión oficial")
         @app_commands.choices(tipo=[app_commands.Choice(name="🔒 Staff", value="staff"), app_commands.Choice(name="🌎 General", value="general")])
         async def create(interaction: discord.Interaction, tipo: app_commands.Choice[str]):
@@ -429,11 +442,16 @@ class MeetingSystem:
 
 
 class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
-    def __init__(self, system, kind, meeting=None, preferred_voice_id=None):
+    def __init__(self, system, kind, meeting=None, preferred_voice_id=None, poll=False):
         super().__init__(timeout=900)
         self.system, self.kind, self.meeting = system, kind, meeting
+        self.poll = poll
         self.name = discord.ui.TextInput(max_length=90)
         self.when = discord.ui.TextInput(max_length=16, placeholder="2026-12-20 19:30")
+        if poll:
+            self.title = "Encuesta de horarios"
+            self.when = discord.ui.TextInput(style=discord.TextStyle.paragraph, max_length=100,
+                                             placeholder="2026-12-20 19:30\n2026-12-20 21:00\n2026-12-21 18:00")
         defaults = []
         if preferred_voice_id is not None:
             defaults = [discord.SelectDefaultValue(id=preferred_voice_id, type=discord.SelectDefaultValueType.channel)]
@@ -451,7 +469,7 @@ class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
         self.description = discord.ui.TextInput(style=discord.TextStyle.paragraph, max_length=1200)
         for label, component in (
             ("Nombre", self.name),
-            ("Fecha y hora PR: AAAA-MM-DD HH:MM", self.when),
+            ("3 horarios PR (AAAA-MM-DD HH:MM por línea)" if poll else "Fecha y hora PR: AAAA-MM-DD HH:MM", self.when),
             ("Canal de voz", self.location),
             ("Agenda", self.agenda),
             ("Descripción", self.description),
@@ -473,6 +491,12 @@ class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
         await interaction.response.defer(ephemeral=True)
         system = self.system
         channel = await system.channel_access(interaction, CHANNELS[self.kind], admin=True)
+        if self.poll:
+            slots = system.polls.parse(self.when.value)
+            location = await self.selected_location(interaction)
+            await system.polls.publish(interaction, channel, self.kind, self.name.value.strip(), slots,
+                                       location, self.agenda.value.strip(), self.description.value.strip())
+            return
         try:
             date = datetime.strptime(self.when.value.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=PR)
         except ValueError:
