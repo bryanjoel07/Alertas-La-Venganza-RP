@@ -38,10 +38,26 @@ def link_keys(content):
                 code = re.fullmatch(r"/([A-Za-z0-9_-]+)/?", url.path)
             elif host in INVITE_HOSTS:
                 code = re.fullmatch(r"/invite/([A-Za-z0-9_-]+)/?", url.path)
-        key = ("invite", code[1]) if code else ("url", host, port, url.username, url.password,
+        key = ("invite", code[1]) if code else ("url", url.scheme, host, port, url.username, url.password,
                                                  url.path or "/", url.query, url.fragment)
         keys.add(hashlib.sha256(json.dumps(key).encode()).hexdigest())
     return keys
+
+
+def removable_copy(message, original, key):
+    """Solo enlaces solos o el texto de promoción exacto; preservar archivos y contenido propio."""
+    if (message.attachments or message.stickers or getattr(message, "poll", None)
+            or getattr(message, "message_snapshots", None) or message.edited_at is not None):
+        return False
+    text = message.content.strip()
+    if link_keys(text) != {key}:
+        return False
+    if text == original.content.strip():
+        return True
+    if text.startswith("<") and text.endswith(">"):
+        text = text[1:-1]
+    matches = LINKS.match(text) or []
+    return len(matches) == 1 and matches[0].raw == text
 
 
 class SpamStore:
@@ -59,6 +75,7 @@ class SpamStore:
                     id INTEGER PRIMARY KEY, author INTEGER NOT NULL, opened REAL NOT NULL,
                     result TEXT, notice INTEGER NOT NULL DEFAULT 0);
                 CREATE INDEX IF NOT EXISTS spam_case_author ON spam_cases(author,opened);
+                CREATE TABLE IF NOT EXISTS spam_review_only(case_id INTEGER PRIMARY KEY);
             """)
 
     def record(self, author, channel, message, posted, keys, now):
@@ -67,22 +84,29 @@ class SpamStore:
             db.execute("DELETE FROM spam_links WHERE posted < ?", (now - WINDOW,))
             if not keys or posted < now - WINDOW or posted > now + 5:
                 return None
-            db.executemany("INSERT OR IGNORE INTO spam_links VALUES (?,?,?,?,?)",
-                           [(author, key, channel, message, posted) for key in keys])
-            if db.execute("SELECT 1 FROM spam_cases WHERE author=? AND opened>=?", (author, now-WINDOW)).fetchone():
-                return None
-            rows = db.execute("""SELECT link,channel,message FROM spam_links WHERE author=? AND link IN
-                (SELECT link FROM spam_links WHERE author=? GROUP BY link HAVING COUNT(DISTINCT channel)>=?)""",
-                              (author, author, CHANNEL_LIMIT)).fetchall()
-            if not rows:
+            evidence = {}
+            for key in keys:
+                added = db.execute("INSERT OR IGNORE INTO spam_links VALUES (?,?,?,?,?)", (author, key, channel, message, posted))
+                if not added.rowcount:
+                    continue
+                rows = db.execute("""SELECT channel,message,posted FROM spam_links
+                    WHERE author=? AND link=? ORDER BY posted,message""", (author, key)).fetchall()
+                locations = {c for c, _, _ in rows}
+                if len(locations) < CHANNEL_LIMIT:
+                    continue
+                evidence[key] = [(c, mid) for c, mid, _ in rows]
+            if not evidence or db.execute("""SELECT 1 FROM spam_cases WHERE author=? AND opened>=?
+                                          AND id NOT IN (SELECT case_id FROM spam_review_only)""",
+                                          (author, now - WINDOW)).fetchone():
                 return None
             case = db.execute("INSERT INTO spam_cases(author,opened) VALUES (?,?)", (author, now)).lastrowid
-            db.execute("DELETE FROM spam_links WHERE author=?", (author,))
-            return case, sorted({(c, m) for _, c, m in rows}), {key for key, _, _ in rows}
+            return case, evidence
 
-    def save_result(self, case, result):
+    def save_result(self, case, result, review_only=False):
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE spam_cases SET result=? WHERE id=?", (result, case))
+            if review_only:
+                db.execute("INSERT OR IGNORE INTO spam_review_only VALUES (?)", (case,))
 
     def claim_notices(self):
         with closing(sqlite3.connect(self.path)) as db, db:
@@ -117,7 +141,7 @@ class LinkSpamGuard:
         writable = bool(channel and channel.permissions_for(guild.me).send_messages)
         visible = [c for c in guild.text_channels if c.permissions_for(guild.me).view_channel]
         manageable = sum(c.permissions_for(guild.me).manage_messages and c.permissions_for(guild.me).read_message_history for c in visible)
-        log.info("Antispam activo: ban_members=%s canales_moderables=%s/%s staff_privado=%s",
+        log.info("Antispam verificado activo: ban_members=%s canales_moderables=%s/%s staff_privado=%s",
                  guild.me.guild_permissions.ban_members, manageable, len(visible), writable)
         await self.report(guild)
 
@@ -144,32 +168,63 @@ class LinkSpamGuard:
                                         message.created_at.timestamp(), keys, time.time())
         if not claim:
             return
-        case, copies, matches = claim
+        case, evidence = claim
+        review_only = False
         try:
-            result = await self.enforce(guild, message.author, case, copies, matches)
+            verified = await self.verify(guild, message.author, evidence)
+            if verified:
+                key, live = verified
+                result = await self.enforce(guild, message.author, case, key, live)
+            else:
+                review_only = True
+                result = "Solo revisión: no se pudieron confirmar tres mensajes vigentes del mismo autor y enlace en tres canales distintos."
         except Exception:
             log.exception("Antispam: error durante el caso #%s", case)
             result = "Acción incompleta. Revisa el registro de auditoría y los mensajes."
-        await asyncio.to_thread(self.store.save_result, case, result)
+        await asyncio.to_thread(self.store.save_result, case, result, review_only)
         log.info("Antispam caso #%s: %s", case, result)
         await self.report(guild)
 
-    async def enforce(self, guild, author, case, copies, keys):
-        reason = f"Antispam #{case}: mismo enlace en al menos 3 canales en 5 minutos"
+    async def verify(self, guild, author, evidence):
+        # Cada enlace debe superar el umbral por sí solo. Nunca sumar canales de enlaces distintos.
+        for key, references in evidence.items():
+            live = []
+            for channel_id, message_id in references:
+                channel = self.bot.get_partial_messageable(channel_id, guild_id=guild.id)
+                try:
+                    current = await channel.fetch_message(message_id)
+                except discord.HTTPException:
+                    continue
+                if (current.id == message_id and current.channel.id == channel_id
+                        and current.guild and current.guild.id == guild.id
+                        and current.author.id == author.id and not current.author.bot and not current.webhook_id
+                        and current.edited_at is None and link_keys(current.content) == {key}):
+                    live.append(current)
+            now = time.time()
+            live = sorted((m for m in live if 0 <= now - m.created_at.timestamp() <= WINDOW), key=lambda m: m.id)
+            channels = {m.channel.id for m in live}
+            if len(channels) >= CHANNEL_LIMIT:
+                return key, live
+        return None
+
+    async def enforce(self, guild, author, case, key, live):
+        channels = {m.channel.id for m in live}
+        reason = f"Antispam #{case}: mismo enlace verificado en {len(channels)} canales en cinco minutos"
         try:
             await guild.ban(author, delete_message_seconds=0, reason=reason)
             ban = "Ban aplicado."
         except discord.Forbidden:
-            ban = "Ban pendiente: revisa el permiso Banear miembros y la jerarquía de roles."
+            ban = "Ban pendiente: revisa permisos y jerarquía."
         except discord.HTTPException as exc:
-            ban = f"Ban sin confirmar (Discord {exc.status}). Revisa el registro de auditoría."
+            ban = f"Ban sin confirmar (Discord {exc.status}); revisa la auditoría."
         deleted = absent = edited = 0
         failed = []
-        for channel_id, message_id in copies:
+        for copy in live[1:]:
+            channel_id = copy.channel.id
             try:
                 channel = self.bot.get_partial_messageable(channel_id, guild_id=guild.id)
-                current = await channel.fetch_message(message_id)
-                if current.author.id != author.id or not keys.intersection(link_keys(current.content)):
+                current = await channel.fetch_message(copy.id)
+                if current.author.id != author.id or not removable_copy(current, live[0], key):
                     edited += 1
                     continue
                 await current.delete()
@@ -178,10 +233,10 @@ class LinkSpamGuard:
                 absent += 1
             except discord.HTTPException:
                 failed.append(channel_id)
-        channels = sorted({c for c, _ in copies})
-        locations = ", ".join(f"<#{c}>" for c in channels[:12])
-        result = (f"Mismo enlace en {len(channels)} canales en 5 minutos: {locations}.\n{ban}\n"
-                  f"Mensajes eliminados: {deleted}/{len(copies)}. Ya ausentes: {absent}. Editados: {edited}.")
+        locations = ", ".join(f"<#{c}>" for c in sorted(channels)[:12])
+        result = (f"Enlace verificado en {len(channels)} canales en 5 minutos: {locations}. {ban}\n"
+                  f"Original conservado: <https://discord.com/channels/{guild.id}/{live[0].channel.id}/{live[0].id}>\n"
+                  f"Copias eliminadas: {deleted}. Ya ausentes: {absent}. Conservadas por precaución: {edited}.")
         if failed:
             result += f" Pendientes: {len(failed)} en " + ", ".join(f"<#{c}>" for c in sorted(set(failed))[:12])
         return result

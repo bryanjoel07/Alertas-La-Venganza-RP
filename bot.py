@@ -204,7 +204,7 @@ class LaVenganzaBot(discord.Client):
         self.monitor_task = None
         self.event_features = EventFeatures(self, DB_PATH, self.lock)
         self.summaries = SummaryMessages(self, DB_PATH)
-        self.link_spam = LinkSpamGuard(self, DB_PATH, GUILD_ID) if os.getenv("LINK_SPAM_ENABLED") == "1" else None
+        self.link_spam = LinkSpamGuard(self, DB_PATH, GUILD_ID) if os.getenv("LINK_SPAM_ENABLED") == "verified" else None
         self.meetings = MeetingSystem(self, DB_PATH, self.summaries)
         self.tree.add_command(self.meetings.group, guild=GUILD)
         self.backups = BackupService(self, DB_PATH, GUILD_ID)
