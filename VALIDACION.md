@@ -2,8 +2,8 @@
 
 Fecha: 6 de noviembre de 2026. Python 3.12, Linux, datos temporales.
 
-- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py summaries.py` correcta.
-- 35 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
+- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py` correcta.
+- 52 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
 - La entrega inicial pasó 15 pruebas con discord.py 2.4.0. Esa versión ya no es compatible
   con el selector de canales dentro del formulario. Se comprobó también 2.6.0 y no admite
   el parámetro required de ChannelSelect usado aquí: el mínimo se elevó a 2.7.1.
@@ -51,3 +51,13 @@ rechazo de permisos y límites de Discord con listas grandes. Las pruebas de int
 botones verifican inscripción/cancelación, respuestas cambiantes y cancelación de reunión
 sin perder registros. `public_summaries` es una tabla nueva; no altera tablas anteriores.
 No se verificó la entrega/edición real de mensajes públicos en Discord desde este entorno.
+
+Historial, top 10, avisos de eventos e informe Staff: pruebas de cinco umbrales, persistencia,
+concurrencia, edición con revisiones, reinicio tardío sin ráfagas, eventos caducados/cerrados,
+resultados de eventos antiguos y cerrados con podio, conteo único y tope de diez jugadores.
+Voz: entradas repetidas, rechazo fuera de la ventana/canal y bots, correcciones manuales,
+interrupciones, cambios de fecha, archivos completos y límites de embeds. Ciclo de reunión:
+publicación del informe al finalizar, conservación de RSVP/visitas, eliminación exclusiva del
+panel, cancelación sin informe final y reintento seguro si no se pudo eliminar el panel.
+Se mantiene una única tarea de avisos de eventos tras inicialización repetida.
+No se conectó a voz ni se probaron eventos Gateway o recordatorios reales contra Discord.

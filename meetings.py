@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord import app_commands
 from summaries import SUMMARY_SCHEMA, SummaryMessages, meeting_summary
+from staff_reports import STAFF_SCHEMA, StaffReports, voice_id, report_embed, report_text
 
 log = logging.getLogger("LaVenganzaRP.reuniones")
 GUILD_ID = 1244988345327550565
@@ -47,6 +48,7 @@ class MeetingStore:
             # Solo tablas nuevas: no se modifican eventos, settings ni inscripciones.
             for sql in (
                 SUMMARY_SCHEMA,
+                *STAFF_SCHEMA,
                 "CREATE TABLE IF NOT EXISTS meetings (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, channel_id INTEGER NOT NULL, message_id INTEGER UNIQUE, title TEXT NOT NULL, starts_at INTEGER NOT NULL, location TEXT NOT NULL, agenda TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'publishing', created_by INTEGER NOT NULL, created_at INTEGER NOT NULL, ended_at INTEGER, ended_by INTEGER)",
                 "CREATE TABLE IF NOT EXISTS meeting_responses (meeting_id INTEGER NOT NULL REFERENCES meetings(id), user_id INTEGER NOT NULL, response TEXT NOT NULL CHECK(response IN ('yes','no','maybe')), updated_at INTEGER NOT NULL, PRIMARY KEY(meeting_id,user_id))",
                 "CREATE TABLE IF NOT EXISTS meeting_attendance (meeting_id INTEGER NOT NULL REFERENCES meetings(id), user_id INTEGER NOT NULL, present INTEGER NOT NULL CHECK(present IN (0,1)), recorded_by INTEGER NOT NULL, recorded_at INTEGER NOT NULL, PRIMARY KEY(meeting_id,user_id))",
@@ -145,6 +147,8 @@ class MeetingSystem:
         self.bot = bot
         self.summaries = summaries if summaries is not None else SummaryMessages(bot, path)
         self.store = MeetingStore(path)
+        self.staff = StaffReports(path)
+        self.initialized = False
         self.lock = asyncio.Lock()
         self.task = None
         self.group = app_commands.Group(name="reunion", description="Reuniones oficiales de LA VENGANZA RP", guild_only=True)
@@ -155,9 +159,73 @@ class MeetingSystem:
 
     async def start(self):
         await self.call("initialize")
+        self.initialized = True
         self.bot.add_view(MeetingButtons(self))
         if self.task is None or self.task.done():
             self.task = asyncio.create_task(self.reminders(), name="meeting-reminders")
+
+    async def staff_call(self, method, *args, **kwargs):
+        return await asyncio.to_thread(getattr(self.staff, method), *args, **kwargs)
+
+    async def snapshot_voice(self, meeting, resume=False):
+        if meeting["kind"] != "staff" or meeting["status"] != "scheduled":
+            return
+        channel_id = voice_id(meeting)
+        if channel_id is None:
+            return
+        channel = self.bot.get_channel(channel_id)
+        bot_member = channel.guild.me if channel else None
+        observable = channel is not None and bot_member is not None and channel.permissions_for(bot_member).view_channel
+        users = [member.id for member in channel.members if not member.bot] if observable else []
+        await self.staff_call("observe", meeting["id"], channel_id, users, source="snapshot", resume=resume)
+        if not observable:
+            await self.staff_call("gap", meeting["id"])
+            log.warning("No se pudo observar el canal de voz de reunión #%s", meeting["id"])
+
+    async def snapshot_notice(self, meeting):
+        try:
+            await self.snapshot_voice(meeting)
+            return ""
+        except Exception:
+            log.exception("No se pudo iniciar observación de voz de reunión #%s", meeting["id"])
+            return "\n⚠️ Reunión guardada; revisa logs de asistencia automática."
+
+    async def voice_ready(self):
+        if not self.initialized:
+            return
+        async with self.lock:
+            for meeting in await self.call("active"):
+                await self.snapshot_voice(meeting, resume=True)
+
+    async def voice_disconnected(self):
+        if self.initialized:
+            await self.staff_call("gap")
+
+    async def voice_update(self, member, before, after):
+        if member.bot or member.guild.id != GUILD_ID or after.channel is None:
+            return
+        if before.channel is not None and before.channel.id == after.channel.id:
+            return
+        async with self.lock:
+            for meeting in await self.call("active"):
+                if meeting["kind"] == "staff" and voice_id(meeting) == after.channel.id:
+                    await self.staff_call("observe", meeting["id"], after.channel.id, [member.id], source="join")
+
+    async def staff_report_notice(self, meeting):
+        if meeting["kind"] != "staff" or meeting["status"] != "finished":
+            return ""
+        try:
+            data = await self.staff_call("report", meeting["id"])
+            await self.summaries.update("staff_report", meeting["id"], meeting["channel_id"], report_embed(meeting, data))
+            return ""
+        except Exception:
+            log.exception("No se pudo publicar informe de reunión #%s", meeting["id"])
+            return "\n⚠️ Datos conservados; consulta /reunion informe para revisar o reintentar el informe."
+
+    async def send_staff_report(self, interaction, meeting):
+        data = await self.staff_call("report", meeting["id"])
+        notice = await self.staff_report_notice(meeting)
+        await interaction.followup.send(content=notice or None, embed=report_embed(meeting, data), file=discord.File(io.BytesIO(report_text(meeting, data).encode()), filename=f"informe-staff-{meeting['id']}.txt"), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
     def admin(self, interaction):
         if interaction.guild_id != GUILD_ID or not isinstance(interaction.user, discord.Member) or not ROLES.intersection(r.id for r in interaction.user.roles):
@@ -211,7 +279,10 @@ class MeetingSystem:
         embed.add_field(name="📍 Lugar o canal de voz", value=meeting_location(meeting["location"]), inline=False)
         embed.add_field(name="📋 Agenda", value=escaped(meeting["agenda"]), inline=False)
         embed.add_field(name="Confirmaciones", value=" · ".join(f"{LABELS[k]}: **{counts[k]}**" for k in LABELS), inline=False)
-        embed.add_field(name="Estado", value=f"{status}\n👥 Asistencia real registrada: {sum(r['present'] for r in attendance)}", inline=False)
+        present_count = sum(r['present'] for r in attendance)
+        if meeting["kind"] == "staff":
+            present_count = len((await self.staff_call("report", meeting["id"]))["present"])
+        embed.add_field(name="Estado", value=f"{status}\n👥 Asistencia real registrada: {present_count}", inline=False)
         embed.set_footer(text=f"LA VENGANZA RP | Reunión #{meeting['id']}")
         return embed
 
@@ -275,10 +346,21 @@ class MeetingSystem:
                 notice = await self.refresh_notice(reunion_id)
             await interaction.followup.send("✅ Asistencia real guardada." + notice, ephemeral=True)
 
+        @self.group.command(name="informe", description="Compara confirmaciones de Staff con presencia registrada en voz")
+        async def staff_report(interaction: discord.Interaction, reunion_id: int):
+            await interaction.response.defer(ephemeral=True)
+            meeting = await self.authorized_meeting(interaction, reunion_id)
+            if meeting["kind"] != "staff":
+                raise ValueError("El informe automático de voz corresponde a reuniones Staff. Usa /reunion asistencia para reuniones generales.")
+            await self.send_staff_report(interaction, meeting)
+
         @self.group.command(name="asistencia", description="Consulta confirmaciones y asistencia real completa")
         async def attendance(interaction: discord.Interaction, reunion_id: int):
             await interaction.response.defer(ephemeral=True)
-            await self.authorized_meeting(interaction, reunion_id)
+            meeting = await self.authorized_meeting(interaction, reunion_id)
+            if meeting["kind"] == "staff":
+                await self.send_staff_report(interaction, meeting)
+                return
             responses, actual = await self.call("lists", reunion_id)
             lines = [f"ASISTENCIA — REUNIÓN #{reunion_id}"]
             for key, label in LABELS.items():
@@ -295,10 +377,26 @@ class MeetingSystem:
     async def end(self, interaction, meeting_id, status):
         await interaction.response.defer(ephemeral=True)
         async with self.lock:
-            await self.authorized_meeting(interaction, meeting_id)
-            await self.call("finish", meeting_id, status, interaction.user.id)
-            notice = await self.refresh_notice(meeting_id)
-        await interaction.followup.send(("🔒 Reunión cancelada." if status == "cancelled" else "✅ Reunión finalizada.") + " Registros conservados." + notice, ephemeral=True)
+            meeting = await self.authorized_meeting(interaction, meeting_id)
+            if meeting["status"] == "scheduled":
+                await self.snapshot_voice(meeting)
+                await self.call("finish", meeting_id, status, interaction.user.id)
+            elif meeting["status"] != status:
+                raise ValueError("La reunión ya terminó con otro estado.")
+            current = await self.call("get", meeting_id)
+            notice = await self.refresh_summary_notice(meeting_id)
+            notice += await self.staff_report_notice(current)
+            try:
+                channel = self.bot.get_channel(current["channel_id"]) or await self.bot.fetch_channel(current["channel_id"])
+                if current["message_id"]:
+                    panel = await channel.fetch_message(current["message_id"])
+                    await panel.delete()
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:
+                log.exception("No se pudo eliminar panel de reunión #%s", meeting_id)
+                notice += "\n⚠️ No se pudo eliminar el panel. Revisa los permisos y repite este comando para reintentar."
+        await interaction.followup.send(("🔒 Reunión cancelada." if status == "cancelled" else "✅ Reunión finalizada.") + " Registros conservados; se retira el panel de botones." + notice, ephemeral=True)
 
     async def reminders(self):
         await self.bot.wait_until_ready()
@@ -398,6 +496,8 @@ class MeetingModal(discord.ui.Modal, title="Reunión | LA VENGANZA RP"):
                     raise
                 await system.call("publication", meeting_id, message.id)
                 notice = await system.refresh_summary_notice(meeting_id)
+            current_meeting = await system.call("get", meeting_id)
+            notice += await system.snapshot_notice(current_meeting)
         await interaction.followup.send(f"✅ Reunión #{meeting_id} {'actualizada' if self.meeting else 'publicada'}." + notice, ephemeral=True)
 
     async def on_error(self, interaction, error):

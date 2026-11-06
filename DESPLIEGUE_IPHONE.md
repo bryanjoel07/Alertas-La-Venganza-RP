@@ -110,7 +110,7 @@ adecuado y el procedimiento del README, nunca credenciales dentro del ZIP.
 - Crear una reunión de prueba con un rol permitido; comprobar canal Staff y General.
 - Verificar que alguien sin acceso al canal Staff no pueda consultar ni responder esa reunión.
 - Cambiar una respuesta, registrar presencia real y consultar el informe.
-- Editar, cancelar y finalizar reuniones; confirmar que se conservan registros y se bloquean botones.
+- Editar, cancelar y finalizar reuniones; confirmar que se conservan los registros y se retira el panel principal al cancelar/finalizar. En Staff, verificar el informe y que permanezca separado de las confirmaciones.
 - Probar anuncios en iPhone y computadora. Probar reinicio solo tras confirmar la persistencia y
   con autorización; revisar después botones de eventos y reuniones.
 - Probar alertas únicamente con /testalert o /simular-ciclo, identificadas como simulación.

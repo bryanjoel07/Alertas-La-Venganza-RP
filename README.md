@@ -13,7 +13,9 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 ## Archivos
 
 - `bot.py`: conserva comandos y tablas originales; conecta el módulo de reuniones, protege formularios y corrige contadores al editar.
-- `meetings.py`: reuniones, permisos, confirmaciones, asistencia y recordatorios.
+- `meetings.py`: reuniones, permisos, confirmaciones, asistencia, informes y recordatorios.
+- `staff_reports.py`: presencia observada en voz y comparación con confirmaciones de Staff.
+- `event_features.py`: historial, top 10 y cinco recordatorios de eventos.
 - `storage.py`: selección de base con protección contra arranque vacío o ambiguo.
 - `summaries.py`: una lista pública editable y persistente por evento o reunión, sin notificaciones de menciones.
 - `backup.py`: copia consistente de SQLite, integridad, manifiesto SHA-256 y subida opcional a Drive.
@@ -36,15 +38,18 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 | `/evento editar` | Nombre, fecha, hora, lugar y descripción; conserva inscritos | Administrador Discord |
 | `/evento premios` | Tres premios y cupos; no reduce por debajo de los inscritos | Administrador Discord |
 | `/evento banner` | Cambia imagen del anuncio | Administrador Discord |
+| `/evento historial pagina` | Resultados de eventos finalizados, cinco por página | Miembros con acceso al canal de eventos |
+| `/evento ranking` | Top 10 por participaciones, con podios y desempate estable | Miembros con acceso al canal de eventos |
 | `/evento participantes` | Lista de inscritos (con límite de texto original) | Administrador Discord |
 | `/evento finalizar` | Tres miembros diferentes, podio y cierre de inscripciones | Administrador Discord |
 | `/evento cerrar` | Elimina anuncio, banner y botones; conserva datos | Administrador Discord |
 | `/reunion crear tipo` | Staff o General, formulario y publicación al enviarlo | Roles autorizados |
 | `/reunion editar reunion_id` | Cambia datos sin perder confirmaciones ni asistencia | Roles autorizados |
-| `/reunion cancelar reunion_id` | Conserva anuncio y registros; bloquea confirmaciones | Roles autorizados |
-| `/reunion asistencia reunion_id` | Listas por respuesta y asistencia real, archivo si es extensa | Roles autorizados |
+| `/reunion cancelar reunion_id` | Elimina panel principal; conserva registros y lista de confirmaciones | Roles autorizados |
+| `/reunion informe reunion_id` | Informe Staff con comparación y archivo completo | Roles autorizados |
+| `/reunion asistencia reunion_id` | Informe Staff; listas por respuesta y asistencia manual en reuniones generales | Roles autorizados |
 | `/reunion presente reunion_id miembro asistio` | Registra presencia real o corrige a ausente | Roles autorizados |
-| `/reunion finalizar reunion_id` | Cierra confirmaciones y registro de presencia; conserva datos | Roles autorizados |
+| `/reunion finalizar reunion_id` | Cierra, publica informe Staff y elimina panel principal; conserva datos | Roles autorizados |
 
 Roles autorizados de reuniones: Owner `1245008186440683530`, Super Admin `1245010156576833536`,
 Admin `1300619682486947931`, Programador `1300627506801541230`.
@@ -88,7 +93,8 @@ real se mantiene separada y no se deduce de esta lista de confirmaciones.
 
 Cada cambio edita el mismo mensaje cuyo ID se guarda en `public_summaries`. Editar título,
 cupos o estado actualiza también la lista. Finalizar conserva la lista y marca el estado;
-cancelar reunión la conserva como registro. `/evento cerrar` elimina anuncio y lista, pero
+cancelar reunión conserva la lista como registro. El panel principal de reunión con sus
+botones se elimina al cancelar o finalizar; SQLite conserva el ID histórico y todos los datos. `/evento cerrar` elimina anuncio y lista, pero
 conserva todas las inscripciones y resultados en SQLite. No cambia ninguna tabla anterior.
 
 Los eventos/reuniones que ya existían reciben su lista al siguiente cambio de inscripción,
@@ -126,7 +132,8 @@ No cambies estas variables ni montes el volumen en producción sin completar el 
 ## Recordatorios y persistencia
 
 El arranque agrega únicamente `meetings`, `meeting_responses`, `meeting_attendance`,
-`meeting_reminders`, `public_summaries` y un índice. No borra ni altera tablas anteriores.
+`meeting_reminders`, `public_summaries`, `meeting_voice_tracking`, `meeting_voice_visits`,
+`event_reminder_schedules`, `event_reminders` y un índice. No borra ni altera tablas anteriores.
 Los recordatorios se revisan cada 30 segundos: 24 horas, 1 hora y 15 minutos antes.
 Si se cruzaron varios umbrales durante la desconexión, solo se reserva el más reciente.
 No se recuperan avisos anteriores a la creación ni posteriores al inicio de la reunión.
@@ -137,6 +144,61 @@ La reserva es transaccional y persiste antes del envío para evitar duplicados. 
 o el proceso se interrumpe, puede perderse ese recordatorio: no se reintenta automáticamente
 una entrega incierta. Los estados `claimed`, `sent`, `failed`, `skipped` permiten auditarlo.
 No ejecutar dos réplicas del bot: las alertas y operaciones originales usan bloqueo de un proceso.
+
+## Historial y top 10 de eventos
+
+`/evento historial pagina:1` consulta cinco eventos por página con fecha y podio.
+`/evento ranking` presenta el top 10 por número de eventos finalizados/con resultados en los
+que cada jugador quedó inscrito o figura en el podio (una participación por evento, sin duplicar).
+Se muestran también primeros, segundos y terceros lugares; desempata por esos podios y luego ID.
+Un evento finalizado al que después se aplicó `/evento cerrar` sigue contando si tiene ganadores.
+Los eventos abiertos y cerrados sin resultados no suman participaciones. Se calculan desde
+los registros existentes; no se inventa asistencia real de eventos ni se recuperan datos perdidos
+antes de configurar el volumen. Ambas consultas son privadas para quien las ejecuta y requieren
+acceso al canal oficial de eventos. Los comandos administrativos anteriores conservan sus permisos.
+
+## Recordatorios de eventos
+
+Son independientes de los de reuniones: **24 h, 12 h, 6 h, 1 h y 15 min**.
+Cada aviso se registra en SQLite, se envía en el canal del evento y contiene el enlace al anuncio.
+No envía avisos de eventos cerrados, finalizados o que ya empezaron. Al reconectar tarde solo
+se entrega el umbral más reciente pendiente; los anteriores se descartan para evitar ráfagas.
+Los eventos existentes empiezan su seguimiento al instalar esta función, sin recuperar avisos
+que ya vencieron. Los nuevos se programan al publicar. Cambiar la fecha crea una nueva revisión
+de avisos conservando el historial anterior; cambiar título, cupos o imagen no los reinicia.
+La reserva precede al envío: en una entrega incierta puede omitirse un aviso, sin reenviarlo
+automáticamente para evitar duplicados. Revisar logs y event_reminders ante ese caso.
+
+## Asistencia automática e informe de Staff
+
+El bot escucha entradas al canal de voz/escenario elegido por cada reunión Staff. El periodo
+empieza cuando se crea/publica y termina al cancelar o finalizar, independientemente de la
+hora programada. Cada persona cuenta una sola vez aunque salga y vuelva a entrar; no se cuentan
+bots ni entradas a otros canales. También se toman observaciones de quienes ya están dentro al
+crear la reunión, reconectar o finalizar. Eso demuestra presencia observada, no duración de conexión.
+No necesita conectar el bot al audio, PyNaCl ni un intent de miembros privilegiado: usa Voice States
+y acceso del bot al canal. El intent de voz se activa en el código.
+
+Al finalizar se publica **un informe** en el canal de esa reunión Staff, con menciones sin pings:
+asistieron, confirmaron y asistieron, confirmaron sin presencia registrada, dijeron no y tal vez.
+`/reunion informe reunion_id` o `/reunion asistencia reunion_id` permite consultar el informe
+y descargar un archivo completo; incluye quienes dijeron no pero entraron y quienes entraron
+sin responder. La consulta exige los roles autorizados y acceso al canal privado. Antes de
+finalizar el informe es provisional. `/reunion presente` sigue permitiendo correcciones manuales
+mientras está activa: prevalecen sobre detección automática, conservando evidencia y autor.
+Las respuestas y registros se congelan al terminar. No se aplica seguimiento automático a generales.
+
+Las entradas anteriores a esta actualización o durante desconexiones no se pueden reconstruir.
+Se registra la fecha desde la cual se observa y se señalan posibles interrupciones al reiniciar
+o desconectar. «Sin presencia registrada» no prueba ausencia durante esas interrupciones.
+Si se cambia de canal de voz, se conservan las visitas ya observadas y se vigila el nuevo canal.
+Cambiar fecha no borra las visitas. El informe se guarda como mensaje persistente reutilizable;
+si su envío falla, `/reunion informe` permite consultarlo y reintentar una entrega inequívoca.
+
+Al cancelar/finalizar se borra **solo el panel principal de la reunión y sus botones**. La lista
+de confirmaciones y el informe final siguen como registro; no se eliminan datos de SQLite.
+Si Discord impide borrar el panel, el estado ya queda cerrado y los botones rechazan cambios.
+El comando avisa del fallo y se puede repetir el mismo cierre para reintentar retirar el panel.
 
 ## Respaldos
 
@@ -176,7 +238,7 @@ Python 3.12 usado en la validación; Python 3.9+ es necesario por `zoneinfo`; di
 ```sh
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py summaries.py
+.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/pip check
 ```

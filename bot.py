@@ -16,6 +16,7 @@ from discord import app_commands
 from meetings import MeetingSystem, meeting_error
 from storage import database_path
 from summaries import SUMMARY_SCHEMA, SummaryMessages, event_summary
+from event_features import EventFeatures
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -183,6 +184,7 @@ class StateTracker:
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.voice_states = True
 
 
 class LaVenganzaBot(discord.Client):
@@ -192,6 +194,7 @@ class LaVenganzaBot(discord.Client):
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
+        self.event_features = EventFeatures(self, DB_PATH, self.lock)
         self.summaries = SummaryMessages(self, DB_PATH)
         self.meetings = MeetingSystem(self, DB_PATH, self.summaries)
         self.tree.add_command(self.meetings.group, guild=GUILD)
@@ -202,13 +205,14 @@ class LaVenganzaBot(discord.Client):
         self.tracker = StateTracker(state if state in ("up", "down") else None)
         self.add_view(EventButtons())
         await self.meetings.start()
+        await self.event_features.start()
         commands = await self.tree.sync(guild=GUILD)
         log.info("Comandos sincronizados: %s", ", ".join(c.name for c in commands))
         if self.monitor_task is None or self.monitor_task.done():
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
 
     async def close(self):
-        tasks = [task for task in (self.monitor_task, self.meetings.task) if task]
+        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -400,6 +404,7 @@ async def refresh_event(event_id, message=None):
     event = fetch_event(event_id)
     if not event or not event["message_id"]:
         return
+    await client.event_features.schedule_notice(event_id)
     if message is None:
         channel = await client.fetch_channel(event["channel_id"])
         message = await channel.fetch_message(event["message_id"])
@@ -717,7 +722,8 @@ class PublishView(AdminView):
                 with database() as db:
                     db.execute("UPDATE events SET message_id=?,image_url=? WHERE id=?", (message.id, image_ref, event_id))
                 DRAFTS.pop(self.owner, None)
-                notice = await refresh_event_summary(event_id)
+                notice = await client.event_features.schedule_notice(event_id)
+                notice += await refresh_event_summary(event_id)
                 await interaction.followup.send(f"✅ Evento **#{event_id}** publicado: {message.jump_url}" + notice, ephemeral=True)
             except Exception as error:
                 draft["publishing"] = False
@@ -744,6 +750,43 @@ event_group = app_commands.Group(name="evento", description="Eventos de La Venga
 @app_commands.check(only_admin)
 async def evento_crear(interaction: discord.Interaction):
     await interaction.response.send_modal(DetailsModal())
+
+
+async def event_history_access(interaction):
+    if interaction.guild_id != GUILD_ID or not isinstance(interaction.user, discord.Member):
+        raise app_commands.CheckFailure("Servidor no autorizado")
+    channel = client.get_channel(EVENT_CHANNEL_ID) or await client.fetch_channel(EVENT_CHANNEL_ID)
+    if not channel.permissions_for(interaction.user).view_channel:
+        raise app_commands.CheckFailure("No tienes acceso al canal de eventos")
+
+
+@event_group.command(name="historial", description="Consulta resultados de todos los eventos finalizados, cinco por página")
+async def evento_historial(interaction: discord.Interaction, pagina: app_commands.Range[int, 1, 100000] = 1):
+    await interaction.response.defer(ephemeral=True)
+    await event_history_access(interaction)
+    rows, total = await client.event_features.call("history", pagina)
+    embed = discord.Embed(title="🏆 HISTORIAL DE EVENTOS | LA VENGANZA RP", color=0xD60000)
+    if not rows:
+        embed.description = "No hay resultados en esta página. Se muestran los eventos finalizados que siguen guardados en SQLite."
+    for event in rows:
+        winners = []
+        for medal, key in (("🥇", "winner1"), ("🥈", "winner2"), ("🥉", "winner3")):
+            value = str(event[key] or "")
+            winners.append(f"{medal} <@{int(value)}>" if value.isdigit() and int(value) > 0 else f"{medal} Sin resultado registrado")
+        embed.add_field(name=f"#{event['id']} · {safe(event['title'])}", value=f"📅 <t:{epoch(event['starts_at'])}:f>\n" + "\n".join(winners), inline=False)
+    embed.set_footer(text=f"Página {pagina}/{max(1, (total + 4) // 5)} · {total} eventos con resultados/finalizados · /evento historial pagina")
+    await interaction.followup.send(embed=embed, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+
+
+@event_group.command(name="ranking", description="Top 10 histórico por participaciones en eventos finalizados")
+async def evento_ranking(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await event_history_access(interaction)
+    players, total = await client.event_features.call("ranking")
+    lines = [f"**{index}.** <@{p['user_id']}> · **{p['participations']} eventos**\n🥇 {p['first']} · 🥈 {p['second']} · 🥉 {p['third']}" for index, p in enumerate(players, 1)]
+    embed = discord.Embed(title="🏆 TOP 10 DE PARTICIPACIONES | LA VENGANZA RP", description="\n\n".join(lines) or "Todavía no hay participaciones en eventos finalizados.", color=0xD60000)
+    embed.set_footer(text=f"{total} eventos finalizados/con resultados · Inscripción o podio, no asistencia verificada · Desempate: podios e ID")
+    await interaction.followup.send(embed=embed, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 # CAMBIO SOLICITADO: /evento cerrar ELIMINA EL MENSAJE COMPLETO.
@@ -1204,8 +1247,28 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    try:
+        await client.meetings.voice_ready()
+    except Exception:
+        log.exception("No se pudo reanudar observación de reuniones Staff")
     if DATA_DIR == "/tmp":
         log.warning("SQLite está en /tmp. Antes de reiniciar o montar un volumen, exporta y verifica un respaldo externo; consulta DESPLIEGUE_IPHONE.md.")
+
+
+@client.event
+async def on_voice_state_update(member, before, after):
+    try:
+        await client.meetings.voice_update(member, before, after)
+    except Exception:
+        log.exception("No se pudo registrar una entrada a voz")
+
+
+@client.event
+async def on_disconnect():
+    try:
+        await client.meetings.voice_disconnected()
+    except Exception:
+        log.exception("No se pudo registrar interrupción de observación de voz")
 
 
 if __name__ == "__main__":

@@ -161,8 +161,11 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         for command in commands:
             payload = command.to_dict(bot.tree)
             self.assertLessEqual(len(payload['description']), 100)
+        event_commands = {c.name for c in self.bot.event_group.commands}
+        self.assertTrue({'historial', 'ranking', 'crear', 'cerrar', 'finalizar'}.issubset(event_commands))
+        self.assertTrue(self.bot.intents.voice_states)
         meeting_commands = {c.name for c in bot.meetings.group.commands}
-        self.assertEqual(meeting_commands, {'crear', 'editar', 'cancelar', 'asistencia', 'presente', 'finalizar'})
+        self.assertEqual(meeting_commands, {'crear', 'editar', 'cancelar', 'asistencia', 'presente', 'finalizar', 'informe'})
         views = [self.bot.EventButtons(), MeetingButtons(bot.meetings)]
         ids = [item.custom_id for view in views for item in view.children]
         self.assertEqual(len(ids), len(set(ids)))
@@ -424,6 +427,12 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('<@456>', embed.fields[2].value)
         self.assertEqual(len(system.store.lists(key)[0]), 1)
         system.authorized_meeting = AsyncMock(return_value=system.store.get(key))
+        panel = Mock()
+        panel.delete = AsyncMock()
+        channel = Mock()
+        channel.members = []
+        channel.fetch_message = AsyncMock(return_value=panel)
+        system.bot.get_channel.return_value = channel
         await system.end(interaction, key, 'cancelled')
         self.assertIn('cancelada', summaries.update.call_args.args[3].description)
         self.assertEqual(len(system.store.lists(key)[0]), 1)
@@ -439,3 +448,6 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
                 first = bot.meetings.task
                 await bot.meetings.start()
                 self.assertIs(first, bot.meetings.task)
+                event_task = bot.event_features.task
+                await bot.event_features.start()
+                self.assertIs(event_task, bot.event_features.task)
