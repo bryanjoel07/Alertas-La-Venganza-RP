@@ -11,6 +11,8 @@ def status_path(source):
     path = Path(os.environ['BACKUP_STATUS_PATH']) if os.getenv('BACKUP_STATUS_PATH') else Path(source).resolve().parent / 'backup-status.json'
     if not path.is_absolute():
         raise ValueError('BACKUP_STATUS_PATH debe ser una ruta absoluta.')
+    if path.resolve() == Path(source).resolve():
+        raise ValueError('El registro de respaldos no puede reemplazar la base activa.')
     return path
 
 
@@ -31,7 +33,7 @@ def atomic_json(path, value):
 
 
 def record_backup(source, manifest):
-    fields = ('file', 'sha256', 'integrity', 'created_at', 'size_bytes', 'drive_state', 'drive_file_id')
+    fields = ('file', 'sha256', 'integrity', 'created_at', 'size_bytes', 'drive_state', 'drive_file_id', 'rows', 'restore_state', 'restore_checked_at')
     value = {key: manifest[key] for key in fields if key in manifest}
     value['source'] = str(Path(source).resolve())
     atomic_json(status_path(source), value)
@@ -55,6 +57,16 @@ def read_backup(source):
         drive = data.get('drive_state', 'not_requested')
         if drive not in ('not_requested', 'pending', 'verified', 'failed'):
             raise ValueError('Estado inválido')
-        return dict(known=True, created_at=int(created.timestamp()), filename=local_file.name, local_available=available, drive_state=drive)
+        restore = data.get('restore_state', 'not_tested')
+        if restore not in ('not_tested', 'verified', 'failed'):
+            restore = 'not_tested'
+        checked_at = None
+        if data.get('restore_checked_at'):
+            parsed = datetime.fromisoformat(data['restore_checked_at'])
+            if parsed.tzinfo is not None:
+                checked_at = int(parsed.timestamp())
+        if restore == 'verified' and checked_at is None:
+            restore = 'not_tested'
+        return dict(known=True, created_at=int(created.timestamp()), filename=local_file.name, local_available=available, drive_state=drive, restore_state=restore, restore_checked_at=checked_at)
     except (OSError, ValueError, KeyError, TypeError):
         return dict(known=False, reason='No se pudo validar el registro de respaldos de esta base.')

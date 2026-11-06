@@ -2,13 +2,13 @@
 
 Fecha: 6 de noviembre de 2026. Python 3.12, Linux, datos temporales.
 
-- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py player_cards.py diagnostics.py backup_meta.py` correcta.
-- 66 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
+- Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py player_cards.py diagnostics.py backup_meta.py backup_service.py drive_backups.py` correcta.
+- 86 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
 - La entrega inicial pasó 15 pruebas con discord.py 2.4.0. Esa versión ya no es compatible
   con el selector de canales dentro del formulario. Se comprobó también 2.6.0 y no admite
   el parámetro required de ChannelSelect usado aquí: el mínimo se elevó a 2.7.1.
 - `pip check`: sin dependencias incompatibles.
-- Instalación opcional de `google-auth[requests]` verificada; no autenticación ni subida real.
+- Instalación de `google-auth[requests]` verificada; no autenticación ni subida real.
 - `git diff --check`: sin errores de espacios o conflictos.
 
 Cobertura: esquema adicional conserva registros, reinicialización, respuestas únicas modificables,
@@ -24,7 +24,7 @@ no demuestra que Discord haya aceptado los comandos ni que los permisos de produ
 
 Pendiente: token/intents/permisos reales, webhook, presentación móvil, mensajes existentes,
 volumen Railway, respaldo externo de producción, autorización y subida/restauración Drive.
-Los respaldos están preparados como herramienta manual; no hay programación automática activada.
+La tarea de respaldos diarios y la recuperación están implementadas, pero no se activan sin OAuth y AUTO_BACKUP_ENABLED=1. No se han probado contra la cuenta real.
 La entrega contiene código completo y documentación, pero no es un despliegue validado en producción.
 
 Selector de voz: probado payload del modal con cinco campos Label, tipo de canal restringido a
@@ -73,3 +73,17 @@ No se verificó la presentación real de la tarjeta en iPhone ni una subida real
 
 Las lecturas de historial, clasificación y perfil abren SQLite en modo de solo lectura; se verificó
 que consultar un perfil no cree una base nueva si el archivo esperado falta.
+
+Respaldos diarios: programación persistente por día PR, reconexión tardía sin ráfagas,
+subida/descarga y recuperación aislada usando SQLite real y Drive simulado; ninguna prueba
+reemplaza la base activa. Se verificaron fallo de OAuth con aviso único, entrega incierta sin
+reenvío, descarga dañada, nuevo intento de recuperación sin otra subida, interrupción, exclusión
+de trabajos concurrentes, controles administrativos y respuesta privada, guardias contra rutas
+que sustituyan SQLite, creación privada de carpeta, checksums/tamaño, errores HTTP sin tokens,
+cuenta de servicio sin My Drive y timeout que elimina solo la copia parcial nueva.
+Falta la prueba de extremo a extremo con OAuth de Gmail real en Railway y avisos reales Discord.
+
+Se comprobó también que iniciar dos veces el servicio habilitado no duplique la tarea diaria.
+
+Se probó que un fallo al persistir el estado no impida intentar un aviso único en ese proceso,
+sin comenzar una subida no registrada ni modificar la base activa.

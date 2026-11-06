@@ -12,3 +12,11 @@ __pycache__/
 
 backup-status.json
 .backup-status-*.tmp
+
+backup-schedule.json
+*oauth*.json
+
+client_secret*.json
+token.json
+tokens.json
+*.manifest.json

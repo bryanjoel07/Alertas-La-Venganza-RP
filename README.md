@@ -21,9 +21,11 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 - `backup_meta.py`: constancia atómica de copias verificadas, sin credenciales.
 - `storage.py`: selección de base con protección contra arranque vacío o ambiguo.
 - `summaries.py`: una lista pública editable y persistente por evento o reunión, sin notificaciones de menciones.
-- `backup.py`: copia consistente de SQLite, integridad, manifiesto SHA-256 y subida opcional a Drive.
+- `backup.py`: copia consistente de SQLite, integridad, SHA-256 y utilidad manual.
+- `backup_service.py`: tarea diaria, comandos privados y avisos de fallo.
+- `drive_backups.py`: OAuth/ADC, subida/descarga y recuperación aislada.
 - `requirements.txt`: discord.py 2.7.1 o superior para el selector de voz dentro del formulario.
-- `requirements-backup.txt`: dependencia opcional para Google Drive.
+- `requirements-backup.txt`: dependencias de Drive, incluidas por requirements.txt.
 - `railway.json`: configuración original sin cambios (Railpack, `python bot.py`, diez reintentos ante fallos).
 - `tests/test_bot.py`: pruebas locales sin credenciales reales.
 - `.gitignore`: excluye secretos, bases, respaldos y archivos temporales.
@@ -42,6 +44,8 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 | `/evento premios` | Tres premios y cupos; no reduce por debajo de los inscritos | Administrador Discord |
 | `/evento banner` | Cambia imagen del anuncio | Administrador Discord |
 | `/perfil jugador` | Tarjeta propia o de otro jugador; páginas y descarga de eventos | Miembros con acceso al canal de eventos |
+| `/respaldo crear` | Copia en Drive y recuperación de prueba en segundo plano | Administrador Discord |
+| `/respaldo probar` | Descarga de Drive y restauración aislada de una copia registrada | Administrador Discord |
 | `/estado-bot` | Diagnóstico privado del proceso, monitor, tareas, base y respaldo | Administrador Discord |
 | `/evento historial pagina` | Resultados de eventos finalizados, cinco por página | Miembros con acceso al canal de eventos |
 | `/evento ranking` | Top 10 por participaciones, con podios y desempate estable | Miembros con acceso al canal de eventos |
@@ -127,6 +131,13 @@ aunque falle el mensaje público y se muestra una advertencia privada.
 | `DATA_DIR` | Compatibilidad anterior si no hay `DB_PATH` |
 | `RAILWAY_VOLUME_MOUNT_PATH` | Variable de Railway, último directorio alternativo antes de `/tmp` |
 | `ALLOW_EMPTY_DB` | `0` por defecto. `1` solo para instalar una base nueva o pruebas; nunca como solución a datos desaparecidos |
+| `AUTO_BACKUP_ENABLED` | `0` por defecto; `1` activa respaldos diarios tras configurar OAuth |
+| `BACKUP_TIME_PR` | `03:00` por defecto, hora de Puerto Rico |
+| `GOOGLE_DRIVE_CREDENTIALS_JSON` | Credenciales OAuth privadas en Railway para tu Gmail personal |
+| `GOOGLE_DRIVE_BACKUP_FOLDER_ID` | Opcional: carpeta autorizada; vacío permite crear una privada para la aplicación |
+| `BACKUP_DIR` | Directorio absoluto de copias locales, por defecto `/data/backups` si SQLite está en `/data` |
+| `BACKUP_STATE_PATH` | Registro diario persistente, por defecto junto a la base |
+| `BACKUP_ALERT_CHANNEL_ID` | Canal de avisos, por defecto General Staff `1515887549678223380` |
 | `BACKUP_STATUS_PATH` | Opcional: ruta absoluta de la constancia de respaldo; por defecto `backup-status.json` junto a SQLite |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Solo para respaldos Drive: ruta de archivo secreto OAuth o identidad de servicio compatible con ADC |
 
@@ -201,7 +212,7 @@ se muestra «No hay respaldo verificado registrado»; no se presupone que un arc
 o un volumen sean un respaldo. La integridad indicada corresponde a la comprobación al
 crear la copia, no a una nueva comprobación en cada consulta. La disponibilidad local compara
 existencia/tamaño; el estado de Drive corresponde a la última subida verificada, sin consultar
-si el archivo todavía existe en Drive. Esta función no activa ni programa respaldos.
+si el archivo todavía existe en Drive. El diagnóstico no activa respaldos por sí solo; la nueva tarea diaria requiere la configuración descrita abajo.
 
 ## Recordatorios de eventos
 
@@ -248,6 +259,11 @@ El comando avisa del fallo y se puede repetir el mismo cierre para reintentar re
 
 ## Respaldos
 
+La tarea diaria en Drive, sus comandos y la prueba de recuperación están implementados y
+**desactivados por defecto hasta configurar OAuth**. Consulta [RESPALDOS_DRIVE.md](RESPALDOS_DRIVE.md)
+para configurar tu Gmail desde iPhone y verificar una copia real antes de activar el horario.
+No se reemplaza la base activa al probar recuperación. No se borran copias anteriores.
+
 Ejemplo, **solo después de verificar origen y autorizar la operación en producción**:
 
 ```sh
@@ -263,12 +279,12 @@ en `backup-status.json` junto a la base, con permisos privados y reemplazo atóm
 Una copia hecha con herramientas antiguas no tendrá esta constancia y no se inventará su estado.
 La subida se distingue como no solicitada, pendiente, verificada o fallida; si falla, se conserva
 la copia local y el diagnóstico lo muestra. La constancia no contiene claves ni refresh tokens.
-El script es manual: no hay un respaldo automático activado silenciosamente.
-Para automatizarlo, un operador debe programar su ejecución en un entorno con acceso a la base
-y a almacenamiento externo, definir frecuencia y revisar fallos. No asumir que otro servicio
-Railway puede montar simultáneamente el mismo volumen. Recomendación: diario y antes de cambios.
+La utilidad CLI sigue siendo manual. Para la automatización incorporada, usa `/respaldo crear`
+y `/respaldo probar`, configura OAuth y activa AUTO_BACKUP_ENABLED=1 según la guía. La tarea
+se ejecuta dentro del mismo bot con acceso al volumen; no requiere otro servicio Railway.
+Los avisos de fallo van a General Staff y el estado se conserva entre reinicios.
 
-Para Drive instala además `pip install -r requirements-backup.txt` y ejecuta:
+La instalación de requirements.txt ya incluye las dependencias de Drive. La CLI manual admite:
 
 ```sh
 python backup.py --source /RUTA/ACTIVA/lavenganza.sqlite3 --output /RUTA/RESPALDOS/copia-FECHA.db --drive-folder ID_CARPETA
@@ -290,7 +306,7 @@ Python 3.12 usado en la validación; Python 3.9+ es necesario por `zoneinfo`; di
 ```sh
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py player_cards.py diagnostics.py backup_meta.py
+.venv/bin/python -m py_compile bot.py meetings.py storage.py backup.py summaries.py event_features.py staff_reports.py player_cards.py diagnostics.py backup_meta.py backup_service.py drive_backups.py
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/pip check
 ```

@@ -20,6 +20,7 @@ from event_features import EventFeatures
 from player_cards import PlayerCard
 from diagnostics import read_database, status_embed
 from backup_meta import read_backup
+from backup_service import BackupService
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -204,6 +205,8 @@ class LaVenganzaBot(discord.Client):
         self.summaries = SummaryMessages(self, DB_PATH)
         self.meetings = MeetingSystem(self, DB_PATH, self.summaries)
         self.tree.add_command(self.meetings.group, guild=GUILD)
+        self.backups = BackupService(self, DB_PATH, GUILD_ID)
+        self.tree.add_command(self.backups.group, guild=GUILD)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
@@ -212,13 +215,14 @@ class LaVenganzaBot(discord.Client):
         self.add_view(EventButtons())
         await self.meetings.start()
         await self.event_features.start()
+        await self.backups.start()
         commands = await self.tree.sync(guild=GUILD)
         log.info("Comandos sincronizados: %s", ", ".join(c.name for c in commands))
         if self.monitor_task is None or self.monitor_task.done():
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
 
     async def close(self):
-        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task) if task]
+        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -783,8 +787,8 @@ async def perfil(interaction: discord.Interaction, jugador: discord.Member = Non
 @app_commands.check(only_admin)
 async def estado_bot(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True, thinking=True)
-    database_info, backup_info = await asyncio.gather(asyncio.to_thread(read_database, DB_PATH), asyncio.to_thread(read_backup, DB_PATH))
-    await interaction.followup.send(embed=status_embed(client, DB_PATH, database_info, backup_info), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+    database_info, backup_info, automation = await asyncio.gather(asyncio.to_thread(read_database, DB_PATH), asyncio.to_thread(read_backup, DB_PATH), client.backups.describe())
+    await interaction.followup.send(embed=status_embed(client, DB_PATH, database_info, backup_info, automation), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 @event_group.command(name="historial", description="Consulta resultados de todos los eventos finalizados, cinco por página")

@@ -12,9 +12,10 @@ from datetime import datetime, timezone
 from contextlib import closing
 from backup_meta import atomic_json, record_backup
 import sqlite3
+import time
 
 
-def snapshot(source, output):
+def snapshot(source, output, timeout_seconds=120):
     source, output = Path(source).resolve(), Path(output).resolve()
     if source == output or not source.is_file():
         raise ValueError("El origen debe existir y ser distinto del destino.")
@@ -22,10 +23,14 @@ def snapshot(source, output):
     # O_EXCL evita reemplazar cualquier respaldo existente.
     fd = os.open(str(output), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(fd)
+    deadline = time.monotonic() + timeout_seconds
+    def progress(*args):
+        if time.monotonic() > deadline:
+            raise TimeoutError("El respaldo de SQLite excedió su tiempo máximo.")
     try:
         with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True, timeout=10)) as src:
             with closing(sqlite3.connect(output)) as dst, dst:
-                src.backup(dst, pages=256, sleep=0.05)
+                src.backup(dst, pages=256, sleep=0.05, progress=progress)
                 if dst.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                     raise RuntimeError("El respaldo no pasó integrity_check.")
                 tables = [r[0] for r in dst.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
@@ -41,29 +46,10 @@ def snapshot(source, output):
 
 
 def upload_drive(path, folder):
-    # Dependencias opcionales: pip install -r requirements-backup.txt
-    import google.auth
-    from google.auth.transport.requests import AuthorizedSession
-    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/drive.file"])
-    path = Path(path)
-    with AuthorizedSession(credentials) as session:
-        response = session.post("https://www.googleapis.com/upload/drive/v3/files", params={"uploadType": "resumable", "fields": "id,size,md5Checksum"}, json={"name": path.name, "parents": [folder]}, headers={"X-Upload-Content-Type": "application/vnd.sqlite3", "X-Upload-Content-Length": str(path.stat().st_size)}, timeout=30)
-        response.raise_for_status()
-        location = response.headers["Location"]
-        # No se imprime la URL de sesión ni se guarda en el repositorio.
-        with path.open("rb") as data:
-            result = session.put(location, data=data, headers={"Content-Type": "application/vnd.sqlite3", "Content-Length": str(path.stat().st_size)}, timeout=180)
-        result.raise_for_status()
-        info = result.json()
-        if int(info.get("size", -1)) != path.stat().st_size:
-            raise RuntimeError("Drive no confirmó el tamaño del archivo.")
-        digest = hashlib.md5()  # Checksum de transporte de Drive, no autenticación.
-        with path.open("rb") as data:
-            for chunk in iter(lambda: data.read(1024 * 1024), b""):
-                digest.update(chunk)
-        if info.get("md5Checksum") != digest.hexdigest():
-            raise RuntimeError("Drive no confirmó el checksum del respaldo.")
-        return info["id"]
+    from drive_backups import DriveBackupClient
+    with DriveBackupClient() as drive:
+        folder = drive.folder(folder)
+        return drive.upload(path, folder)
 
 
 def main():

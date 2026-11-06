@@ -44,7 +44,7 @@ def at(value):
     return f'<t:{int(value)}:R>' if value is not None else 'Sin lectura en este proceso'
 
 
-def status_embed(bot, path, database, backup):
+def status_embed(bot, path, database, backup, automation=None):
     connected = bot.is_ready()
     elapsed = max(0, int(time.monotonic() - bot.started_monotonic))
     hours, rest = divmod(elapsed, 3600)
@@ -74,6 +74,19 @@ def status_embed(bot, path, database, backup):
     else:
         drive = {'verified': '✅ Última subida verificada', 'pending': '⏳ Subida pendiente', 'failed': '❌ Última subida falló', 'not_requested': '⚪ No se solicitó subida'}[backup['drive_state']]
         backup_text = f"Creado: <t:{backup['created_at']}:f>\nIntegridad comprobada al crear: ✅\nCopia local: {'disponible' if backup['local_available'] else 'no encontrada o tamaño diferente'}\nGoogle Drive: {drive}\nNo se comprueba en vivo que Drive conserve el archivo."
+    if backup.get('known'):
+        restore = {'verified': '✅ Verificada desde Drive', 'failed': '❌ Falló la prueba', 'not_tested': '⚪ Sin prueba registrada'}.get(backup.get('restore_state', 'not_tested'), '⚪ Sin prueba registrada')
+        backup_text += f"\nRecuperación: {restore}"
     embed.add_field(name='🗂️ Último respaldo registrado', value=backup_text, inline=False)
+    if automation is not None:
+        phase = {'not_run': 'Sin ejecución', 'running': 'En curso', 'complete': 'Completado', 'failed': 'Falló', 'interrupted': 'Interrumpido'}.get(automation['phase'], 'Desconocido')
+        daily = f"Diario: {'Activado' if automation['enabled'] else 'Desactivado'} · {automation['time_pr']} Puerto Rico\nÚltima operación: {phase}\nEtapa: {automation.get('stage') or 'Sin iniciar'}\nOperación en curso: {'Sí' if automation['busy'] else 'No'}\nÚltima revisión: {at(automation['last_check_at'])}"
+        daily += "\nTarea diaria: " + ('Activa' if automation.get('scheduler_active') else 'No iniciada o detenida')
+        if automation.get('config_error'):
+            daily += '\n⚠️ Configuración inválida: revisa RESPALDOS_DRIVE.md.'
+        if automation.get('last_success_at'):
+            stamp = int(datetime.fromisoformat(automation['last_success_at']).timestamp())
+            daily += f'\nÚltima copia con recuperación verificada: <t:{stamp}:f>'
+        embed.add_field(name='☁️ Automatización de respaldos', value=daily, inline=False)
     embed.set_footer(text='Solo administradores · No muestra tokens ni webhooks · Un montaje no verifica una restauración externa')
     return embed
