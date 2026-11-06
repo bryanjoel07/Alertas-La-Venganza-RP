@@ -529,37 +529,18 @@ class DetailsModal(AdminModal, title="Evento - Datos principales"):
     location = discord.ui.TextInput(label="Lugar", placeholder="Pista de Salinas | Sandy Shores", max_length=200)
     description = discord.ui.TextInput(label="Descripcion completa", style=discord.TextStyle.paragraph, max_length=1800)
 
-    def __init__(self, banner=None):
-        super().__init__()
-        self.banner = banner
-
     async def on_submit(self, interaction):
         try:
             starts_at = valid_datetime(self.date.value, self.hour.value)
         except ValueError as exc:
             await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
             return
-        if self.banner:
-            if not (self.banner.content_type or "").startswith("image/") or self.banner.size > 8 * 1024 * 1024:
-                await interaction.response.send_message("❌ Banner inválido o superior a 8 MB.", ephemeral=True)
-                return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        banner_data = None
-        if self.banner:
-            try:
-                extension = self.banner.filename.rsplit(".", 1)[-1].lower() if "." in self.banner.filename else "png"
-                if extension not in ("png", "jpg", "jpeg", "webp", "gif"):
-                    raise ValueError("Formato no permitido")
-                banner_data = (await self.banner.read(), f"evento.{extension}")
-            except Exception:
-                log.exception("Error leyendo banner")
-                await interaction.followup.send("❌ No se pudo leer el banner. Intenta subir otro.", ephemeral=True)
-                return
         purge_drafts()
         DRAFTS[interaction.user.id] = {
             "created": time.monotonic(), "title": self.name.value.strip(),
             "description": self.description.value.strip(), "location": self.location.value.strip(),
-            "starts_at": starts_at, "banner": banner_data,
+            "starts_at": starts_at, "banner": None,
         }
         await interaction.followup.send(
             "✅ **Paso 1 completado.** Pulsa **Premios y cupos** para continuar.",
@@ -583,30 +564,73 @@ class ContinueView(AdminView):
         await interaction.response.send_modal(PrizesModal(self.owner))
 
 
-class PrizesModal(AdminModal, title="Evento - Premios y participantes"):
-    capacity = discord.ui.TextInput(label="Cupos disponibles", placeholder="30", max_length=3)
-    first = discord.ui.TextInput(label="Primer lugar", placeholder="$250,000 o Proximamente", max_length=200)
-    second = discord.ui.TextInput(label="Segundo lugar", placeholder="$100,000 o Proximamente", max_length=200)
-    third = discord.ui.TextInput(label="Tercer lugar", placeholder="$50,000 o Proximamente", max_length=200)
+async def read_event_banner(attachment):
+    extension = attachment.filename.rsplit(".", 1)[-1].lower() if "." in attachment.filename else ""
+    if (not (attachment.content_type or "").startswith("image/")
+            or attachment.size > 8 * 1024 * 1024
+            or extension not in ("png", "jpg", "jpeg", "webp", "gif")):
+        raise ValueError("Usa una imagen PNG, JPG, WEBP o GIF de hasta 8 MB.")
+    try:
+        data = await asyncio.wait_for(attachment.read(), timeout=15)
+    except asyncio.TimeoutError:
+        raise ValueError("La descarga del banner tardó demasiado. Intenta una imagen más pequeña.") from None
+    return data, f"evento.{extension}"
 
+
+class PrizesModal(AdminModal, title="Evento - Premios, cupos y banner"):
     def __init__(self, owner):
         super().__init__()
         self.owner = owner
+        self.capacity = discord.ui.TextInput(placeholder="30", max_length=3)
+        self.first = discord.ui.TextInput(placeholder="$250,000 o Próximamente", max_length=200)
+        self.second = discord.ui.TextInput(placeholder="$100,000 o Próximamente", max_length=200)
+        self.third = discord.ui.TextInput(placeholder="$50,000 o Próximamente", max_length=200)
+        self.banner = discord.ui.FileUpload(
+            custom_id="lvrp:event:draft-banner", required=False, min_values=0, max_values=1
+        )
+        for label, component in (
+            ("Cupos disponibles", self.capacity),
+            ("Primer lugar", self.first),
+            ("Segundo lugar", self.second),
+            ("Tercer lugar", self.third),
+            ("Banner opcional · imagen de hasta 8 MB", self.banner),
+        ):
+            self.add_item(discord.ui.Label(text=label, component=component))
 
     async def on_submit(self, interaction):
+        # Confirmar recepción antes de descargar/subir archivos: Discord exige respuesta rápida.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        if interaction.user.id != self.owner:
+            await interaction.followup.send("❌ Este formulario no es tuyo.", ephemeral=True)
+            return
         draft = DRAFTS.get(self.owner)
         if not draft:
-            await interaction.response.send_message("❌ El borrador expiró.", ephemeral=True)
+            await interaction.followup.send("❌ El borrador expiró.", ephemeral=True)
             return
         try:
             capacity = int(self.capacity.value.strip())
             if capacity < 1 or capacity > 500:
                 raise ValueError()
         except ValueError:
-            await interaction.response.send_message("❌ Cupos: un número entre 1 y 500.", ephemeral=True)
+            await interaction.followup.send("❌ Cupos: un número entre 1 y 500.", ephemeral=True)
+            return
+        banner_data = draft.get("banner")
+        if self.banner.values:
+            try:
+                banner_data = await read_event_banner(self.banner.values[0])
+            except ValueError as exc:
+                await interaction.followup.send(f"❌ {exc} Pulsa Premios y cupos para intentarlo de nuevo.", ephemeral=True)
+                return
+            except discord.HTTPException:
+                log.exception("Error descargando el banner del borrador")
+                await interaction.followup.send("❌ No se pudo descargar el banner. El borrador sigue disponible; vuelve a Premios y cupos.", ephemeral=True)
+                return
+        if DRAFTS.get(self.owner) is not draft:
+            await interaction.followup.send("❌ Este borrador fue reemplazado o cancelado. Abre el formulario actual.", ephemeral=True)
             return
         draft["capacity"] = capacity
         draft["prizes"] = prize_text(self.first.value, self.second.value, self.third.value)
+        draft["banner"] = banner_data
         draft["created"] = time.monotonic()
         virtual = {
             "id": "PREVIA", "title": draft["title"], "description": draft["description"],
@@ -615,11 +639,11 @@ class PrizesModal(AdminModal, title="Evento - Premios y participantes"):
         }
         embed = event_embed(virtual, 0)
         options = {"embed": embed, "view": PublishView(self.owner), "ephemeral": True}
-        if draft.get("banner"):
-            data, filename = draft["banner"]
+        if banner_data:
+            data, filename = banner_data
             options["file"] = discord.File(io.BytesIO(data), filename=filename)
             embed.set_image(url=f"attachment://{filename}")
-        await interaction.response.send_message(**options)
+        await interaction.followup.send(**options)
 
 
 class PublishView(AdminView):
@@ -695,10 +719,9 @@ event_group = app_commands.Group(name="evento", description="Eventos de La Venga
 
 
 @event_group.command(name="crear", description="Crear evento: fecha/hora PR, lugar, descripción, premios, cupos y banner")
-@app_commands.describe(imagen="Opcional: selecciona una imagen de tu galería (máximo 8 MB)")
 @app_commands.check(only_admin)
-async def evento_crear(interaction: discord.Interaction, imagen: discord.Attachment = None):
-    await interaction.response.send_modal(DetailsModal(imagen))
+async def evento_crear(interaction: discord.Interaction):
+    await interaction.response.send_modal(DetailsModal())
 
 
 # CAMBIO SOLICITADO: /evento cerrar ELIMINA EL MENSAJE COMPLETO.

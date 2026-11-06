@@ -3,7 +3,7 @@
 Fecha: 6 de noviembre de 2026. Python 3.12, Linux, datos temporales.
 
 - Sintaxis: `python -m py_compile bot.py meetings.py storage.py backup.py` correcta.
-- 17 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
+- 22 pruebas pasan con discord.py 2.7.1 (nuevo mínimo) y aiohttp 3.14.5.
 - La entrega inicial pasó 15 pruebas con discord.py 2.4.0. Esa versión ya no es compatible
   con el selector de canales dentro del formulario. Se comprobó también 2.6.0 y no admite
   el parámetro required de ChannelSelect usado aquí: el mínimo se elevó a 2.7.1.
@@ -31,3 +31,9 @@ Selector de voz: probado payload del modal con cinco campos Label, tipo de canal
 voz, selección única obligatoria, canal preseleccionado al editar, compatibilidad con lugares
 anteriores, enlace del canal y rechazo de selección sin permiso de conexión o de tipo incorrecto.
 El anuncio de Staff conserva como destino 1515887549678223380. Sin cambios de esquema ni datos.
+
+Creación de eventos con banner: pruebas de apertura del formulario sin parámetro de archivo,
+selector opcional de un archivo, confirmación anterior a la descarga, vista previa privada con
+los bytes del banner, ausencia de publicación anticipada, flujo sin imagen, rechazo de archivos
+mayores de 8 MB sin descargarlos y timeout de descarga que conserva el borrador.
+No se midió la latencia desde un iPhone real: la carga del archivo depende de su red y de Discord.

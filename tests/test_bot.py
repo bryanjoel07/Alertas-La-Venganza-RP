@@ -241,6 +241,86 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await modal.selected_location(interaction)
 
+    async def test_create_opens_modal_without_waiting_for_attachment(self):
+        from unittest.mock import AsyncMock, Mock
+        interaction = Mock()
+        interaction.response.send_modal = AsyncMock()
+        await self.bot.evento_crear.callback(interaction)
+        interaction.response.send_modal.assert_awaited_once()
+        self.assertIsInstance(interaction.response.send_modal.call_args.args[0], self.bot.DetailsModal)
+        self.assertEqual(self.bot.evento_crear.parameters, [])
+        modal = self.bot.PrizesModal(42)
+        fields = modal.to_components()
+        self.assertEqual(len(fields), 5)
+        upload = fields[4]['component']
+        self.assertEqual(upload['type'], 19)
+        self.assertFalse(upload['required'])
+        self.assertEqual(upload['max_values'], 1)
+
+    async def prepare_event_preview(self, attachment=None):
+        from unittest.mock import AsyncMock, Mock
+        self.bot.DRAFTS.clear()
+        self.bot.DRAFTS[42] = dict(created=0, title='Prueba', description='Texto', location='Ciudad', starts_at='2030-01-01T23:00:00+00:00', banner=None)
+        interaction = Mock()
+        interaction.user.id = 42
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        modal = self.bot.PrizesModal(42)
+        modal.capacity._value = '30'
+        modal.first._value = 'Oro'
+        modal.second._value = 'Plata'
+        modal.third._value = 'Bronce'
+        if attachment:
+            modal.banner._values = [attachment]
+        return modal, interaction
+
+    async def test_banner_download_happens_after_ack_and_preview_is_private(self):
+        from unittest.mock import AsyncMock, Mock
+        image = Mock(filename='foto.jpg', content_type='image/jpeg', size=100)
+        modal, interaction = await self.prepare_event_preview(image)
+        async def read():
+            interaction.response.defer.assert_awaited_once()
+            return b'banner-bytes'
+        image.read = AsyncMock(side_effect=read)
+        await modal.on_submit(interaction)
+        self.assertEqual(self.bot.DRAFTS[42]['banner'], (b'banner-bytes', 'evento.jpg'))
+        kwargs = interaction.followup.send.call_args.kwargs
+        self.assertTrue(kwargs['ephemeral'])
+        self.assertEqual(kwargs['file'].fp.read(), b'banner-bytes')
+        self.assertIsInstance(kwargs['view'], self.bot.PublishView)
+        with self.bot.database() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM events').fetchone()[0], 0)
+
+    async def test_preview_without_banner_still_works(self):
+        modal, interaction = await self.prepare_event_preview()
+        await modal.on_submit(interaction)
+        self.assertNotIn('file', interaction.followup.send.call_args.kwargs)
+        self.assertIsNone(self.bot.DRAFTS[42]['banner'])
+
+    async def test_bad_banner_keeps_draft_and_does_not_download(self):
+        from unittest.mock import AsyncMock, Mock
+        image = Mock(filename='huge.jpg', content_type='image/jpeg', size=9 * 1024 * 1024)
+        image.read = AsyncMock()
+        modal, interaction = await self.prepare_event_preview(image)
+        await modal.on_submit(interaction)
+        image.read.assert_not_awaited()
+        self.assertIn(42, self.bot.DRAFTS)
+        self.assertIn('8 MB', interaction.followup.send.call_args.args[0])
+
+    async def test_banner_timeout_returns_actionable_error(self):
+        from unittest.mock import AsyncMock, Mock
+        image = Mock(filename='foto.jpg', content_type='image/jpeg', size=100)
+        image.read = AsyncMock(return_value=b'image')
+        modal, interaction = await self.prepare_event_preview(image)
+        async def timeout(awaitable, timeout):
+            self.assertEqual(timeout, 15)
+            await awaitable
+            raise asyncio.TimeoutError()
+        with patch.object(self.bot.asyncio, 'wait_for', side_effect=timeout):
+            await modal.on_submit(interaction)
+        self.assertIn('tardó demasiado', interaction.followup.send.call_args.args[0])
+        self.assertIn(42, self.bot.DRAFTS)
+
     async def test_setup_initializes_once_and_syncs_without_network(self):
         from unittest.mock import AsyncMock
         bot = self.bot.LaVenganzaBot()

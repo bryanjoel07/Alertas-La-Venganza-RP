@@ -31,7 +31,7 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 | `/historial-caidas` | Últimas diez caídas, estado, duración e ID | Administrador Discord |
 | `/mantenimiento iniciar` | Motivo, anuncio, registro y suspensión del monitor | Administrador Discord |
 | `/mantenimiento finalizar` | Anuncio, lectura del panel y reactivación | Administrador Discord |
-| `/evento crear` | Imagen opcional, formulario en dos pasos, vista previa y publicación explícita | Administrador Discord |
+| `/evento crear` | Formulario en dos pasos, banner opcional en el segundo, vista previa y publicación explícita | Administrador Discord |
 | `/evento editar` | Nombre, fecha, hora, lugar y descripción; conserva inscritos | Administrador Discord |
 | `/evento premios` | Tres premios y cupos; no reduce por debajo de los inscritos | Administrador Discord |
 | `/evento banner` | Cambia imagen del anuncio | Administrador Discord |
@@ -62,6 +62,18 @@ El campo Canal de voz permite elegir un único canal de voz del servidor y valid
 al enviar. El anuncio muestra el enlace al canal elegido. Los lugares de reuniones anteriores
 se conservan; al editarlas se debe elegir un canal si antes tenían un lugar escrito.
 La creación de reunión se confirma al enviar el formulario; eventos mantienen su vista previa.
+
+### Crear un evento con imagen sin retrasar la apertura
+
+Ejecuta `/evento crear` sin adjuntar archivos al comando. Completa los datos principales y pulsa
+Premios y cupos. El segundo formulario incluye un selector de archivo opcional para el banner
+(PNG, JPG, WEBP o GIF, hasta 8 MB). Al enviarlo se confirma la interacción antes de descargar
+el archivo o subir la vista previa. La descarga tiene un límite de 15 segundos y, si falla,
+el borrador se conserva para reintentar. Revisa el banner y pulsa Publicar evento para enviarlo
+al canal oficial. El comando ya no tiene el parámetro `imagen`: el archivo se elige dentro del
+formulario, para que Discord no tenga que terminar su subida antes de enviar el comando inicial.
+La velocidad de subida sigue dependiendo de la conexión del usuario y de Discord.
+
 
 ## Variables de entorno
 
