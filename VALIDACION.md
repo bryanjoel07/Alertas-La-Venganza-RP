@@ -87,3 +87,7 @@ Se comprobó también que iniciar dos veces el servicio habilitado no duplique l
 
 Se probó que un fallo al persistir el estado no impida intentar un aviso único en ese proceso,
 sin comenzar una subida no registrada ni modificar la base activa.
+
+Corrección de empaquetado Railway: Railpack copia solo requirements.txt en su etapa de instalación.
+Se eliminó el include de requirements-backup.txt y se declaró google-auth[requests] directamente.
+Se comprueba que requirements.txt pueda instalarse aislado de los demás archivos del repositorio.
