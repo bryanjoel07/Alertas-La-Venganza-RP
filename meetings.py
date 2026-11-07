@@ -1,6 +1,7 @@
 """Reuniones independientes de eventos; SQLite en hilos y vistas persistentes."""
 import asyncio
 import io
+import hashlib
 import logging
 import re
 import sqlite3
@@ -20,7 +21,8 @@ STAFF_VOICE_ID = 1515887667298963579
 VOICE_TYPES = (discord.ChannelType.voice, discord.ChannelType.stage_voice)
 ROLES = {1245008186440683530, 1245010156576833536, 1300619682486947931, 1300627506801541230}
 PR = ZoneInfo("America/Puerto_Rico")
-THRESHOLDS = (86400, 3600, 900)
+REMINDER_LABELS = {86400: "24 horas", 43200: "12 horas", 21600: "6 horas", 3600: "1 hora", 900: "15 minutos", 300: "5 minutos", 0: "inicio"}
+START_GRACE = 180
 LABELS = {"yes": "✅ Asistiré", "no": "❌ No asistiré", "maybe": "❔ Tal vez"}
 
 
@@ -116,20 +118,30 @@ class MeetingStore:
             return [dict(r) for r in db.execute("SELECT * FROM meetings WHERE status='scheduled' AND message_id IS NOT NULL")]
 
     def claim_reminder(self, meeting_id, now):
-        """Reserva como máximo el aviso vigente. Descarta umbrales anteriores."""
+        claim = self.reserve_reminder(meeting_id, now)
+        return claim[1] if claim else None
+
+    def reserve_reminder(self, meeting_id, now):
         with self.db() as db:
-            m = db.execute("SELECT * FROM meetings WHERE id=? AND status='scheduled'", (meeting_id,)).fetchone()
+            m = db.execute("SELECT * FROM meetings WHERE id=? AND status='scheduled' AND message_id IS NOT NULL", (meeting_id,)).fetchone()
             if not m:
                 return None
-            due = [s for s in THRESHOLDS if m["starts_at"] - s <= now]
-            eligible = [s for s in due if m["starts_at"] - s > m["created_at"]]
-            chosen = min(eligible) if eligible and now < m["starts_at"] else None
-            for seconds in due:
-                state = "claimed" if seconds == chosen else "skipped"
-                cur = db.execute("INSERT OR IGNORE INTO meeting_reminders VALUES (?,?,?,?)", (meeting_id, seconds, state, now))
-                if seconds == chosen and cur.rowcount == 0:
-                    chosen = None
-            return chosen
+            starts = m["starts_at"]
+            if now >= starts + START_GRACE:
+                return None
+            due = [s for s in REMINDER_LABELS if m["created_at"] <= starts - s <= now]
+            if not due:
+                return None
+            seconds = min(due)
+            key = (meeting_id, seconds)
+            inserted = db.execute("INSERT OR IGNORE INTO meeting_reminders VALUES (?,?,'claimed',?)", (*key, now)).rowcount
+            if not inserted:
+                retried = db.execute("""UPDATE meeting_reminders SET state='claimed',updated_at=?
+                    WHERE meeting_id=? AND seconds=? AND
+                    (state='failed' OR (state='claimed' AND updated_at<=?))""", (now,*key,now-60)).rowcount
+                if not retried:
+                    return None
+            return dict(m), seconds, not inserted
 
     def reminder_result(self, meeting_id, seconds, state):
         with self.db() as db:
@@ -283,6 +295,7 @@ class MeetingSystem:
         status = {"scheduled": "Confirmaciones abiertas", "cancelled": "Cancelada", "finished": "Finalizada"}.get(meeting["status"], "Preparando anuncio")
         embed = discord.Embed(title=f"{'🔒' if meeting['kind'] == 'staff' else '🌎'} {escaped(meeting['title'])}", description=escaped(meeting["description"]), color=0xD60000)
         embed.add_field(name="📅 Fecha y hora", value=f"🇵🇷 {local:%d/%m/%Y · %I:%M %p} — Puerto Rico\n🌎 Tu hora: <t:{meeting['starts_at']}:F>", inline=False)
+        embed.add_field(name="🔔 Recordatorios en este canal", value="24 h, 12 h, 6 h, 1 h, 15 min, 5 min y al comenzar.", inline=False)
         embed.add_field(name="📍 Lugar o canal de voz", value=meeting_location(meeting["location"]), inline=False)
         embed.add_field(name="📋 Agenda", value=escaped(meeting["agenda"]), inline=False)
         embed.add_field(name="Confirmaciones", value=" · ".join(f"{LABELS[k]}: **{counts[k]}**" for k in LABELS), inline=False)
@@ -413,27 +426,56 @@ class MeetingSystem:
                 notice += "\n⚠️ No se pudo eliminar el panel. Revisa los permisos y repite este comando para reintentar."
         await interaction.followup.send(("🔒 Reunión cancelada." if status == "cancelled" else "✅ Reunión finalizada.") + " Registros conservados; se retira el panel de botones." + notice, ephemeral=True)
 
+    async def send_due_reminder(self, meeting_id, now):
+        async with self.lock:
+            claim = await self.call("reserve_reminder", meeting_id, now)
+            if not claim:
+                return
+            meeting, seconds, retry = claim
+            starts = meeting["starts_at"]
+            local = datetime.fromtimestamp(starts, PR)
+            marker = f"LA VENGANZA RP | Reunión #{meeting_id} · {local:%d/%m/%Y %H:%M} PR · {REMINDER_LABELS[seconds]}"
+            try:
+                channel = self.bot.get_channel(meeting["channel_id"]) or await self.bot.fetch_channel(meeting["channel_id"])
+                delivered = False
+                if retry:
+                    after = datetime.fromtimestamp(starts - seconds - 1, timezone.utc)
+                    async for message in channel.history(limit=None, after=after):
+                        if message.author.id == self.bot.user.id and any(e.footer.text == marker for e in message.embeds):
+                            delivered = True
+                            break
+                if not delivered:
+                    heading = "🔔 RECORDATORIO DE REUNIÓN"
+                    if not seconds:
+                        heading = "🎙️ LA REUNIÓN HA COMENZADO"
+                    elif now - (starts - seconds) < 60:
+                        heading = f"🔔 REUNIÓN EN {REMINDER_LABELS[seconds].upper()}"
+                    url = f"https://discord.com/channels/{GUILD_ID}/{channel.id}/{meeting['message_id']}"
+                    embed = discord.Embed(title=heading, description=f"**{escaped(meeting['title'])}**\n"
+                        f"🇵🇷 {local:%d/%m/%Y · %I:%M %p} — Puerto Rico\n🌎 <t:{starts}:F> · <t:{starts}:R>\n"
+                        f"📍 {meeting_location(meeting['location'])}\n[Ver reunión]({url})", color=0xD60000)
+                    embed.set_footer(text=marker)
+                    nonce = int.from_bytes(hashlib.blake2b(marker.encode(), digest_size=8).digest(), "big") >> 1
+                    await channel.send(embed=embed, nonce=nonce, allowed_mentions=discord.AllowedMentions.none())
+            except Exception:
+                await self.call("reminder_result", meeting_id, seconds, "failed")
+                raise
+            await self.call("reminder_result", meeting_id, seconds, "sent")
+
     async def reminders(self):
         await self.bot.wait_until_ready()
+        log.info("Recordatorios de reuniones activos: staff y general")
+        for kind, channel_id in CHANNELS.items():
+            channel = self.bot.get_channel(channel_id)
+            perms = channel.permissions_for(channel.guild.me) if channel and channel.guild.me else None
+            ready = bool(perms and perms.view_channel and perms.send_messages and perms.embed_links and perms.read_message_history)
+            log.info("Recordatorios de reuniones: %s canal=%s permisos=%s", kind, channel_id, ready)
         while not self.bot.is_closed():
             self.last_check_at = int(datetime.now(timezone.utc).timestamp())
             try:
                 for meeting in await self.call("active"):
                     try:
-                        async with self.lock:
-                            seconds = await self.call("claim_reminder", meeting["id"], int(datetime.now(timezone.utc).timestamp()))
-                            if seconds is None:
-                                continue
-                            # Se vuelve a leer para usar la fecha actual tras una edición.
-                            current = await self.call("get", meeting["id"])
-                            channel = self.bot.get_channel(current["channel_id"]) or await self.bot.fetch_channel(current["channel_id"])
-                            label = {86400: "24 horas", 3600: "1 hora", 900: "15 minutos"}[seconds]
-                            try:
-                                await channel.send(f"🔔 **Recordatorio de {label} | LA VENGANZA RP**\n{escaped(current['title'])}\n📅 <t:{current['starts_at']}:F>\nhttps://discord.com/channels/{GUILD_ID}/{current['channel_id']}/{current['message_id']}", allowed_mentions=discord.AllowedMentions.none())
-                            except Exception:
-                                await self.call("reminder_result", current["id"], seconds, "failed")
-                                raise
-                            await self.call("reminder_result", current["id"], seconds, "sent")
+                        await self.send_due_reminder(meeting["id"], int(datetime.now(timezone.utc).timestamp()))
                     except Exception:
                         log.exception("Error en recordatorio de reunión #%s", meeting["id"])
             except Exception:

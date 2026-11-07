@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime, timezone
 import importlib
 import os
@@ -20,7 +21,7 @@ class StoreTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = str(Path(self.temp.name) / 'test.db')
         # Simula un esquema y registro existentes del bot original.
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('CREATE TABLE events (id INTEGER PRIMARY KEY, title TEXT)')
             db.execute("INSERT INTO events VALUES (77,'Evento conservado')")
         self.store = MeetingStore(self.path)
@@ -74,17 +75,17 @@ class StoreTests(unittest.TestCase):
 
     def test_reminders_each_once_across_restarts(self):
         mid = self.create()
-        for seconds in (86400, 3600, 900):
+        for seconds in (86400, 43200, 21600, 3600, 900, 300, 0):
             now = self.now + 100000 - seconds
             self.assertEqual(self.store.claim_reminder(mid, now), seconds)
             self.assertIsNone(MeetingStore(self.path).claim_reminder(mid, now + 1))
 
     def test_late_restart_sends_only_latest_and_no_expired(self):
         mid = self.create()
-        self.assertEqual(self.store.claim_reminder(mid, self.now + 99900), 900)
+        self.assertEqual(self.store.claim_reminder(mid, self.now + 99900), 300)
         self.assertIsNone(self.store.claim_reminder(mid, self.now + 99901))
         expired = self.create()
-        self.assertIsNone(self.store.claim_reminder(expired, self.now + 100001))
+        self.assertIsNone(self.store.claim_reminder(expired, self.now + 100300))
         late_created = self.create(delay=600)
         self.assertIsNone(self.store.claim_reminder(late_created, self.now + 1))
 
@@ -92,7 +93,7 @@ class StoreTests(unittest.TestCase):
         mid = self.create()
         with ThreadPoolExecutor(max_workers=5) as pool:
             results = list(pool.map(lambda _: self.store.claim_reminder(mid, self.now + 99900), range(5)))
-        self.assertEqual(results.count(900), 1)
+        self.assertEqual(results.count(300), 1)
 
     def test_backup_verified_and_never_overwrites(self):
         mid = self.create()

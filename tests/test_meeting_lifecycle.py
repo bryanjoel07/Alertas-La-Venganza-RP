@@ -101,3 +101,53 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
         report = self.system.staff.report(self.key)
         self.assertEqual(report['present'], [10])
         self.assertEqual(report['tracking']['gap_detected'], 1)
+
+    async def test_short_meeting_notifies_at_start_in_its_own_channel(self):
+        from time import time
+        starts = int(time()) + 90
+        self.channel.send = AsyncMock()
+        for kind in ('general', 'staff'):
+            key = self.system.store.save(('Prueba', starts, 'Voz', 'Agenda', 'Texto'), 1, kind)
+            self.system.store.publication(key, 100 + key)
+            self.channel.id = CHANNELS[kind]
+            await self.system.send_due_reminder(key, starts - 5)
+            calls = self.channel.send.await_count
+            await self.system.send_due_reminder(key, starts + 1)
+            await self.system.send_due_reminder(key, starts + 2)
+            self.assertEqual(self.channel.send.await_count, calls + 1)
+            self.bot.get_channel.assert_called_with(CHANNELS[kind])
+            embed = self.channel.send.await_args.kwargs['embed']
+            self.assertIn('HA COMENZADO', embed.title)
+            self.assertIn(f'/{CHANNELS[kind]}/{100 + key}', embed.description)
+
+    async def test_failed_delivery_retries_and_recovers_an_ambiguous_send(self):
+        self.channel.id = CHANNELS['staff']
+        self.bot.user.id = 42
+        history = []
+        async def messages(**kwargs):
+            for msg in history:
+                yield msg
+        self.channel.history = messages
+        async def deliver(**kwargs):
+            if self.channel.send.await_count == 1:
+                raise OSError("unavailable")
+            history.append(SimpleNamespace(author=self.bot.user, embeds=[kwargs['embed']]))
+            raise OSError("response lost")
+        self.channel.send = AsyncMock(side_effect=deliver)
+        for offset in (0, 30):
+            with self.assertRaises(OSError):
+                await self.system.send_due_reminder(self.key, 2000000000 - 900 + offset)
+        await self.system.send_due_reminder(self.key, 2000000000 - 900 + 60)
+        await self.system.send_due_reminder(self.key, 2000000000 - 900 + 90)
+        self.assertEqual(self.channel.send.await_count, 2)
+        self.assertEqual(len(history), 1)
+
+    async def test_move_or_cancel_a_meeting_before_the_reminder(self):
+        self.channel.send = AsyncMock()
+        self.system.store.save(('Movida', 2000010000, 'Voz', 'Agenda', 'Texto'), 1, 'staff', self.key)
+        await self.system.send_due_reminder(self.key, 2000000000)
+        self.assertNotIn('HA COMENZADO', self.channel.send.await_args.kwargs['embed'].title)
+        self.system.store.finish(self.key, 'cancelled', 1)
+        self.channel.send.reset_mock()
+        await self.system.send_due_reminder(self.key, 2000010000)
+        self.channel.send.assert_not_awaited()
