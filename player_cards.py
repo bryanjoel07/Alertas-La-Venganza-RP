@@ -55,10 +55,11 @@ def profile_export(member, events):
 
 
 class PlayerCard(discord.ui.View):
-    def __init__(self, bot, owner_id, member, access_check):
+    def __init__(self, bot, owner_id, member, access_check, decorate=None):
         super().__init__(timeout=900)
         self.bot, self.owner_id, self.member, self.access_check = bot, owner_id, member, access_check
         self.page = 1
+        self.decorate = decorate
         self.message = None
 
     async def render(self):
@@ -66,7 +67,10 @@ class PlayerCard(discord.ui.View):
         self.page = data['page']
         self.previous.disabled = self.page <= 1
         self.next.disabled = self.page >= data['pages']
-        return profile_embed(self.member, data)
+        embed = profile_embed(self.member, data)
+        if self.decorate:
+            self.decorate(embed, self.member.id)
+        return embed
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.owner_id:

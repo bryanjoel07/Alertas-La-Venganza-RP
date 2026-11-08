@@ -28,6 +28,7 @@ from streamer_panel import StreamerPanel
 from server_health import OriginalPanel
 from obscenities import ObscenityFilter
 from daily_up import announce_daily_up
+from economy import Economy
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -206,6 +207,7 @@ class LaVenganzaBot(discord.Client):
         self.monitor_last_read = None
         self.monitor_last_error = None
         self.tree = app_commands.CommandTree(self)
+        self.economy = Economy(self, DB_PATH, GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -226,6 +228,7 @@ class LaVenganzaBot(discord.Client):
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
+        await self.economy.start()
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
         self.obscenity_filter.install.start()
@@ -247,7 +250,7 @@ class LaVenganzaBot(discord.Client):
         self.obscenity_filter.install.cancel()
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -875,7 +878,7 @@ async def perfil(interaction: discord.Interaction, jugador: discord.Member = Non
     await interaction.response.defer(thinking=True)
     await event_history_access(interaction)
     member = jugador or interaction.user
-    view = PlayerCard(client, interaction.user.id, member, event_history_access)
+    view = PlayerCard(client, interaction.user.id, member, event_history_access, client.economy.decorate)
     view.message = await interaction.followup.send(embed=await view.render(), view=view, wait=True, allowed_mentions=discord.AllowedMentions.none())
 
 
@@ -885,7 +888,9 @@ async def perfil(interaction: discord.Interaction, jugador: discord.Member = Non
 async def estado_bot(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True, thinking=True)
     database_info, backup_info, automation = await asyncio.gather(asyncio.to_thread(read_database, DB_PATH), asyncio.to_thread(read_backup, DB_PATH), client.backups.describe())
-    await interaction.followup.send(embed=status_embed(client, DB_PATH, database_info, backup_info, automation), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+    embed = status_embed(client, DB_PATH, database_info, backup_info, automation)
+    embed.add_field(name="🪙 La Venganza Exclusive", value=client.economy.diagnostics(), inline=False)
+    await interaction.followup.send(embed=embed, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 @event_group.command(name="historial", description="Consulta resultados de todos los eventos finalizados, cinco por página")
@@ -1015,6 +1020,7 @@ async def evento_finalizar(
                         inline=False
                     )
                 podio.set_footer(text=f"La Venganza RP | Resultados del evento #{evento_id}")
+                client.economy.victory(podio, primero.id)
                 await channel.send(
                     embed=podio,
                     allowed_mentions=discord.AllowedMentions(
@@ -1026,6 +1032,7 @@ async def evento_finalizar(
                         "UPDATE events SET status='finished', winner1=?, winner2=?, winner3=? WHERE id=?",
                         (str(winners[0].id), str(winners[1].id), str(winners[2].id), evento_id)
                     )
+                    client.economy.store.reconcile_in(db, evento_id, interaction.user.id)
                 # Deshabilitar las inscripciones sin editar embed ni banner.
                 if event["message_id"]:
                     try:
@@ -1358,7 +1365,10 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
         await meeting_error(interaction, getattr(error, "original", error))
         return
     log.error("Error ejecutando comando: %r", error)
-    if isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
+    cause = getattr(error, "original", error)
+    if isinstance(cause, ValueError) and command and (command.root_parent is client.economy.admin or command.name in client.economy.player_commands):
+        answer = str(cause)
+    elif isinstance(error, (app_commands.MissingPermissions, app_commands.CheckFailure)):
         answer = "❌ Solo administradores autorizados pueden ejecutar este comando."
     else:
         answer = "❌ No se pudo completar la acción. Revisa Railway."
@@ -1375,6 +1385,12 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 async def on_message(message):
     if client.link_spam:
         await client.link_spam.observe(message)
+
+
+@client.event
+async def on_raw_message_delete(payload):
+    if client.economy.ready and str(payload.message_id) == client.economy.store.config("panel"):
+        client.economy.signature = None
 
 
 @client.event

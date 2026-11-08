@@ -327,3 +327,17 @@ En Discord Developer Portal debe estar habilitado Message Content Intent, ya usa
 El bot necesita Ver canal, Leer historial, Enviar mensajes, Insertar enlaces y Adjuntar archivos
 en los canales correspondientes. Se conserva sincronización exclusiva del servidor original.
 
+## La Venganza Exclusive
+
+Al arrancar por primera vez, el bot crea una copia SQLite verificada en `backups/economy-before-*.sqlite3` junto a la base activa. Añade las tablas de economía y excluye los eventos que ya estaban cerrados o finalizados. Los respaldos automáticos incluyen el catálogo, los inventarios y los movimientos. La prueba de recuperación compara sus tablas y conteos.
+
+El bot crea **🛍️・tienda-exclusive** en la categoría **1513422023626326257** y publica un panel que reutiliza tras reconectar. Crea también un registro privado que pueden leer los administradores y los roles de Staff configurados para reuniones. Necesita gestionar canales y sus permisos, ver el canal, leer el historial, enviar mensajes e insertar enlaces. Para entregar roles o prefijos necesita los permisos correspondientes y una posición superior a la del jugador. Puede revisarse el estado con `/estado-bot`.
+
+La rotación cambia los lunes a las **6:30 p. m. de Puerto Rico**. Incluye dos artículos básicos, dos de ahorro, un paquete, un especial si está disponible y una edición limitada durante una campaña activa. El catálogo inicial incluye una colección de aniversario de 25 unidades y una insignia por reunir la insignia Fuego y el tema Fuego.
+
+- **Eventos.** Usa `/economia asistencia` para confirmar jugadores antes o después de finalizar. `/evento finalizar` acredita 500, 350 y 250 monedas al podio y 100 al resto de los participantes confirmados. `/economia premios` configura cantidades para próximos resultados. `/economia corregir` muestra las diferencias antes de aplicarlas. Si una corrección dejaría un saldo negativo, se conserva el resultado anterior y Staff puede revisar el caso.
+- **Jugadores.** `/saldo`, `/tienda`, `/comprar`, `/inventario`, `/equipar`, `/quitar`, `/trofeo`, `/deseos` y `/movimientos` son privados. Las personalizaciones se muestran en `/perfil`. En `/regalar`, el comprador confirma el precio y el destinatario acepta por mensaje privado antes del cobro. Ambas confirmaciones vencen con la oferta.
+- **Salas.** La sala dura siete días desde su entrega. El propietario puede usar `/sala` para elegir el nombre y administrar invitados. Al vencer, el bot retira los accesos, intenta avisar por privado y elimina la sala cuando sale el último usuario.
+- **Staff.** `/economia catalogo`, `producto` y `rotacion` permiten consultar y programar la tienda. Los códigos de catálogo se conservan en las compras. `ajustar` y `devolver` exigen un motivo. `registro` permite auditar operaciones y `pendientes` reintentar entregas ya cobradas. Los fallos temporales se reintentan cada minuto.
+- **Configuración.** Un administrador puede usar `/economia destinos` para configurar la categoría de tienda, la categoría de voz, el registro privado y un rol administrativo delegado. Para que el rol delegado pueda invocar el comando, habilítalo en los permisos de la integración de Discord. Por defecto se usan la categoría de La Venganza para tienda y voz y el permiso Administrador para los controles de economía.
+
