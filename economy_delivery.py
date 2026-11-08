@@ -21,6 +21,11 @@ LABELS = {
     "frase": "Frase",
     "victoria": "Celebración",
     "trofeo": "Trofeo destacado",
+    "banner": "Banner",
+    "matricula": "Matrícula RP",
+    "firma": "Firma de podio",
+    "vitrina": "Vitrina de trofeos",
+    "recuerdo": "Recuerdo de evento",
 }
 
 

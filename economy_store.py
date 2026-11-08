@@ -18,6 +18,32 @@ from backup import snapshot
 PR = ZoneInfo("America/Puerto_Rico")
 CATEGORY_ID = 1513422023626326257
 REWARDS = {"first": 500, "second": 350, "third": 250, "participant": 100}
+BANNERS = {
+    "garaje": "Garaje en llamas",
+    "salinas": "Salinas de noche",
+    "parrilla": "Parrilla del Car Show",
+}
+PROFILE_PRODUCTS = [
+    *(
+        (f"banner-{art}", f"🖼️ {label}", "banner", 900, {"art": art, "label": label})
+        for art, label in BANNERS.items()
+    ),
+    ("matricula-rp", "🏷️ Matrícula RP", "plate", 600, {"label": "Placa personalizada"}),
+    (
+        "firma-podio",
+        "💬 Firma de podio",
+        "signature",
+        1200,
+        {"label": "Firma personal"},
+    ),
+    (
+        "vitrina-podios",
+        "🏆 Vitrina de trofeos",
+        "showcase",
+        1500,
+        {"label": "Tres podios ganados"},
+    ),
+]
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS eco_config(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS eco_accounts(user_id INTEGER PRIMARY KEY,balance INTEGER NOT NULL DEFAULT 0 CHECK(balance>=0));
@@ -49,6 +75,11 @@ SLOTS = {
     "nickname": "prefijo",
     "bio": "frase",
     "celebration": "victoria",
+    "banner": "banner",
+    "plate": "matricula",
+    "signature": "firma",
+    "showcase": "vitrina",
+    "souvenir": "recuerdo",
 }
 
 
@@ -91,6 +122,14 @@ def outfit_for(p, value):
             value = f"{data['color']:06X}"
         elif kind in ("nickname", "bio"):
             value = clean_label(value, 8 if kind == "nickname" else 100)
+        elif kind == "plate":
+            value = clean_label(value, 10).upper()
+            if not re.fullmatch(r"[A-Z0-9]+(?:-[A-Z0-9]+)*", value) or len(value) > 10:
+                raise ValueError(
+                    "La matrícula admite hasta 10 letras A–Z, números y guiones. Ejemplo: CHINO-7."
+                )
+        elif kind == "signature":
+            value = clean_label(value, 100)
         else:
             value = data.get("label", p["name"])
         selections = {slot: value}
@@ -261,7 +300,8 @@ class EconomyStore:
             installed = db.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='eco_config'"
             ).fetchone()
-        if not installed:
+            profile_installed = installed and self.get(db, "profile_collection")
+        if not profile_installed:
             name = f"economy-before-{time.time_ns()}.sqlite3"
             snapshot(self.path, Path(self.path).parent / "backups" / name)
         with self.db() as db:
@@ -280,6 +320,13 @@ class EconomyStore:
                 self.set(db, "installed", str(int(time.time())))
                 self.set(db, "category", str(CATEGORY_ID))
                 self.set(db, "rewards", json.dumps(REWARDS))
+            if not self.get(db, "profile_collection"):
+                for sku, name, kind, price, payload in PROFILE_PRODUCTS:
+                    db.execute(
+                        "INSERT OR IGNORE INTO eco_products(sku,name,kind,tier,price,payload) VALUES (?,?,?,'profile',?,?)",
+                        (sku, name, kind, price, json.dumps(payload)),
+                    )
+                self.set(db, "profile_collection", 1)
 
     @staticmethod
     def get(db, key, default=""):
@@ -379,7 +426,7 @@ class EconomyStore:
             ).fetchone()
         return dict(row)
 
-    def rotation(self, now=None):
+    def rotation(self, now=None, *, user=None):
         with self.db() as db:
             r = self.rotation_in(db, int(time.time()) if now is None else now)
             r["products"] = [
@@ -390,7 +437,71 @@ class EconomyStore:
                 )
                 for s in json.loads(r["skus"])
             ]
+            r["products"].extend(
+                dict(p)
+                for p in db.execute(
+                    "SELECT * FROM eco_products WHERE tier='profile' AND active=1 ORDER BY price,sku"
+                )
+            )
+            if user is not None:
+                for event in self.eligible_events(db, user, limit=6):
+                    souvenir = self.event_souvenir(db, event)
+                    if souvenir["active"]:
+                        r["products"].append(dict(souvenir))
             return r
+
+    @staticmethod
+    def eligible_events(db, user, event_id=None, limit=1):
+        return db.execute(
+            """SELECT e.id,e.title,e.starts_at FROM events e
+            WHERE (e.status='finished' OR (e.status='closed' AND COALESCE(e.winner1,'')!=''))
+            AND (? IS NULL OR e.id=?)
+            AND (? IN (e.winner1,e.winner2,e.winner3) OR EXISTS
+                (SELECT 1 FROM eco_participants p WHERE p.event_id=e.id AND p.user_id=?))
+            ORDER BY e.id DESC LIMIT ?""",
+            (event_id, event_id, str(user), user, limit),
+        ).fetchall()
+
+    @staticmethod
+    def event_souvenir(db, event):
+        sku = f"recuerdo-{event['id']}"
+        label = f"#{event['id']} · {event['title']}"[:65]
+        db.execute(
+            """INSERT OR IGNORE INTO eco_products(sku,name,kind,tier,price,payload)
+            VALUES (?,?,'souvenir','event',250,?)""",
+            (
+                sku,
+                "🎟️ " + label,
+                json.dumps(
+                    dict(label=label, event=event["id"], date=event["starts_at"])
+                ),
+            ),
+        )
+        return db.execute("SELECT * FROM eco_products WHERE sku=?", (sku,)).fetchone()
+
+    def offer(self, db, sku, rotation, buyer, recipient):
+        if sku.startswith("recuerdo-"):
+            if buyer != recipient:
+                raise ValueError(
+                    "Los recuerdos de evento son personales y no pueden regalarse."
+                )
+            number = sku.removeprefix("recuerdo-")
+            events = (
+                self.eligible_events(db, recipient, int(number))
+                if re.fullmatch(r"[1-9][0-9]{0,15}", number)
+                else []
+            )
+            if not events:
+                raise ValueError(
+                    "Este recuerdo requiere un podio o asistencia confirmada por Staff en el evento finalizado."
+                )
+            return self.event_souvenir(db, events[0])
+        p = db.execute("SELECT * FROM eco_products WHERE sku=?", (sku,)).fetchone()
+        if not p or (
+            p["tier"] != "profile" and sku not in json.loads(rotation["skus"])
+        ):
+            raise ValueError("Este artículo no está disponible en la rotación actual.")
+        return p
 
     def products(self):
         with self.db() as db:
@@ -401,15 +512,67 @@ class EconomyStore:
                 )
             ]
 
+    def showcase(self, user, purchase):
+        with self.db() as db:
+            wins = [
+                dict(r)
+                for r in db.execute(
+                    """SELECT id,title,starts_at,winner1,winner2,winner3
+                FROM events WHERE ? IN (winner1,winner2,winner3) ORDER BY starts_at DESC,id DESC""",
+                    (str(user),),
+                )
+            ]
+            by_id = {str(r["id"]): r for r in wins}
+            slots = [
+                by_id.get(self.get(db, f"vitrina:{purchase}:{pos}"))
+                for pos in range(1, 4)
+            ]
+            pinned = {r["id"] for r in slots if r}
+            automatic = iter(r for r in wins if r["id"] not in pinned)
+            return [r or next(automatic, None) for r in slots]
+
+    def pin_trophy(self, user, position, event):
+        with self.db() as db:
+            owned = db.execute(
+                """SELECT p.id FROM eco_equipped e JOIN eco_purchases p ON e.purchase_id=p.id
+                WHERE e.user_id=? AND e.slot='vitrina' AND p.status='delivered'""",
+                (user,),
+            ).fetchone()
+            if not owned or position not in (1, 2, 3):
+                raise ValueError("Equipa tu vitrina y elige un espacio del 1 al 3.")
+            if not db.execute(
+                "SELECT 1 FROM events WHERE id=? AND ? IN (winner1,winner2,winner3)",
+                (event, str(user)),
+            ).fetchone():
+                raise ValueError("Solo puedes exhibir un podio que ganaste.")
+            for pos in range(1, 4):
+                key = f"vitrina:{owned['id']}:{pos}"
+                if self.get(db, key) == str(event):
+                    self.set(db, key, "")
+            self.set(db, f"vitrina:{owned['id']}:{position}", event)
+
+    def collection_price(self, sku, price, active, actor):
+        with self.db() as db:
+            if (
+                price < 0
+                or price > 1_000_000
+                or not db.execute(
+                    "UPDATE eco_products SET price=?,active=?,revision=revision+1 WHERE sku=? AND tier IN ('profile','event')",
+                    (price, active, sku),
+                ).rowcount
+            ):
+                raise ValueError(
+                    "Elige un artículo de colección y un precio entre 0 y 1.000.000."
+                )
+            self.audit(db, actor, f"Artículo {sku} · precio {price} · activo {active}")
+
     def quote(self, buyer, recipient, sku, now=None):
         now = int(time.time()) if now is None else now
         with self.db() as db:
             r = self.rotation_in(db, now)
-            p = db.execute("SELECT * FROM eco_products WHERE sku=?", (sku,)).fetchone()
+            p = self.offer(db, sku, r, buyer, recipient)
             if (
-                not p
-                or sku not in json.loads(r["skus"])
-                or not p["active"]
+                not p["active"]
                 or (p["campaign_start"] and p["campaign_start"] > now)
                 or (p["campaign_end"] and p["campaign_end"] <= now)
             ):
@@ -453,10 +616,8 @@ class EconomyStore:
                         "SELECT * FROM eco_purchases WHERE id=?", (q["purchase_id"],)
                     ).fetchone()
                 )
-            p = db.execute(
-                "SELECT * FROM eco_products WHERE sku=?", (q["sku"],)
-            ).fetchone()
             r = self.rotation_in(db, now)
+            p = self.offer(db, q["sku"], r, buyer, q["recipient"])
             if (
                 now >= q["expires"]
                 or r["week"] != q["week"]
@@ -841,6 +1002,10 @@ class EconomyStore:
         end,
         start=None,
     ):
+        if sku.startswith("recuerdo-") or sku in {item[0] for item in PROFILE_PRODUCTS}:
+            raise ValueError(
+                "Usa /economia coleccion para cambiar el precio o activar este artículo."
+            )
         if (
             not sku
             or len(sku) > 50

@@ -84,6 +84,92 @@ class EconomyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             system.authorized(i)
 
+    def test_upgrade_adds_collection_without_replacing_rotation_or_purchases(self):
+        self.store.rows("DELETE FROM eco_config WHERE key='profile_collection'")
+        self.store.rows("DELETE FROM eco_products WHERE tier='profile'")
+        self.store.adjust(1, 10000, "premio", 99, "existing")
+        rotation = self.store.rotation()
+        basic = next(p for p in rotation["products"] if p["tier"] == "cheap")
+        q = self.store.quote(1, 1, basic["sku"])
+        receipt = self.store.buy(q["id"], 1, value="Hola")
+        self.store.initialize()
+        self.assertEqual(self.store.rotation()["skus"], rotation["skus"])
+        self.assertEqual(self.store.inventory(1)[0]["id"], receipt["id"])
+        self.assertEqual(self.store.account(1)["balance"], 10000 - q["price"])
+        self.assertEqual(len(list((self.path.parent / "backups").glob("*.sqlite3"))), 2)
+        self.store.collection_price("banner-garaje", 950, True, 99)
+        self.store.initialize()
+        self.assertEqual(self.store.quote(1, 1, "banner-garaje")["price"], 950)
+
+    def test_collection_preview_purchase_profile_and_podium(self):
+        self.store.adjust(1, 6000, "prueba", 99, "collection")
+        system = object.__new__(Economy)
+        system.store = self.store
+        system.ready = True
+        cases = [
+            ("banner-salinas", 900, ""),
+            ("matricula-rp", 600, "chino-7"),
+            ("firma-podio", 1200, "¡Nos vemos en Salinas!"),
+            ("vitrina-podios", 1500, ""),
+        ]
+        for sku, price, value in cases:
+            q = self.store.quote(1, 1, sku)
+            self.assertEqual(q["price"], price)
+            if sku == "matricula-rp":
+                with self.assertRaises(ValueError):
+                    self.store.buy(q["id"], 1, value="@everyone")
+            self.store.buy(q["id"], 1, value=value)
+        self.assertEqual(self.store.account(1)["balance"], 1800)
+        self.store.pin_trophy(1, 2, 1)
+        with self.assertRaises(ValueError):
+            self.store.pin_trophy(1, 2, 2)
+        embed = discord.Embed()
+        system.decorate(embed, 1)
+        self.assertTrue(embed.image.url.endswith("/salinas.jpg"))
+        self.assertIn("CHINO-7", str(embed.to_dict()))
+        self.assertIn("2. 🥇 Car Show", str(embed.to_dict()))
+        self.assertIn("Salinas", system.podium_signature(1))
+        self.store.rows("UPDATE events SET winner1='5' WHERE id=1")
+        embed = discord.Embed()
+        system.decorate(embed, 1)
+        self.assertNotIn("Car Show", str(embed.to_dict()))
+        self.store.initialize()
+        self.assertEqual(len(self.store.inventory(1)), 4)
+        self.assertEqual(
+            len([p for p in self.store.products() if p["tier"] == "profile"]), 6
+        )
+
+    def test_souvenir_checks_earned_attendance_at_quote_and_payment(self):
+        self.store.adjust(8, 1000, "prueba", 99, "ticket")
+        self.store.rows("INSERT INTO registrations VALUES (2,8)")
+        self.store.rows("UPDATE events SET status='finished',winner1='3' WHERE id=2")
+        self.assertNotIn(
+            "recuerdo-2", [p["sku"] for p in self.store.rotation(user=8)["products"]]
+        )
+        with self.assertRaises(ValueError):
+            self.store.quote(8, 8, "recuerdo-2")
+        self.assertIn(
+            "recuerdo-2", [p["sku"] for p in self.store.rotation(user=3)["products"]]
+        )
+        self.store.participant(2, 8, True, 99)
+        quote = self.store.quote(8, 8, "recuerdo-2")
+        self.store.participant(2, 8, False, 99)
+        with self.assertRaises(ValueError):
+            self.store.buy(quote["id"], 8)
+        self.assertEqual(self.store.account(8)["balance"], 1000)
+        self.store.participant(2, 8, True, 99)
+        with self.assertRaises(ValueError):
+            self.store.quote(7, 8, "recuerdo-2")
+        before = self.store.account(8)["balance"]
+        receipt = self.store.buy(quote["id"], 8)
+        self.assertEqual(receipt["price"], 250)
+        self.assertEqual(self.store.buy(quote["id"], 8)["id"], receipt["id"])
+        self.assertEqual(self.store.account(8)["balance"], before - 250)
+        self.assertEqual(self.store.equipped(8)[0]["slot"], "recuerdo")
+        self.assertNotIn(
+            "recuerdo-2", [p["sku"] for p in self.store.rotation()["products"]]
+        )
+
     def test_panel_purchase_roles_and_retry_without_second_charge(self):
         async def scenario():
             system = object.__new__(Economy)
@@ -110,7 +196,9 @@ class EconomyTests(unittest.TestCase):
             i.response.send_message = AsyncMock()
             await system.shop(i)
             picker = i.response.send_message.call_args.kwargs["view"].children[0]
-            self.assertEqual([opt.value for opt in picker.options], ["titulo-calle"])
+            choices = [opt.value for opt in picker.options]
+            self.assertIn("titulo-calle", choices)
+            self.assertIn("banner-garaje", choices)
             picker._values = ["titulo-calle"]
             await picker.callback(i)
             confirm = i.response.send_message.call_args.kwargs["view"]
@@ -161,6 +249,12 @@ class EconomyTests(unittest.TestCase):
             db.execute("CREATE TABLE registrations(event_id INTEGER,user_id INTEGER)")
             db.execute("INSERT INTO events VALUES (1,'finished','1','2','3')")
             db.execute("INSERT INTO events VALUES (2,'open',NULL,NULL,NULL)")
+            db.execute(
+                "ALTER TABLE events ADD COLUMN title TEXT NOT NULL DEFAULT 'Car Show'"
+            )
+            db.execute(
+                "ALTER TABLE events ADD COLUMN starts_at TEXT NOT NULL DEFAULT '2026-11-06T21:00:00+00:00'"
+            )
         self.store = EconomyStore(self.path)
         self.store.initialize()
 
