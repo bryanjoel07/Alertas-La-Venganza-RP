@@ -27,6 +27,7 @@ from live_alerts import LiveAlerts
 from streamer_panel import StreamerPanel
 from server_health import OriginalPanel
 from obscenities import ObscenityFilter
+from daily_up import announce_daily_up
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -286,6 +287,16 @@ async def send_alert(state, test=False):
     log.info("Alerta enviada: %s | prueba=%s", state, test)
 
 
+async def send_daily_up():
+    embed = discord.Embed(
+        title="🟢 SERVER UP | LA VENGANZA RP",
+        description=f"✅ **¡La ciudad está disponible!**\n\n🎮 {CONNECT_URL}",
+        color=0x22C55E,
+    )
+    embed.set_footer(text="La Venganza RP | Aviso diario · 6:30 p. m. Puerto Rico")
+    await post_webhook(embed)
+
+
 async def read_connect_panel():
     client.connect_message = None
     channel = await client.fetch_channel(CONNECT_CHANNEL_ID)
@@ -364,6 +375,12 @@ async def monitor_server():
                         await send_alert(event)
                         record_outage(event)
                         client.tracker.confirmed(event)
+                daily_result = await announce_daily_up(
+                    datetime.now(timezone.utc), state, client.tracker.last,
+                    maintenance, get_setting, set_setting, send_daily_up,
+                )
+                if daily_result in ("sent", "skipped_unavailable"):
+                    log.info("Aviso diario SERVER UP 18:30 Puerto Rico: %s", daily_result)
             if not maintenance and state == client.tracker.last and client.monitor_sources[1] == "stale":
                 try:
                     await client.original_panel.update(client.connect_message, state, PANEL_MAX_AGE)
@@ -1408,3 +1425,4 @@ async def on_disconnect():
 
 if __name__ == "__main__":
     client.run(TOKEN, log_handler=None)
+

@@ -1,6 +1,15 @@
 # LA VENGANZA RP | ALERTAS
 
 Bot existente ampliado sin reemplazar los sistemas de alertas, mantenimiento ni eventos.
+
+El monitor publica un aviso **SERVER UP** diario a las **6:30 p. m. de Puerto Rico**
+(`America/Puerto_Rico`, 22:30 UTC), en el mismo webhook de alertas. Solo lo envía
+si la lectura actual y el estado confirmado indican disponibilidad y no hay
+mantenimiento. Usa la primera lectura del minuto 18:30 (el monitor revisa cada
+30 segundos); si no está disponible, omite ese día. No recupera avisos atrasados.
+La fecha se reserva en SQLite antes del envío para evitar duplicados tras un
+reinicio o un resultado de entrega incierto; en ese último caso no reintenta ese
+aviso diario. Las alertas automáticas de caída y recuperación siguen funcionando.
 Zona horaria: `America/Puerto_Rico`. Datos: SQLite. Entrada: `python bot.py`.
 
 ## Estado de esta entrega
@@ -317,3 +326,4 @@ no llaman Discord, Google Drive ni Railway. PyNaCl y davey no son necesarios: es
 En Discord Developer Portal debe estar habilitado Message Content Intent, ya usado por el bot.
 El bot necesita Ver canal, Leer historial, Enviar mensajes, Insertar enlaces y Adjuntar archivos
 en los canales correspondientes. Se conserva sincronización exclusiva del servidor original.
+
