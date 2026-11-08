@@ -326,7 +326,7 @@ async def enable_alert_mentions(channel):
 
 async def send_daily_up():
     embed = discord.Embed(
-        title="🟢 SERVER UP | LA VENGANZA RP 🔥",
+        title="🔴 SERVER UP | LA VENGANZA RP 🔥",
         description=(
             "🌴 ¡Mi gente, la ciudad los espera!\n"
             "🚗 Preparen sus máquinas, reúnan al corillo y "
@@ -335,7 +335,7 @@ async def send_daily_up():
             "🔴 **LA VENGANZA RP**\n"
             "*La ciudad más real · El rol más duro*"
         ),
-        color=0x22C55E,
+        color=0xE53935,
     )
     embed.set_footer(text="La Venganza RP | Aviso diario · 6:30 p. m. Puerto Rico")
     banner = Path(__file__).parent / "assets" / "banners" / "server-up.jpg"
@@ -356,9 +356,20 @@ async def requested_server_up():
         if get_setting(key) == request_id:
             return
         # Reserve before delivery to prevent duplicate mentions on reconnect/timeouts.
-        daily_up_channel()
+        channel = daily_up_channel()
         set_setting(key, request_id)
-        message = await send_daily_up()
+        edit_id = os.getenv("SERVER_UP_EDIT_MESSAGE_ID", "").strip()
+        if edit_id:
+            message = await channel.fetch_message(int(edit_id))
+            if message.author.id != client.user.id or not message.embeds or "SERVER UP" not in (message.embeds[0].title or ""):
+                raise ValueError("Solo se puede editar un aviso SERVER UP del propio bot")
+            embed = discord.Embed.from_dict(message.embeds[0].to_dict())
+            embed.title = "🔴 SERVER UP | LA VENGANZA RP 🔥"
+            embed.colour = 0xE53935
+            await message.edit(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            log.info("SERVER UP actualizado a rojo: mensaje=%s", message.id)
+        else:
+            message = await send_daily_up()
         log.info("SERVER UP manual completado: solicitud=%s mensaje=%s", request_id, message.id)
 
 
