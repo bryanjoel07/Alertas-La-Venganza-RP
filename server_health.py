@@ -40,12 +40,14 @@ def health_embed(sample, now, connect_url):
 class ServerHealthPanel:
     def __init__(self, bot, channel_id, connect_url, read_setting, save_setting):
         self.bot, self.channel_id, self.connect_url = bot, channel_id, connect_url
+        self.key = f"{KEY}_{channel_id}"
         self.read_setting, self.save_setting = read_setting, save_setting
         self.sample = self.message = self.last_version = None
         self.task = None
+        self.removed = False
 
     async def refresh(self):
-        if self.sample is None:
+        if self.sample is None or self.removed:
             return
         now = int(time.time())
         checked = self.sample[-1]
@@ -55,14 +57,20 @@ class ServerHealthPanel:
         embed = health_embed(self.sample,now,self.connect_url)
         channel = self.bot.get_channel(self.channel_id) or await self.bot.fetch_channel(self.channel_id)
         if self.message is None:
-            saved = self.read_setting(KEY)
+            saved = self.read_setting(self.key)
+            if not saved and self.channel_id == 1513421828415164546:
+                saved = self.read_setting(KEY)
+                if saved:
+                    self.save_setting(self.key,saved)
             if saved:
                 try:
                     candidate = await channel.fetch_message(int(saved))
                     if candidate.author.id == self.bot.user.id and any(e.title == TITLE for e in candidate.embeds):
                         self.message = candidate
                 except discord.NotFound:
-                    pass
+                    self.removed = True
+                    log.info("Panel de salud eliminado en %s; se respeta la eliminación.", self.channel_id)
+                    return
             if self.message is None:
                 async for candidate in channel.history(limit=100):
                     if candidate.author.id == self.bot.user.id and any(e.title == TITLE for e in candidate.embeds):
@@ -71,16 +79,17 @@ class ServerHealthPanel:
             if self.message is None:
                 self.message = await channel.send(embed=embed,allowed_mentions=discord.AllowedMentions.none(),
                                                   nonce=f"h{self.channel_id}")
-                self.save_setting(KEY,self.message.id)
+                self.save_setting(self.key,self.message.id)
                 self.last_version = version
                 log.info("Panel de salud publicado: %s",self.message.id)
                 return
             if str(self.message.id) != saved:
-                self.save_setting(KEY,self.message.id)
+                self.save_setting(self.key,self.message.id)
         try:
             await self.message.edit(embed=embed,allowed_mentions=discord.AllowedMentions.none())
         except discord.NotFound:
-            self.message = self.last_version = None
+            self.removed = True
+            log.info("Panel de salud eliminado en %s; se respeta la eliminación.", self.channel_id)
             return
         self.last_version = version
 

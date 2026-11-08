@@ -1,5 +1,6 @@
 import time
 import unittest
+import discord
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -27,7 +28,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         panel.sample = ('down','down',('unreachable','stale'),False,now)
         await panel.refresh()
         self.assertIn('fuera de servicio',posts[0].embeds[0].description)
-        self.assertEqual(settings[KEY],'99')
+        self.assertEqual(settings[f'{KEY}_3'],'99')
         for saved in (True,False):
             if not saved: settings.clear()
             other = new()
@@ -41,3 +42,12 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('posible caída',health_embed(sample,1010,'').description)
         self.assertIn('sin confirmar',health_embed(sample,1200,'').description)
         self.assertIn('mantenimiento',health_embed((*sample[:3],True,1000),1010,'').description)
+
+    async def test_removed_panel_is_not_republished(self):
+        channel=SimpleNamespace(fetch_message=AsyncMock(side_effect=discord.NotFound(SimpleNamespace(status=404,reason='Not Found'),'Unknown Message')),send=AsyncMock())
+        panel=ServerHealthPanel(SimpleNamespace(get_channel=lambda _:channel),3,'',lambda k:'99',lambda k,v:None)
+        panel.sample=('down','down',('unreachable','stale'),False,int(time.time()))
+        await panel.refresh()
+        await panel.refresh()
+        channel.fetch_message.assert_awaited_once()
+        channel.send.assert_not_awaited()

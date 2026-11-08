@@ -218,7 +218,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.streamers, guild=GUILD)
         self.streamer_panel = StreamerPanel(self, self.streamers)
         self.live_alerts = LiveAlerts(self, self.streamers, GUILD_ID)
-        self.health_panel = ServerHealthPanel(self, CONNECT_CHANNEL_ID, CONNECT_URL, get_setting, set_setting)
+        health_channel = int(os.getenv("FIVEM_HEALTH_CHANNEL_ID",str(CONNECT_CHANNEL_ID)))
+        self.health_panel = ServerHealthPanel(self, health_channel, CONNECT_URL, get_setting, set_setting)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
