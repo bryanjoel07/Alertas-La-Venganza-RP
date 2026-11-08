@@ -305,6 +305,25 @@ def daily_up_channel():
     return matches[0]
 
 
+async def enable_alert_mentions(channel):
+    member = channel.guild.me
+    permissions = channel.permissions_for(member)
+    if permissions.mention_everyone:
+        return
+    if not permissions.manage_roles:
+        log.warning("Falta permiso Mencionar @everyone en %s (%s); requiere ajuste del administrador",
+                    channel.name, channel.id)
+        return
+    overwrite = channel.overwrites_for(member)
+    overwrite.mention_everyone = True
+    try:
+        await channel.set_permissions(member, overwrite=overwrite,
+                                      reason="Habilitar @everyone en avisos solicitado por el administrador")
+        log.info("Permiso @everyone habilitado para el bot en %s (%s)", channel.name, channel.id)
+    except discord.HTTPException:
+        log.exception("No se pudo habilitar @everyone en %s (%s)", channel.name, channel.id)
+
+
 async def send_daily_up():
     embed = discord.Embed(
         title="🟢 SERVER UP | LA VENGANZA RP 🔥",
@@ -1428,11 +1447,13 @@ async def on_ready():
         channel = daily_up_channel()
         log.info("Destino SERVER UP diario 18:30 Puerto Rico: %s (%s); alertas caída/recuperación: %s",
                  channel.name, channel.id, ALERT_CHANNEL_ID)
+        await enable_alert_mentions(channel)
         permissions = channel.permissions_for(channel.guild.me)
         log.info("Permisos SERVER UP: enviar=%s adjuntar=%s embeds=%s everyone=%s",
                  permissions.send_messages, permissions.attach_files,
                  permissions.embed_links, permissions.mention_everyone)
         alerts = client.get_channel(ALERT_CHANNEL_ID) or await client.fetch_channel(ALERT_CHANNEL_ID)
+        await enable_alert_mentions(alerts)
         permissions = alerts.permissions_for(alerts.guild.me)
         log.info("Destino alertas: %s (%s); enviar=%s embeds=%s everyone=%s",
                  alerts.name, alerts.id, permissions.send_messages,
