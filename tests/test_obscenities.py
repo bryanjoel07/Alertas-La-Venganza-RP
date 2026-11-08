@@ -11,9 +11,15 @@ class FilterTests(unittest.IsolatedAsyncioTestCase):
         filters = [re.compile(p) for p in PATTERNS] + [
             re.compile(r'\b' + re.escape(w) + r'\b',re.I) for w in WORDS]
         for value in ('¡CB!', 'hdpt', 'HP', 'wlb', 'mmb', 'hijo de puta', 'wuelebicho',
-                      'mamabicho', 'c a b r ó n', 'puñ3ta', 'h.d.p.t'):
+                      'mamabicho', 'c a b r ó n', 'puñ3ta', 'h.d.p.t',
+                      'sos una z0rr4', 'chúpame la pija', 'solo sirves para abrir las piernas',
+                      'te voy a v1ol4r', 'vamos a violarte', 'MMG', 'triplehijueputa'):
             self.assertTrue(any(p.search(value) for p in filters),value)
-        for value in ('computadora','disputa','la diputada','archivo.php','subir el archivo'):
+        for value in ('computadora','disputa','la diputada','archivo.php','subir el archivo',
+                      'busco a mi perra', 'una zorra cruzó la carretera', 'me picó un bicho',
+                      'quiero denunciar acoso sexual','hablamos de consentimiento',
+                      'educación sexual y prevención de infecciones','violaron las normas',
+                      'la unidad policial investiga una agresión sexual'):
             self.assertFalse(any(p.search(value) for p in filters),value)
 
     async def test_enables_only_message_block_once(self):
