@@ -144,6 +144,34 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(tracker.observe('down', 90))
         self.assertEqual(tracker.observe('down', 180), 'down')
 
+    async def test_stale_online_panel_does_not_hide_outage_or_trigger_false_recovery(self):
+        from types import SimpleNamespace
+        import discord
+        from datetime import timedelta
+        from unittest.mock import AsyncMock
+        current = datetime.now(timezone.utc)
+        panel = SimpleNamespace(created_at=current-timedelta(days=10),edited_at=current-timedelta(minutes=15),
+                                embeds=[discord.Embed().add_field(name='STATUS',value='Online')])
+        channel = SimpleNamespace(fetch_message=AsyncMock(return_value=panel))
+        with patch.object(self.bot.client,'fetch_channel',AsyncMock(return_value=channel)):
+            self.assertEqual(await self.bot.read_connect_panel(),'stale')
+            panel.edited_at=current
+            self.assertEqual(await self.bot.read_connect_panel(),'up')
+        resolve=self.bot.resolve_server_state
+        for previous in ('up',None):
+            tracker=self.bot.StateTracker(previous)
+            state=resolve('unreachable','stale')
+            self.assertIsNone(tracker.observe(state,0))
+            self.assertIsNone(tracker.observe(state,45))
+            self.assertEqual(tracker.observe(state,90),'down')
+            tracker.confirmed('down')
+            self.assertIsNone(tracker.observe(state,120))
+            self.assertIsNone(tracker.observe(resolve('up','stale'),150))
+            self.assertEqual(tracker.observe(resolve('up','stale'),240),'up')
+        self.assertIsNone(resolve('unknown','stale'))
+        self.assertIsNone(resolve('unreachable','unavailable'))
+        self.assertEqual(resolve('unreachable','up'),'up')
+
     async def test_outages_deduplicate_and_restore_state(self):
         self.bot.record_outage('down')
         self.bot.record_outage('down')

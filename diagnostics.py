@@ -56,6 +56,11 @@ def status_embed(bot, path, database, backup, automation=None):
     maintenance = {'1': '🛠️ Activo', '0': 'Inactivo'}.get(settings.get('maintenance_active', '0' if 'settings' in database else ''), 'No registrado')
     monitor = f"Confirmado: {states.get(settings.get('last_state'), 'Sin estado confirmado')}\nMantenimiento: {maintenance}\nÚltima lectura: {at(bot.monitor_last_read)}\nÚltimo error: {at(bot.monitor_last_error)}"
     tracker = bot.tracker
+    sources = getattr(bot,'monitor_sources',None)
+    if sources:
+        labels = {'up':'en línea','down':'caído','stale':'sin actualizar','unreachable':'sin respuesta','unknown':'sin datos',
+                  'partial':'parcial','unconfigured':'sin configurar','unavailable':'no disponible'}
+        monitor += f"\nFiveM: {labels.get(sources[0],'sin datos')} · Connect: {labels.get(sources[1],'sin datos')}"
     if tracker and tracker.pending in ('up', 'down'):
         wait = max(0, int(time.monotonic() - tracker.since)) if tracker.since is not None else 0
         monitor += f"\nCambio en confirmación: {states[tracker.pending]} · {wait}/90 s"

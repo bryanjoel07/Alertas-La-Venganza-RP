@@ -41,6 +41,7 @@ GUILD = discord.Object(id=GUILD_ID)
 PR_TZ = ZoneInfo("America/Puerto_Rico")
 CHECK_INTERVAL = 30
 CONFIRM_SECONDS = 90
+PANEL_MAX_AGE = 180
 DB_PATH = database_path()
 DATA_DIR = os.path.dirname(DB_PATH)
 DRAFT_SECONDS = 1800
@@ -171,7 +172,7 @@ class StateTracker:
         if state not in ("up", "down"):
             self.reset()
             return None
-        if self.last is None:
+        if self.last is None and state == "up":
             self.last = state
             return "initial"
         if state == self.last:
@@ -278,10 +279,54 @@ async def send_alert(state, test=False):
     log.info("Alerta enviada: %s | prueba=%s", state, test)
 
 
-async def fetch_panel_state():
+async def read_connect_panel():
     channel = await client.fetch_channel(CONNECT_CHANNEL_ID)
     message = await channel.fetch_message(PANEL_MESSAGE_ID)
+    updated = message.edited_at or message.created_at
+    if time.time() - updated.timestamp() > PANEL_MAX_AGE:
+        return "stale"
     return detect_status(message)
+
+
+async def probe_fivem():
+    url = os.getenv("FIVEM_STATUS_URL")
+    if not url:
+        return "unconfigured"
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=7)) as session:
+            async with session.get(url,allow_redirects=False) as response:
+                if response.status in (502,503,504):
+                    return "unreachable"
+                if response.status != 200:
+                    return "unknown"
+                payload = await response.json(content_type=None)
+    except (asyncio.TimeoutError,aiohttp.ClientConnectorError,aiohttp.ServerDisconnectedError):
+        return "unreachable"
+    except (ValueError,aiohttp.ClientError):
+        return "unknown"
+    if isinstance(payload,dict) and isinstance(payload.get("clients"),int) and "venganza" in clean(payload.get("hostname")):
+        return "up"
+    return "unknown"
+
+
+def resolve_server_state(direct, panel):
+    if direct == "up":
+        return "up"
+    if panel in ("up","down","partial"):
+        return panel
+    if direct == "unreachable" and panel == "stale":
+        return "down"
+    return None
+
+
+async def fetch_panel_state():
+    panel, direct = await asyncio.gather(read_connect_panel(), probe_fivem(),return_exceptions=True)
+    if isinstance(panel,Exception):
+        panel = "unavailable"
+    if isinstance(direct,Exception):
+        direct = "unknown"
+    client.monitor_sources = (direct, panel)
+    return resolve_server_state(direct,panel)
 
 
 async def monitor_server():
@@ -292,9 +337,10 @@ async def monitor_server():
         try:
             state = await fetch_panel_state()
             client.monitor_last_read = int(time.time())
-            if state != last_observed:
-                log.info("Estado observado: %s", state)
-                last_observed = state
+            observation = (state,client.monitor_sources)
+            if observation != last_observed:
+                log.info("Estado observado: %s | FiveM=%s panel=%s", state,*client.monitor_sources)
+                last_observed = observation
             async with client.lock:
                 if get_setting("maintenance_active", "0") == "1":
                     client.tracker.reset()
