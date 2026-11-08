@@ -1016,7 +1016,7 @@ async def evento_finalizar(
                 ):
                     podio.add_field(
                         name=f"{emoji} {position}",
-                        value=f"{member.mention}\n**{safe(member.display_name)}**",
+                        value=f"{member.mention}\n**{safe(member.display_name)}**{client.economy.podium_signature(member.id)}",
                         inline=False
                     )
                 podio.set_footer(text=f"La Venganza RP | Resultados del evento #{evento_id}")

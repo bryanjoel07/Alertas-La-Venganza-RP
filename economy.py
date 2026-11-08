@@ -12,7 +12,7 @@ import discord
 from discord import app_commands
 
 from economy_delivery import LABELS, Delivery
-from economy_store import PR, EconomyStore, clean_label
+from economy_store import BANNERS, PR, EconomyStore, clean_label
 from meetings import ROLES
 
 log = logging.getLogger("LaVenganzaRP.economia")
@@ -31,18 +31,39 @@ DETAILS = {
     "bundle": "Título, color de rol y tema para tu tarjeta",
     "celebration": "Diseño de tu anuncio cuando ganas el primer puesto",
     "voice": "Sala privada con acceso por invitación durante siete días",
+    "banner": "Ilustración panorámica para tu perfil, combinable con tu tema",
+    "plate": "Placa de perfil con un texto de hasta 10 caracteres, como CHINO-7",
+    "signature": "Tu frase en el anuncio si terminas entre los tres primeros",
+    "showcase": "Exhibe hasta tres podios que ganaste, con evento y fecha",
+    "souvenir": "Entrada de colección reservada al podio y a participantes confirmados",
 }
 TIERS = {
+    "profile": "Colección",
+    "event": "Evento",
     "cheap": "Básico",
     "saving": "Ahorro",
     "exclusive": "Exclusivo",
     "limited": "Limitado",
 }
 CUSTOM_FIELDS = {
+    "plate": ("Matrícula (ejemplo: CHINO-7)", 10),
+    "signature": ("Frase para tu anuncio de podio", 100),
     "custom_color": ("Color hexadecimal, por ejemplo #44AAFF", 7),
     "nickname": ("Prefijo para tu apodo", 8),
     "bio": ("Frase para tu perfil", 100),
 }
+
+
+def banner_preview(product):
+    if product["kind"] == "banner":
+        art = json.loads(product["payload"]).get("art")
+        if art in BANNERS:
+            return (
+                "https://raw.githubusercontent.com/bryanjoel07/Alertas-La-Venganza-RP/main/assets/banners/"
+                + art
+                + ".jpg"
+            )
+    return None
 
 
 def product_text(p):
@@ -61,6 +82,12 @@ def product_text(p):
         if p["campaign_end"]
         else "Puede regresar en otra rotación"
     )
+    if p["tier"] in ("profile", "event"):
+        returns = (
+            "Colección permanente"
+            if p["tier"] == "profile"
+            else "Personal · participación verificada"
+        )
     if p["campaign_end"]:
         returns += f" · hasta <t:{p['campaign_end']}:d>"
     return f"{DETAILS[p['kind']]} · {preview.strip(' ·')}\n**{p['price']} 🪙** · {duration} · {stock}\n{returns}"
@@ -69,10 +96,12 @@ def product_text(p):
 def shop_embed(r):
     embed = discord.Embed(
         title=PANEL,
-        description=f"Próxima rotación <t:{r['ends']}:R> · lunes, 6:30 p. m. de Puerto Rico.",
+        description=f"Próxima rotación <t:{r['ends']}:R> · lunes, 6:30 p. m. de Puerto Rico.\nLos recuerdos de tus eventos aparecen en **Comprar artículos** si tienes un podio o asistencia confirmada.",
         color=0xBE2335,
     )
     for p in r["products"]:
+        if p["tier"] in ("profile", "event"):
+            continue
         state = (
             ""
             if p["active"]
@@ -85,6 +114,20 @@ def shop_embed(r):
             value=product_text(p) + f"\n`{p['sku']}`",
             inline=False,
         )
+    for tier, title in [
+        ("profile", "Colección de perfil"),
+        ("event", "Recuerdos de tus eventos"),
+    ]:
+        items = [p for p in r["products"] if p["tier"] == tier]
+        if items:
+            embed.add_field(
+                name=title,
+                value="\n".join(
+                    f"{discord.utils.escape_markdown(p['name'])[:90]} · **{p['price']} 🪙**"
+                    for p in items
+                ),
+                inline=False,
+            )
     return embed
 
 
@@ -212,11 +255,10 @@ class InventoryControls(discord.ui.View):
 
             async def choose(i):
                 purchase = system.store.purchase(picker.values[0], user)
-                if purchase["kind"] in ("custom_color", "bio", "nickname"):
+                if purchase["kind"] in CUSTOM_FIELDS:
                     modal = discord.ui.Modal(title="Personalizar artículo")
-                    value = discord.ui.TextInput(
-                        label="Color hexadecimal, frase o prefijo", max_length=100
-                    )
+                    label, limit = CUSTOM_FIELDS[purchase["kind"]]
+                    value = discord.ui.TextInput(label=label, max_length=limit)
                     modal.add_item(value)
 
                     async def submit(click):
@@ -443,7 +485,7 @@ class Economy:
             self.store.rows("UPDATE eco_audit SET sent=1 WHERE id=?", (row["id"],))
 
     async def shop(self, i):
-        rotation = self.store.rotation()
+        rotation = self.store.rotation(user=i.user.id)
         now = time.time()
         available = [
             p
@@ -508,6 +550,10 @@ class Economy:
             return f"Compra confirmada: {receipt['name']} · {receipt['price']} 🪙. Puedes ver el artículo en /inventario y cambiarlo cuando quieras."
 
         field = CUSTOM_FIELDS.get(p["kind"])
+        preview = {}
+        art = banner_preview(p)
+        if art:
+            preview["embed"] = discord.Embed(title=p["name"]).set_image(url=art)
         note = (
             "Al confirmar, el bot creará la sala."
             if p["kind"] == "voice"
@@ -527,6 +573,7 @@ class Economy:
                 f"{i.user.display_name} quiere regalarte **{p['name']}**. Pagará {p['price']} 🪙 al aceptar.\n{product_text(p)}\n{note}",
                 view=Confirm(recipient.id, accept, field),
                 allowed_mentions=discord.AllowedMentions.none(),
+                **preview,
             )
             return "Se envió la invitación privada. El cobro se aplicará cuando el destinatario acepte antes del vencimiento."
 
@@ -534,6 +581,7 @@ class Economy:
             i,
             f"**{p['name']}** para **{discord.utils.escape_markdown(recipient.display_name)}**\n{product_text(p)}\n{note}\nConfirma antes de <t:{p['expires']}:T>.",
             view=Confirm(i.user.id, buy, field if recipient.id == i.user.id else None),
+            **preview,
         )
 
     def diagnostics(self):
@@ -632,6 +680,11 @@ class Economy:
                 "frase",
                 "victoria",
                 "trofeo",
+                "banner",
+                "matricula",
+                "firma",
+                "vitrina",
+                "recuerdo",
             ],
         ):
             await i.response.defer(ephemeral=True, thinking=True)
@@ -644,7 +697,17 @@ class Economy:
             await private(i, "Selección retirada.")
 
         @player("trofeo", "Destacar en tu perfil un podio que ganaste")
-        async def trophy(i: discord.Interaction, evento: int):
+        async def trophy(
+            i: discord.Interaction,
+            evento: int,
+            espacio: app_commands.Range[int, 1, 3] = None,
+        ):
+            if espacio is not None:
+                self.store.pin_trophy(i.user.id, espacio, evento)
+                await private(
+                    i, f"Evento #{evento} en el espacio {espacio} de tu vitrina."
+                )
+                return
             winners = self.store.rows(
                 "SELECT winner1,winner2,winner3 FROM events WHERE id=?", (evento,)
             )
@@ -898,6 +961,16 @@ class Economy:
             )
             await private(i, "Rotación programada.")
 
+        @admin(
+            "coleccion", "Ajustar precio y disponibilidad de un artículo de colección"
+        )
+        async def collection(
+            i: discord.Interaction, codigo: str, precio: int, activo: bool = True
+        ):
+            self.authorized(i)
+            self.store.collection_price(codigo, precio, activo, i.user.id)
+            await private(i, "Artículo de colección actualizado.")
+
         @admin("destinos", "Configurar categoría de tienda, salas o registro privado")
         async def destinations(
             i: discord.Interaction,
@@ -964,7 +1037,9 @@ class Economy:
 
         async def products(i, current):
             items = (
-                self.store.rotation()["products"]
+                self.store.rotation(
+                    user=i.user.id if i.command.name == "comprar" else None
+                )["products"]
                 if i.command.name in ("comprar", "regalar")
                 else self.store.products()
             )
@@ -995,12 +1070,44 @@ class Economy:
             return
         for item in self.store.equipped(user):
             slot = item["slot"]
+            value = discord.utils.escape_markdown(item["value"])[:150]
             if slot == "tema":
                 embed.color = discord.Color(json.loads(item["payload"])["color"])
+            elif slot == "banner":
+                art = banner_preview(item)
+                if art:
+                    embed.set_image(url=art)
+            elif slot == "matricula":
+                value = f"`{item['value']}`"
+            elif slot == "vitrina":
+                lines = []
+                for pos, event in enumerate(
+                    self.store.showcase(user, item["purchase_id"]), 1
+                ):
+                    if event:
+                        rank = next(
+                            i
+                            for i in range(1, 4)
+                            if str(event[f"winner{i}"]) == str(user)
+                        )
+                        stamp = int(
+                            datetime.fromisoformat(event["starts_at"]).timestamp()
+                        )
+                        lines.append(
+                            f"{pos}. {('🥇', '🥈', '🥉')[rank - 1]} {discord.utils.escape_markdown(event['title'])[:90]} · <t:{stamp}:d>"
+                        )
+                value = "\n".join(lines) or "Tus próximos podios aparecerán aquí."
+            elif slot == "recuerdo":
+                stamp = int(
+                    datetime.fromisoformat(
+                        json.loads(item["payload"])["date"]
+                    ).timestamp()
+                )
+                value += f" · <t:{stamp}:d>"
             embed.add_field(
                 name=LABELS[slot],
-                value=discord.utils.escape_markdown(item["value"])[:150],
-                inline=True,
+                value=value,
+                inline=slot != "vitrina",
             )
         trophy = self.store.config(f"trofeo:{user}")
         if trophy:
@@ -1022,3 +1129,10 @@ class Economy:
                 if item["slot"] == "victoria":
                     embed.color = discord.Color(json.loads(item["payload"])["color"])
                     embed.add_field(name="Celebración del ganador", value=item["value"])
+
+    def podium_signature(self, user):
+        if self.ready:
+            for item in self.store.equipped(user):
+                if item["slot"] == "firma":
+                    return "\n“" + discord.utils.escape_markdown(item["value"]) + "”"
+        return ""
