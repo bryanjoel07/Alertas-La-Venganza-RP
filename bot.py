@@ -26,6 +26,7 @@ from streamers import Streamers
 from live_alerts import LiveAlerts
 from streamer_panel import StreamerPanel
 from server_health import OriginalPanel
+from obscenities import ObscenityFilter
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -220,11 +221,13 @@ class LaVenganzaBot(discord.Client):
         self.live_alerts = LiveAlerts(self, self.streamers, GUILD_ID)
         self.connect_message = None
         self.original_panel = OriginalPanel(os.getenv("TXADMIN_PANEL_BOT_TOKEN"),CONNECT_CHANNEL_ID,PANEL_MESSAGE_ID)
+        self.obscenity_filter = ObscenityFilter(self, GUILD_ID, get_setting, set_setting)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
+        self.obscenity_filter.install.start()
         self.live_alerts.start()
         if self.link_spam:
             await self.link_spam.start()
@@ -240,6 +243,7 @@ class LaVenganzaBot(discord.Client):
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
 
     async def close(self):
+        self.obscenity_filter.install.cancel()
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
         tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
