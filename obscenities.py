@@ -40,13 +40,13 @@ singao singaos singada singadas singazón singazon pingazo pingazos pinga pingas
 # Compact patterns fit Discord's Rust regex limits and keep word boundaries.
 PATTERNS = [
     r"(?i)\b(?:c[._-]?b|h[._-]?p|h[._-]?d[._-]?p(?:[._-]?t)?|w[._-]?l[._-]?b|m[._-]?m[._-]?b)\b",
-    r"(?i)\bc+[\W_]*[aá4@]+[\W_]*b+[\W_]*r+[\W_]*[oó0]+[\W_]*n+(?:[ae]s?|s)?\b",
-    r"(?i)\bp+[\W_]*[uú]+[\W_]*[ñn]+[\W_]*[eé3]+[\W_]*t+[\W_]*[aá4@]+s?\b",
-    r"(?i)\b(?:m+[\W_]*[aá4@]+[\W_]*m+[\W_]*[aá4@]+|(?:[hg]?[uü]|wu?)[eé3]+l+[eé3]+)[\W_]*b+[\W_]*[ií1!]+[\W_]*c+[\W_]*h+[\W_]*[oó0]+s?\b",
-    r"(?i)\bh[ií1]j[oa0]s?[\W_]*(?:(?:de|d)[\W_]*(?:(?:la[\W_]+)?gran[\W_]+)?)?p+[\W_]*[uú]+[\W_]*t+[\W_]*[aá4@]+s?\b",
-    r"(?i)\bp+[\W_]*[uú]+[\W_]*t+[\W_]*[aoáó04@]+s?\b",
+    r"(?i)\bc+[ ._*/-]*[aá4@]+[ ._*/-]*b+[ ._*/-]*r+[ ._*/-]*[oó0]+[ ._*/-]*n+(?:[ae]s?|s)?\b",
+    r"(?i)\bp+[ ._*/-]*[uú]+[ ._*/-]*[ñn]+[ ._*/-]*[eé3]+[ ._*/-]*t+[ ._*/-]*[aá4@]+s?\b",
+    r"(?i)\b(?:m+[ ._*/-]*[aá4@]+[ ._*/-]*m+[ ._*/-]*[aá4@]+|(?:[hg]?[uü]|wu?)[eé3]+l+[eé3]+)[ ._*/-]*b+[ ._*/-]*[ií1!]+[ ._*/-]*c+[ ._*/-]*h+[ ._*/-]*[oó0]+s?\b",
+    r"(?i)\bh[ií1]j[oa0]s?[ ._*/-]*(?:de?[ ._*/-]*)?(?:la[ ._*/-]+)?(?:gran[ ._*/-]+)?p+[ ._*/-]*[uú]+[ ._*/-]*t+[ ._*/-]*[aá4@]+s?\b",
+    r"(?i)\bp+[ ._*/-]*[uú]+[ ._*/-]*t+[ ._*/-]*[aoáó04@]+s?\b",
     r"(?i)\b(?:m[ií1][eé3]rd[aá4@]s?|c[oó0]ñ[oó0]s?|v[eé3]rg[aá4@]s?|p[eé3]nd[eé3]j[oa04]s?)\b",
-    r"(?i)\b(?:mama|chupa|lambe)[\W_]*(?:g[uü]e[bv]o|huevo|verga|pinga|pija|crica)s?\b",
+    r"(?i)\b(?:mama|chupa|lambe)[ ._*/-]*(?:g[uü]e[bv]o|huevo|verga|pinga|pija|crica)s?\b",
 ]
 
 
