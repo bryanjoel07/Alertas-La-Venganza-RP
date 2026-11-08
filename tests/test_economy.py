@@ -12,7 +12,7 @@ import discord
 
 from backup import snapshot
 from drive_backups import recovery_probe
-from economy import Confirm, Economy, Panel, shop_embed
+from economy import SHOP, Confirm, Economy, Panel, shop_embed
 from economy_delivery import Delivery
 from economy_store import CATEGORY_ID, PR, EconomyStore, week_slot
 
@@ -266,6 +266,7 @@ class EconomyTests(unittest.TestCase):
             channel.id = 12345
             channel.category_id = category.id
             channel.topic = "La Venganza Exclusive · shop_channel"
+            channel.name = SHOP
             guild.get_channel.side_effect = lambda ident: {
                 CATEGORY_ID: category,
                 12345: channel,
@@ -287,11 +288,13 @@ class EconomyTests(unittest.TestCase):
             system.signature = None
             await system.panel(guild)
             guild.create_text_channel.assert_awaited_once()
+            self.assertEqual(guild.create_text_channel.call_args.args[0], SHOP)
             self.assertEqual(
                 guild.create_text_channel.call_args.kwargs["category"], category
             )
             channel.send.assert_awaited_once()
             message.edit.assert_awaited_once()
+            channel.edit.assert_not_awaited()
             self.assertTrue(Panel(system).is_persistent())
             channel.overwrites_for.return_value = discord.PermissionOverwrite()
             with self.assertRaises(ValueError):
@@ -302,5 +305,39 @@ class EconomyTests(unittest.TestCase):
             i.response.send_message = AsyncMock()
             self.assertFalse(await Confirm(1, AsyncMock()).interaction_check(i))
             self.assertTrue(i.response.send_message.call_args.kwargs["ephemeral"])
+
+        asyncio.run(scenario())
+
+    def test_rename_existing_shop_keeps_channel_and_panel(self):
+        async def scenario():
+            system = object.__new__(Economy)
+            system.store = self.store
+            system.delivery = Delivery(self.store)
+            guild = MagicMock()
+            category = MagicMock(spec=discord.CategoryChannel)
+            category.id = CATEGORY_ID
+            channel = MagicMock(spec=discord.TextChannel)
+            channel.id = 12345
+            channel.category_id = CATEGORY_ID
+            channel.name = "🛍️┊tienda-exclusive"
+
+            async def rename(*, name, reason):
+                channel.name = name
+                return channel
+
+            channel.edit = AsyncMock(side_effect=rename)
+            guild.get_channel.side_effect = {
+                CATEGORY_ID: category,
+                channel.id: channel,
+            }.get
+            guild.create_text_channel = AsyncMock()
+            self.store.runtime_config("shop_channel", channel.id)
+            self.store.runtime_config("panel", 54321)
+            await system.channel(guild)
+            await system.channel(guild)
+            self.assertEqual(channel.name, "🛍️┊𝐓𝐢𝐞𝐧𝐝𝐚-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞")
+            channel.edit.assert_awaited_once()
+            guild.create_text_channel.assert_not_awaited()
+            self.assertEqual(self.store.config("panel"), "54321")
 
         asyncio.run(scenario())

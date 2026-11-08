@@ -16,7 +16,8 @@ from economy_store import PR, EconomyStore
 from meetings import ROLES
 
 log = logging.getLogger("LaVenganzaRP.economia")
-SHOP = "🛍️・tienda-exclusive"
+SHOP = "🛍️┊𝐓𝐢𝐞𝐧𝐝𝐚-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞"
+PREVIOUS_SHOP_NAMES = {"🛍️・tienda-exclusive", "🛍️┊tienda-exclusive"}
 PANEL = "🪙 La Venganza Exclusive"
 DETAILS = {
     "badge": "Insignia decorativa para tu perfil",
@@ -289,7 +290,10 @@ class Economy:
                     for c in available
                     if isinstance(c, discord.TextChannel)
                     and c.category_id == category.id
-                    and (c.topic == marker or (not audit and c.name == name))
+                    and (
+                        c.topic == marker
+                        or (not audit and c.name in PREVIOUS_SHOP_NAMES | {SHOP})
+                    )
                 ),
                 None,
             )
@@ -317,6 +321,11 @@ class Economy:
             )
         if audit:
             self.check_private(channel)
+        elif channel.name in PREVIOUS_SHOP_NAMES:
+            channel = await channel.edit(
+                name=SHOP,
+                reason="Igualar el nombre de la tienda al estilo de La Venganza",
+            )
         if saved != str(channel.id):
             self.store.runtime_config(key, channel.id)
             log.info(
@@ -371,10 +380,11 @@ class Economy:
         self.store.runtime_config("panel", msg.id)
         self.signature = signature
         log.info(
-            "Panel Exclusive listo canal=%s mensaje=%s categoría=%s",
+            "Panel Exclusive listo canal=%s mensaje=%s categoría=%s nombre=%s",
             ch.id,
             msg.id,
             ch.category_id,
+            ch.name,
         )
 
     async def audit(self, guild):
