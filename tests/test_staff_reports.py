@@ -1,6 +1,7 @@
 from pathlib import Path
 import sqlite3
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -18,9 +19,9 @@ class StaffTests(unittest.TestCase):
         self.staff = StaffReports(self.path)
         self.staff.initialize()
         self.voice_id = 1515887667298963579
-        self.key = self.store.save(('Staff', 2000000000, f'<#{self.voice_id}>', 'Agenda', 'Texto'), 1, 'staff')
+        self.created = int(time.time()) - 120
+        self.key = self.store.save(('Staff', self.created, f'<#{self.voice_id}>', 'Agenda', 'Texto'), 1, 'staff')
         self.store.publication(self.key, 200)
-        self.created = self.store.get(self.key)['created_at']
 
     def test_voice_entries_distinct_and_compare_responses(self):
         for user, response in ((10, 'yes'), (20, 'yes'), (30, 'no'), (40, 'maybe')):
@@ -59,7 +60,7 @@ class StaffTests(unittest.TestCase):
         self.assertIn(10, report['visits'])
         self.assertEqual(report['manual'][10]['recorded_by'], 8)
 
-    def test_restart_gaps_and_edit_do_not_erase_existing_visits(self):
+    def test_rescheduled_report_excludes_visits_outside_the_new_window(self):
         self.staff.observe(self.key, self.voice_id, [10], now=self.created + 1)
         self.staff.gap()
         self.store.initialize()
@@ -72,7 +73,21 @@ class StaffTests(unittest.TestCase):
         report = self.staff.report(self.key)
         self.assertEqual(report['tracking']['started_at'], self.created)
         self.assertEqual(report['tracking']['gap_detected'], 1)
-        self.assertEqual(report['present'], [10, 20, 30])
+        self.assertEqual(report['present'], [])
+
+    def test_legacy_observations_before_start_do_not_count(self):
+        with self.staff.connection() as db:
+            for user,last in [(11,self.created-100),(22,self.created+5)]:
+                db.execute('INSERT INTO meeting_voice_visits VALUES(?,?,?,?,?,?)',
+                           (self.key,user,self.voice_id,self.created-3600,last,'snapshot'))
+        db.close()
+        self.staff.observe(self.key,self.voice_id,[33],now=self.created-1)
+        result=self.staff.report(self.key)
+        self.assertIsNone(result['tracking'])
+        self.assertEqual(result['present'],[22])
+        self.assertEqual(result['visits'][22]['first_seen'],self.created+5)
+        embed=report_embed(self.store.get(self.key),result)
+        self.assertIn(f'<t:{self.created}:F>',embed.description)
 
     def test_large_report_within_discord_limits_and_full_export(self):
         for user in range(100000000000000000, 100000000000000150):

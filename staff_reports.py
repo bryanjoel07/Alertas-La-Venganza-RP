@@ -41,15 +41,12 @@ class StaffReports:
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
             meeting = db.execute("SELECT * FROM meetings WHERE id=? AND status='scheduled' AND kind='staff'", (meeting_id,)).fetchone()
-            if not meeting or voice_id(meeting) != channel_id:
+            if not meeting or voice_id(meeting) != channel_id or now < meeting['starts_at']:
                 return
             prior = db.execute('SELECT * FROM meeting_voice_tracking WHERE meeting_id=?', (meeting_id,)).fetchone()
-            db.execute('INSERT OR IGNORE INTO meeting_voice_tracking VALUES (?,?,?,?)', (meeting_id, meeting['created_at'], now, int(resume)))
+            db.execute('INSERT OR IGNORE INTO meeting_voice_tracking VALUES (?,?,?,?)', (meeting_id, meeting['starts_at'], now, int(resume)))
             if resume and prior:
                 db.execute('UPDATE meeting_voice_tracking SET gap_detected=1 WHERE meeting_id=?', (meeting_id,))
-            started = prior['started_at'] if prior else meeting['created_at']
-            if now < started:
-                return
             for user_id in set(users):
                 db.execute('INSERT INTO meeting_voice_visits VALUES (?,?,?,?,?,?) ON CONFLICT(meeting_id,user_id) DO UPDATE SET last_seen=MAX(last_seen,excluded.last_seen)', (meeting_id, user_id, channel_id, now, now, source))
 
@@ -62,8 +59,16 @@ class StaffReports:
 
     def report(self, meeting_id):
         with closing(self.connection()) as db:
+            meeting = db.execute('SELECT starts_at,ended_at FROM meetings WHERE id=?', (meeting_id,)).fetchone()
             tracking = db.execute('SELECT * FROM meeting_voice_tracking WHERE meeting_id=?', (meeting_id,)).fetchone()
-            visits = {r['user_id']: dict(r) for r in db.execute('SELECT * FROM meeting_voice_visits WHERE meeting_id=?', (meeting_id,))}
+            visits = {}
+            for r in db.execute('SELECT * FROM meeting_voice_visits WHERE meeting_id=? AND last_seen>=? AND (? IS NULL OR last_seen<=?)',
+                                (meeting_id,meeting['starts_at'],meeting['ended_at'],meeting['ended_at'])):
+                visit = dict(r)
+                if visit['first_seen'] < meeting['starts_at']:
+                    # The legacy aggregate proves only its last observation inside the meeting.
+                    visit['first_seen'] = visit['last_seen']
+                visits[r['user_id']] = visit
             manual = {r['user_id']: dict(r) for r in db.execute('SELECT * FROM meeting_attendance WHERE meeting_id=?', (meeting_id,))}
             responses = {r['user_id']: r['response'] for r in db.execute('SELECT * FROM meeting_responses WHERE meeting_id=?', (meeting_id,))}
         present = set(visits)
@@ -81,7 +86,11 @@ class StaffReports:
 def report_embed(meeting, report):
     title = discord.utils.escape_markdown(meeting['title']).replace('@', '@\u200b')
     tracking = report['tracking']
-    observed = f"Observación desde <t:{tracking['observed_since']}:f>." if tracking else 'No hay observación automática de voz para esta reunión anterior.'
+    observed = f"🌎 Inicio programado en tu hora local: <t:{meeting['starts_at']}:F>"
+    if meeting.get('ended_at'):
+        observed += f"\n🕒 Cierre en tu hora local: <t:{meeting['ended_at']}:F>"
+    if not tracking:
+        observed += "\nSin registro automático de voz."
     gap = '\n⚠️ Hubo posibles interrupciones; sin registro no demuestra ausencia.' if tracking and tracking['gap_detected'] else '\nSin presencia registrada significa que el bot no observó una entrada ni hay registro manual.'
     label = 'INFORME FINAL' if meeting['status'] == 'finished' else 'INFORME PROVISIONAL'
     embed = discord.Embed(title=f'📋 {label} DE STAFF — {title}', description=f"👥 **Asistencia registrada: {len(report['present'])}**\n{observed}{gap}\nRegistros manuales prevalecen sobre la detección automática.", color=0xD60000)
@@ -94,7 +103,13 @@ def report_embed(meeting, report):
 def report_text(meeting, report):
     lines = [f"INFORME STAFF — REUNIÓN #{meeting['id']}", meeting['title'], f"Estado: {meeting['status']}", 'Confirmaciones y presencia son registros independientes.', 'Los registros manuales prevalecen.']
     tracking = report['tracking']
-    lines.append(f"Observación: {tracking}" if tracking else 'No existe seguimiento de voz histórico. No se reconstruyen entradas anteriores.')
+    def utc(value):
+        return datetime.fromtimestamp(value,timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    lines.append(f"Inicio programado: {utc(meeting['starts_at'])}")
+    if meeting.get('ended_at'):
+        lines.append(f"Cierre: {utc(meeting['ended_at'])}")
+    if not tracking:
+        lines.append('Sin registro automático de voz.')
     lines.append('Sin registro no demuestra ausencia si el bot estuvo desconectado o no pudo observar el canal.')
     present = set(report['present'])
     for key, label in (('present', 'ASISTIERON'), ('confirmed_present', 'CONFIRMARON Y ASISTIERON'), ('confirmed_missing', 'CONFIRMARON Y SIN PRESENCIA REGISTRADA'), ('declined', 'DIJERON NO'), ('maybe', 'TAL VEZ'), ('unconfirmed_present', 'ASISTIERON SIN RESPUESTA'), ('declined_present', 'DIJERON NO PERO ASISTIERON')):

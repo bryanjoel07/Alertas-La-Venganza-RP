@@ -161,6 +161,12 @@ class MeetingStore:
             return [dict(r) for r in db.execute("""SELECT m.*, n.notice_id,n.seconds,n.starts,n.rendered FROM meeting_notice_messages n
                 JOIN meetings m ON m.id=n.meeting_id WHERE n.done=0""")]
 
+    def published_staff_reports(self):
+        with self.db() as db:
+            return [dict(r) for r in db.execute("""SELECT m.*,s.message_id AS report_id FROM public_summaries s
+                JOIN meetings m ON m.id=s.entity_id WHERE s.kind='staff_report'
+                AND s.message_id IS NOT NULL AND m.status='finished'""")]
+
     def notice_updated(self, notice_id, rendered, done):
         with self.db() as db:
             db.execute("UPDATE meeting_notice_messages SET rendered=?,done=? WHERE notice_id=?", (rendered,int(done),notice_id))
@@ -250,7 +256,8 @@ class MeetingSystem:
         return await asyncio.to_thread(getattr(self.staff, method), *args, **kwargs)
 
     async def snapshot_voice(self, meeting, resume=False):
-        if meeting["kind"] != "staff" or meeting["status"] != "scheduled":
+        if (meeting["kind"] != "staff" or meeting["status"] != "scheduled"
+                or datetime.now(timezone.utc).timestamp() < meeting["starts_at"]):
             return
         channel_id = voice_id(meeting)
         if channel_id is None:
@@ -284,14 +291,30 @@ class MeetingSystem:
             await self.staff_call("gap")
 
     async def voice_update(self, member, before, after):
-        if member.bot or member.guild.id != GUILD_ID or after.channel is None:
+        if member.bot or member.guild.id != GUILD_ID:
             return
-        if before.channel is not None and before.channel.id == after.channel.id:
+        before_id = getattr(before.channel,"id",None)
+        after_id = getattr(after.channel,"id",None)
+        if before_id == after_id:
             return
         async with self.lock:
             for meeting in await self.call("active"):
-                if meeting["kind"] == "staff" and voice_id(meeting) == after.channel.id:
-                    await self.staff_call("observe", meeting["id"], after.channel.id, [member.id], source="join")
+                channel_id = voice_id(meeting)
+                if meeting["kind"] == "staff" and channel_id and channel_id in (before_id,after_id):
+                    await self.staff_call("observe", meeting["id"], channel_id, [member.id], source="join" if channel_id == after_id else "leave")
+
+    async def refresh_published_reports(self):
+        for meeting in await self.call("published_staff_reports"):
+            try:
+                channel = self.bot.get_channel(meeting["channel_id"]) or await self.bot.fetch_channel(meeting["channel_id"])
+                message = await channel.fetch_message(meeting["report_id"])
+                if message.author.id == self.bot.user.id and message.embeds and "Inicio programado en tu hora local" not in (message.embeds[0].description or ""):
+                    report = await self.staff_call("report",meeting["id"])
+                    await message.edit(embed=report_embed(meeting,report), allowed_mentions=discord.AllowedMentions.none())
+            except discord.NotFound:
+                continue
+            except discord.HTTPException:
+                log.exception("No se pudo actualizar el informe de reunión #%s",meeting["id"])
 
     async def staff_report_notice(self, meeting):
         if meeting["kind"] != "staff" or meeting["status"] != "finished":
@@ -571,7 +594,7 @@ class MeetingSystem:
             perms = channel.permissions_for(channel.guild.me) if channel and channel.guild.me else None
             ready = bool(perms and perms.view_channel and perms.send_messages and perms.embed_links and perms.read_message_history)
             log.info("Recordatorios de reuniones: %s canal=%s permisos=%s", kind, channel_id, ready)
-        await asyncio.gather(self.send_reminders_loop(), self.update_notice_clocks())
+        await asyncio.gather(self.send_reminders_loop(), self.update_notice_clocks(), self.refresh_published_reports())
 
     async def send_reminders_loop(self):
         while not self.bot.is_closed():
@@ -579,6 +602,8 @@ class MeetingSystem:
             try:
                 for meeting in await self.call("active"):
                     try:
+                        async with self.lock:
+                            await self.snapshot_voice(meeting)
                         await self.send_due_reminder(meeting["id"], int(datetime.now(timezone.utc).timestamp()))
                     except Exception:
                         log.exception("Error en recordatorio de reunión #%s", meeting["id"])

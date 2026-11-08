@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
@@ -35,7 +36,7 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.system = MeetingSystem(self.bot, path, self.summaries)
         self.system.store.initialize()
         self.system.initialized = True
-        self.key = self.system.store.save(('Staff', 2000000000, f'<#{STAFF_VOICE_ID}>', 'Agenda', 'Texto'), 1, 'staff')
+        self.key = self.system.store.save(('Staff', int(time.time())-60, f'<#{STAFF_VOICE_ID}>', 'Agenda', 'Texto'), 1, 'staff')
         self.system.store.publication(self.key, 100)
         self.system.authorized_meeting = AsyncMock(side_effect=lambda interaction, key: self.system.store.get(key))
         self.interaction = Mock()
@@ -121,6 +122,7 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(f'/{CHANNELS[kind]}/{100 + key}', embed.description)
 
     async def test_failed_delivery_retries_and_recovers_an_ambiguous_send(self):
+        self.system.store.save(('Staff',2000000000,f'<#{STAFF_VOICE_ID}>','Agenda','Texto'),1,'staff',self.key)
         self.channel.id = CHANNELS['staff']
         self.bot.user.id = 42
         history = []
@@ -153,6 +155,7 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_not_awaited()
 
     async def test_notice_recovered_from_history_uses_minutes_and_final_time(self):
+        self.system.store.save(('Staff',2000000000,f'<#{STAFF_VOICE_ID}>','Agenda','Texto'),1,'staff',self.key)
         row = self.system.store.get(self.key)
         start = row['starts_at']
         old, _ = notice_embed(row,start,900,start-900)
