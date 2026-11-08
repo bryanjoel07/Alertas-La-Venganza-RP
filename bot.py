@@ -8,6 +8,7 @@ import time
 import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -261,7 +262,8 @@ client = LaVenganzaBot()
 
 
 async def post_webhook(embed):
-    payload = {"username": "La Venganza RP | Alertas", "allowed_mentions": {"parse": []}, "embeds": [embed.to_dict()]}
+    payload = {"username": "La Venganza RP | Alertas", "content": "@everyone",
+               "allowed_mentions": {"parse": ["everyone"]}, "embeds": [embed.to_dict()]}
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
         async with session.post(WEBHOOK_URL, json=payload) as response:
             if response.status not in (200, 204):
@@ -286,8 +288,21 @@ def make_alert(state, test=False):
 
 
 async def send_alert(state, test=False):
-    await post_webhook(make_alert(state, test))
+    channel = client.get_channel(ALERT_CHANNEL_ID) or await client.fetch_channel(ALERT_CHANNEL_ID)
+    await channel.send(content="@everyone", embed=make_alert(state, test),
+                       allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
     log.info("Alerta enviada: %s | prueba=%s", state, test)
+
+
+def daily_up_channel():
+    guild = client.get_guild(GUILD_ID)
+    channels = guild.text_channels if guild else []
+    matches = [channel for channel in channels
+               if ''.join(c for c in unicodedata.normalize('NFKC', channel.name).casefold()
+                          if c.isalnum()) == 'serverup']
+    if len(matches) != 1:
+        raise RuntimeError(f"Se esperaba un canal Server Up; encontrados: {len(matches)}")
+    return matches[0]
 
 
 async def send_daily_up():
@@ -304,7 +319,12 @@ async def send_daily_up():
         color=0x22C55E,
     )
     embed.set_footer(text="La Venganza RP | Aviso diario · 6:30 p. m. Puerto Rico")
-    await post_webhook(embed)
+    banner = Path(__file__).parent / "assets" / "banners" / "server-up.jpg"
+    embed.set_image(url="attachment://server-up.jpg")
+    channel = daily_up_channel()
+    await channel.send(content="@everyone", embed=embed, file=discord.File(banner, filename=banner.name),
+                       allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
+    log.info("SERVER UP diario enviado: canal=%s (%s)", channel.name, channel.id)
 
 
 async def read_connect_panel():
@@ -1404,6 +1424,21 @@ async def on_raw_message_delete(payload):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    try:
+        channel = daily_up_channel()
+        log.info("Destino SERVER UP diario 18:30 Puerto Rico: %s (%s); alertas caída/recuperación: %s",
+                 channel.name, channel.id, ALERT_CHANNEL_ID)
+        permissions = channel.permissions_for(channel.guild.me)
+        log.info("Permisos SERVER UP: enviar=%s adjuntar=%s embeds=%s everyone=%s",
+                 permissions.send_messages, permissions.attach_files,
+                 permissions.embed_links, permissions.mention_everyone)
+        alerts = client.get_channel(ALERT_CHANNEL_ID) or await client.fetch_channel(ALERT_CHANNEL_ID)
+        permissions = alerts.permissions_for(alerts.guild.me)
+        log.info("Destino alertas: %s (%s); enviar=%s embeds=%s everyone=%s",
+                 alerts.name, alerts.id, permissions.send_messages,
+                 permissions.embed_links, permissions.mention_everyone)
+    except RuntimeError:
+        log.exception("No se pudo resolver el canal del aviso diario SERVER UP")
     if client.link_spam:
         guild = client.get_guild(GUILD_ID)
         if guild:

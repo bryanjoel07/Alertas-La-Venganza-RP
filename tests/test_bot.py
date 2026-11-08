@@ -134,6 +134,54 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.bot.DATA_DIR = self.temp.name
         self.bot.init_db()
 
+    async def test_daily_up_banner_and_outage_alerts_use_separate_channels(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        daily = SimpleNamespace(name="🟢︱Server-Up", id=123, send=AsyncMock())
+        alerts = SimpleNamespace(id=self.bot.ALERT_CHANNEL_ID, send=AsyncMock())
+        guild = SimpleNamespace(text_channels=[daily, SimpleNamespace(name="alertas")])
+        with patch.object(self.bot.client, 'get_guild', return_value=guild), \
+             patch.object(self.bot.client, 'get_channel', return_value=alerts), \
+             patch.object(self.bot, 'post_webhook', AsyncMock()) as webhook:
+            await self.bot.send_daily_up()
+            daily.send.assert_awaited_once()
+            kwargs = daily.send.call_args.kwargs
+            self.assertEqual(kwargs['content'], '@everyone')
+            self.assertEqual(kwargs['allowed_mentions'].to_dict()['parse'], ['everyone'])
+            self.assertEqual(kwargs['embed'].image.url, 'attachment://server-up.jpg')
+            self.assertEqual(kwargs['file'].filename, 'server-up.jpg')
+            banner = Path(self.bot.__file__).parent / 'assets/banners/server-up.jpg'
+            self.assertEqual(kwargs['file'].fp.read(), banner.read_bytes())
+            kwargs['file'].close()
+            for state in ('down', 'up'):
+                await self.bot.send_alert(state)
+            self.assertEqual(alerts.send.await_count, 2)
+            for call in alerts.send.call_args_list:
+                self.assertEqual(call.kwargs['content'], '@everyone')
+                self.assertEqual(call.kwargs['allowed_mentions'].to_dict()['parse'], ['everyone'])
+            daily.send.assert_awaited_once()
+            webhook.assert_not_awaited()
+
+    async def test_maintenance_webhook_mentions_everyone(self):
+        from unittest.mock import MagicMock
+        import discord
+        with patch.object(self.bot.aiohttp, 'ClientSession') as factory:
+            session = factory.return_value.__aenter__.return_value
+            session.post = MagicMock()
+            session.post.return_value.__aenter__.return_value.status = 204
+            await self.bot.post_webhook(discord.Embed(title='Mantenimiento'))
+            payload = session.post.call_args.kwargs['json']
+            self.assertEqual(payload['content'], '@everyone')
+            self.assertEqual(payload['allowed_mentions'], {'parse': ['everyone']})
+
+    async def test_daily_destination_requires_unique_server_up_channel(self):
+        from types import SimpleNamespace
+        for names in ([], ['alertas'], ['Server-Up', 'server_up']):
+            guild = SimpleNamespace(text_channels=[SimpleNamespace(name=n) for n in names])
+            with patch.object(self.bot.client, 'get_guild', return_value=guild):
+                with self.assertRaises(RuntimeError):
+                    self.bot.daily_up_channel()
+
     async def test_original_simulation_does_not_write_outages(self):
         self.bot.simulate_cycle()
         with self.bot.database() as db:

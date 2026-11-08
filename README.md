@@ -3,7 +3,11 @@
 Bot existente ampliado sin reemplazar los sistemas de alertas, mantenimiento ni eventos.
 
 El monitor publica un aviso **SERVER UP** diario a las **6:30 p. m. de Puerto Rico**
-(`America/Puerto_Rico`, 22:30 UTC), en el mismo webhook de alertas. Solo lo envía
+(`America/Puerto_Rico`, 22:30 UTC), en el canal **Server-Up**, con el banner adjunto.
+Las alertas de caída y recuperación van al canal de alertas (`1567618111920807987`).
+El aviso diario busca un único canal de texto llamado Server-Up, ignorando emojis y separadores.
+Los avisos de caída, recuperación, mantenimiento y SERVER UP incluyen una mención real de `@everyone`.
+Solo lo envía
 si la lectura actual y el estado confirmado indican disponibilidad y no hay
 mantenimiento. Usa la primera lectura del minuto 18:30 (el monitor revisa cada
 30 segundos); si no está disponible, omite ese día. No recupera avisos atrasados.
