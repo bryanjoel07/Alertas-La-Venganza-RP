@@ -25,6 +25,7 @@ from link_spam import LinkSpamGuard
 from streamers import Streamers
 from live_alerts import LiveAlerts
 from streamer_panel import StreamerPanel
+from server_health import ServerHealthPanel
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -217,6 +218,7 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.streamers, guild=GUILD)
         self.streamer_panel = StreamerPanel(self, self.streamers)
         self.live_alerts = LiveAlerts(self, self.streamers, GUILD_ID)
+        self.health_panel = ServerHealthPanel(self, CONNECT_CHANNEL_ID, CONNECT_URL, get_setting, set_setting)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
@@ -235,11 +237,13 @@ class LaVenganzaBot(discord.Client):
         log.info("Comandos sincronizados: %s", ", ".join(c.name for c in commands))
         if self.monitor_task is None or self.monitor_task.done():
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
+        if self.health_panel.task is None or self.health_panel.task.done():
+            self.health_panel.task = asyncio.create_task(self.health_panel.run(),name="server-health-panel")
 
     async def close(self):
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.monitor_task, self.health_panel.task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -342,7 +346,9 @@ async def monitor_server():
                 log.info("Estado observado: %s | FiveM=%s panel=%s", state,*client.monitor_sources)
                 last_observed = observation
             async with client.lock:
-                if get_setting("maintenance_active", "0") == "1":
+                maintenance = get_setting("maintenance_active", "0") == "1"
+                client.health_panel.sample = (state,client.tracker.last,client.monitor_sources,maintenance,client.monitor_last_read)
+                if maintenance:
                     client.tracker.reset()
                 else:
                     event = client.tracker.observe(state, time.monotonic())
@@ -352,6 +358,7 @@ async def monitor_server():
                         await send_alert(event)
                         record_outage(event)
                         client.tracker.confirmed(event)
+                client.health_panel.sample = (state,client.tracker.last,client.monitor_sources,maintenance,client.monitor_last_read)
         except Exception:
             client.monitor_last_error = int(time.time())
             log.exception("Error monitoreando Connect")
