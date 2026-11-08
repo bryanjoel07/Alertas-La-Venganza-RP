@@ -12,7 +12,7 @@ import discord
 
 from backup import snapshot
 from drive_backups import recovery_probe
-from economy import Confirm, Economy, Panel, shop_embed
+from economy import SHOP, Confirm, Economy, Panel, shop_embed
 from economy_delivery import Delivery
 from economy_store import CATEGORY_ID, PR, EconomyStore, week_slot
 
@@ -45,7 +45,6 @@ class EconomyTests(unittest.TestCase):
             await recipient_view.action(recipient)
             self.assertEqual(self.store.account(1)["balance"], 10000 - item["price"])
             receipt = self.store.inventory(2)[0]
-            system.delivery.equip(recipient, receipt["id"], "")
             embed = discord.Embed()
             system.ready = True
             system.decorate(embed, 2)
@@ -84,6 +83,72 @@ class EconomyTests(unittest.TestCase):
         i.user.roles = []
         with self.assertRaises(ValueError):
             system.authorized(i)
+
+    def test_panel_purchase_roles_and_retry_without_second_charge(self):
+        async def scenario():
+            system = object.__new__(Economy)
+            system.store = self.store
+            system.delivery = Delivery(self.store)
+            week = self.store.rotation()["week"]
+            self.store.rows(
+                "UPDATE eco_rotations SET skus=? WHERE week=?",
+                ('["titulo-calle"]', week),
+            )
+            self.store.adjust(1, 250, "premio", 90, "fund")
+            guild = MagicMock()
+            member = MagicMock(
+                id=1, bot=False, top_role=1, roles=[], display_name="Jugador"
+            )
+            member.guild = guild
+            guild.me.top_role = 3
+            guild.me.guild_permissions = discord.Permissions(manage_roles=True)
+            guild.fetch_member = AsyncMock(return_value=member)
+            i = MagicMock()
+            i.guild = guild
+            i.user = member
+            i.response.is_done.return_value = False
+            i.response.send_message = AsyncMock()
+            await system.shop(i)
+            picker = i.response.send_message.call_args.kwargs["view"].children[0]
+            self.assertEqual([opt.value for opt in picker.options], ["titulo-calle"])
+            picker._values = ["titulo-calle"]
+            await picker.callback(i)
+            confirm = i.response.send_message.call_args.kwargs["view"]
+            role = MagicMock(id=50)
+            system.delivery.role = AsyncMock(return_value=role)
+            member.add_roles = AsyncMock(
+                side_effect=ValueError("entrega no disponible")
+            )
+            self.assertIn("pendiente", await confirm.action(i))
+            self.assertEqual(self.store.account(1)["balance"], 0)
+            self.assertEqual(self.store.equipped(1)[0]["slot"], "titulo")
+            fresh = Delivery(EconomyStore(self.path))
+            fresh.role = AsyncMock(return_value=role)
+            member.add_roles = AsyncMock()
+            await fresh.recover(guild)
+            member.add_roles.assert_awaited_once_with(role, reason="Cosmético equipado")
+            self.assertFalse(self.store.rows("SELECT * FROM eco_sync"))
+            self.store.unequip(1, "titulo")
+            await confirm.action(i)
+            self.assertFalse(self.store.equipped(1))
+            self.assertEqual(len(self.store.inventory(1)), 1)
+
+        asyncio.run(scenario())
+
+    def test_customization_is_validated_before_charging(self):
+        week = self.store.rotation()["week"]
+        self.store.rows(
+            "UPDATE eco_rotations SET skus=? WHERE week=?", ('["color-libre"]', week)
+        )
+        self.store.adjust(8, 2000, "premio", 90, "color")
+        quote = self.store.quote(8, 8, "color-libre")
+        with self.assertRaises(ValueError):
+            self.store.buy(quote["id"], 8, value="inválido")
+        self.assertFalse(self.store.inventory(8))
+        self.assertEqual(self.store.account(8)["balance"], 2000)
+        self.store.buy(quote["id"], 8, value="#12af90")
+        self.assertEqual(self.store.equipped(8)[0]["value"], "12AF90")
+        self.assertEqual(self.store.account(8)["balance"], 0)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -266,6 +331,7 @@ class EconomyTests(unittest.TestCase):
             channel.id = 12345
             channel.category_id = category.id
             channel.topic = "La Venganza Exclusive · shop_channel"
+            channel.name = SHOP
             guild.get_channel.side_effect = lambda ident: {
                 CATEGORY_ID: category,
                 12345: channel,
@@ -287,11 +353,13 @@ class EconomyTests(unittest.TestCase):
             system.signature = None
             await system.panel(guild)
             guild.create_text_channel.assert_awaited_once()
+            self.assertEqual(guild.create_text_channel.call_args.args[0], SHOP)
             self.assertEqual(
                 guild.create_text_channel.call_args.kwargs["category"], category
             )
             channel.send.assert_awaited_once()
             message.edit.assert_awaited_once()
+            channel.edit.assert_not_awaited()
             self.assertTrue(Panel(system).is_persistent())
             channel.overwrites_for.return_value = discord.PermissionOverwrite()
             with self.assertRaises(ValueError):
@@ -302,5 +370,39 @@ class EconomyTests(unittest.TestCase):
             i.response.send_message = AsyncMock()
             self.assertFalse(await Confirm(1, AsyncMock()).interaction_check(i))
             self.assertTrue(i.response.send_message.call_args.kwargs["ephemeral"])
+
+        asyncio.run(scenario())
+
+    def test_rename_existing_shop_keeps_channel_and_panel(self):
+        async def scenario():
+            system = object.__new__(Economy)
+            system.store = self.store
+            system.delivery = Delivery(self.store)
+            guild = MagicMock()
+            category = MagicMock(spec=discord.CategoryChannel)
+            category.id = CATEGORY_ID
+            channel = MagicMock(spec=discord.TextChannel)
+            channel.id = 12345
+            channel.category_id = CATEGORY_ID
+            channel.name = "🛍️┊tienda-exclusive"
+
+            async def rename(*, name, reason):
+                channel.name = name
+                return channel
+
+            channel.edit = AsyncMock(side_effect=rename)
+            guild.get_channel.side_effect = {
+                CATEGORY_ID: category,
+                channel.id: channel,
+            }.get
+            guild.create_text_channel = AsyncMock()
+            self.store.runtime_config("shop_channel", channel.id)
+            self.store.runtime_config("panel", 54321)
+            await system.channel(guild)
+            await system.channel(guild)
+            self.assertEqual(channel.name, "🛍️┊𝐓𝐢𝐞𝐧𝐝𝐚-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞")
+            channel.edit.assert_awaited_once()
+            guild.create_text_channel.assert_not_awaited()
+            self.assertEqual(self.store.config("panel"), "54321")
 
         asyncio.run(scenario())

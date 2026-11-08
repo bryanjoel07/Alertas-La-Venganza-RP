@@ -3,8 +3,10 @@
 import hashlib
 import json
 import random
+import re
 import sqlite3
 import time
+import unicodedata
 import uuid
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta
@@ -35,6 +37,64 @@ CREATE TABLE IF NOT EXISTS eco_reward_rates(event_id INTEGER PRIMARY KEY,rates T
 CREATE TABLE IF NOT EXISTS eco_legacy_events(event_id INTEGER PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS eco_audit(id INTEGER PRIMARY KEY,actor INTEGER NOT NULL,action TEXT NOT NULL,created INTEGER NOT NULL,sent INTEGER NOT NULL DEFAULT 0);
 """
+
+
+SLOTS = {
+    "badge": "insignia",
+    "limited": "insignia",
+    "title": "titulo",
+    "theme": "tema",
+    "color": "color",
+    "custom_color": "color",
+    "nickname": "prefijo",
+    "bio": "frase",
+    "celebration": "victoria",
+}
+
+
+def clean_label(value, limit):
+    value = " ".join(value.split())
+    if (
+        not value
+        or len(value) > limit
+        or any(c in "@<>`" or unicodedata.category(c) in {"Cc", "Cf"} for c in value)
+    ):
+        raise ValueError(
+            f"Elige un texto sin menciones ni caracteres de control, de hasta {limit} caracteres."
+        )
+    return value
+
+
+def outfit_for(p, value):
+    kind = p["kind"]
+    data = json.loads(p["payload"])
+    if kind == "bundle":
+        selections = {
+            "tema": data["label"],
+            "titulo": data["title"],
+            "color": f"{data['color']:06X}",
+        }
+    else:
+        slot = SLOTS.get(kind)
+        if slot is None:
+            raise ValueError("Este artículo se entrega automáticamente.")
+        if kind == "custom_color":
+            if (
+                not re.fullmatch(r"#?[0-9a-fA-F]{6}", value)
+                or int(value.lstrip("#"), 16) == 0
+            ):
+                raise ValueError(
+                    "Indica un color hexadecimal visible, por ejemplo #0088FF."
+                )
+            value = value.lstrip("#").upper()
+        elif kind == "color":
+            value = f"{data['color']:06X}"
+        elif kind in ("nickname", "bio"):
+            value = clean_label(value, 8 if kind == "nickname" else 100)
+        else:
+            value = data.get("label", p["name"])
+        selections = {slot: value}
+    return selections
 
 
 def week_slot(now):
@@ -379,7 +439,7 @@ class EconomyStore:
             )
             return q
 
-    def buy(self, quote_id, buyer, now=None):
+    def buy(self, quote_id, buyer, now=None, *, value=""):
         now = int(time.time()) if now is None else now
         with self.db() as db:
             q = db.execute(
@@ -461,6 +521,8 @@ class EconomyStore:
                 buyer,
                 f"Compra {key} · {p['name']} · {q['price']} monedas · destinatario {q['recipient']} · edición {edition}",
             )
+            if p["kind"] != "voice":
+                self._write_outfit(db, q["recipient"], key, outfit_for(p, value))
             self.collection_bonus(db, q["recipient"], now)
             return dict(
                 db.execute("SELECT * FROM eco_purchases WHERE id=?", (key,)).fetchone()
@@ -526,13 +588,17 @@ class EconomyStore:
                 (user, key, int(time.time())),
             ).fetchone():
                 raise ValueError("Artículo no disponible en tu inventario.")
-            for slot, value in selections.items():
-                db.execute(
-                    "INSERT OR REPLACE INTO eco_equipped VALUES (?,?,?,?)",
-                    (user, slot, key, value),
-                )
-            if selections.keys() & {"color", "titulo", "prefijo"}:
-                db.execute("INSERT OR IGNORE INTO eco_sync VALUES (?)", (user,))
+            self._write_outfit(db, user, key, selections)
+
+    @staticmethod
+    def _write_outfit(db, user, key, selections):
+        for slot, value in selections.items():
+            db.execute(
+                "INSERT OR REPLACE INTO eco_equipped VALUES (?,?,?,?)",
+                (user, slot, key, value),
+            )
+        if selections.keys() & {"color", "titulo", "prefijo"}:
+            db.execute("INSERT OR IGNORE INTO eco_sync VALUES (?)", (user,))
 
     def runtime_config(self, key, value):
         with self.db() as db:
