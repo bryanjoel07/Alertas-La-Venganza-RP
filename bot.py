@@ -292,8 +292,15 @@ async def send_alert(state, test=False):
 
 async def send_daily_up():
     embed = discord.Embed(
-        title="🟢 SERVER UP | LA VENGANZA RP",
-        description=f"✅ **¡La ciudad está disponible!**\n\n🎮 {CONNECT_URL}",
+        title="🟢 SERVER UP | LA VENGANZA RP 🔥",
+        description=(
+            "🌴 ¡Mi gente, la ciudad los espera!\n"
+            "🚗 Preparen sus máquinas, reúnan al corillo y "
+            "entren a disfrutar del mejor roleplay.\n\n"
+            f"🎮 **CONÉCTATE AQUÍ:**\n{CONNECT_URL}\n\n"
+            "🔴 **LA VENGANZA RP**\n"
+            "*La ciudad más real · El rol más duro*"
+        ),
         color=0x22C55E,
     )
     embed.set_footer(text="La Venganza RP | Aviso diario · 6:30 p. m. Puerto Rico")
