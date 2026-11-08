@@ -45,7 +45,6 @@ class EconomyTests(unittest.TestCase):
             await recipient_view.action(recipient)
             self.assertEqual(self.store.account(1)["balance"], 10000 - item["price"])
             receipt = self.store.inventory(2)[0]
-            system.delivery.equip(recipient, receipt["id"], "")
             embed = discord.Embed()
             system.ready = True
             system.decorate(embed, 2)
@@ -84,6 +83,72 @@ class EconomyTests(unittest.TestCase):
         i.user.roles = []
         with self.assertRaises(ValueError):
             system.authorized(i)
+
+    def test_panel_purchase_roles_and_retry_without_second_charge(self):
+        async def scenario():
+            system = object.__new__(Economy)
+            system.store = self.store
+            system.delivery = Delivery(self.store)
+            week = self.store.rotation()["week"]
+            self.store.rows(
+                "UPDATE eco_rotations SET skus=? WHERE week=?",
+                ('["titulo-calle"]', week),
+            )
+            self.store.adjust(1, 250, "premio", 90, "fund")
+            guild = MagicMock()
+            member = MagicMock(
+                id=1, bot=False, top_role=1, roles=[], display_name="Jugador"
+            )
+            member.guild = guild
+            guild.me.top_role = 3
+            guild.me.guild_permissions = discord.Permissions(manage_roles=True)
+            guild.fetch_member = AsyncMock(return_value=member)
+            i = MagicMock()
+            i.guild = guild
+            i.user = member
+            i.response.is_done.return_value = False
+            i.response.send_message = AsyncMock()
+            await system.shop(i)
+            picker = i.response.send_message.call_args.kwargs["view"].children[0]
+            self.assertEqual([opt.value for opt in picker.options], ["titulo-calle"])
+            picker._values = ["titulo-calle"]
+            await picker.callback(i)
+            confirm = i.response.send_message.call_args.kwargs["view"]
+            role = MagicMock(id=50)
+            system.delivery.role = AsyncMock(return_value=role)
+            member.add_roles = AsyncMock(
+                side_effect=ValueError("entrega no disponible")
+            )
+            self.assertIn("pendiente", await confirm.action(i))
+            self.assertEqual(self.store.account(1)["balance"], 0)
+            self.assertEqual(self.store.equipped(1)[0]["slot"], "titulo")
+            fresh = Delivery(EconomyStore(self.path))
+            fresh.role = AsyncMock(return_value=role)
+            member.add_roles = AsyncMock()
+            await fresh.recover(guild)
+            member.add_roles.assert_awaited_once_with(role, reason="Cosmético equipado")
+            self.assertFalse(self.store.rows("SELECT * FROM eco_sync"))
+            self.store.unequip(1, "titulo")
+            await confirm.action(i)
+            self.assertFalse(self.store.equipped(1))
+            self.assertEqual(len(self.store.inventory(1)), 1)
+
+        asyncio.run(scenario())
+
+    def test_customization_is_validated_before_charging(self):
+        week = self.store.rotation()["week"]
+        self.store.rows(
+            "UPDATE eco_rotations SET skus=? WHERE week=?", ('["color-libre"]', week)
+        )
+        self.store.adjust(8, 2000, "premio", 90, "color")
+        quote = self.store.quote(8, 8, "color-libre")
+        with self.assertRaises(ValueError):
+            self.store.buy(quote["id"], 8, value="inválido")
+        self.assertFalse(self.store.inventory(8))
+        self.assertEqual(self.store.account(8)["balance"], 2000)
+        self.store.buy(quote["id"], 8, value="#12af90")
+        self.assertEqual(self.store.equipped(8)[0]["value"], "12AF90")
+        self.assertEqual(self.store.account(8)["balance"], 0)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

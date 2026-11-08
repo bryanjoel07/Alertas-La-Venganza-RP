@@ -11,8 +11,8 @@ from typing import Literal
 import discord
 from discord import app_commands
 
-from economy_delivery import LABELS, Delivery, clean_label
-from economy_store import PR, EconomyStore
+from economy_delivery import LABELS, Delivery
+from economy_store import PR, EconomyStore, clean_label
 from meetings import ROLES
 
 log = logging.getLogger("LaVenganzaRP.economia")
@@ -37,6 +37,11 @@ TIERS = {
     "saving": "Ahorro",
     "exclusive": "Exclusivo",
     "limited": "Limitado",
+}
+CUSTOM_FIELDS = {
+    "custom_color": ("Color hexadecimal, por ejemplo #44AAFF", 7),
+    "nickname": ("Prefijo para tu apodo", 8),
+    "bio": ("Frase para tu perfil", 100),
 }
 
 
@@ -103,10 +108,11 @@ async def private_list(i, title, lines):
 
 
 class Confirm(discord.ui.View):
-    def __init__(self, user, action):
+    def __init__(self, user, action, field=None):
         super().__init__(timeout=170)
         self.user = user
         self.action = action
+        self.field = field
 
     async def interaction_check(self, i):
         if i.user.id != self.user:
@@ -116,9 +122,25 @@ class Confirm(discord.ui.View):
 
     @discord.ui.button(label="Confirmar", style=discord.ButtonStyle.success)
     async def confirm(self, i, button):
+        if self.field:
+            label, limit = self.field
+            modal = discord.ui.Modal(title="Personalizar y comprar")
+            value = discord.ui.TextInput(label=label, max_length=limit)
+            modal.add_item(value)
+
+            async def submit(click):
+                if await self.interaction_check(click):
+                    await self.complete(click, value.value)
+
+            modal.on_submit = submit
+            await i.response.send_modal(modal)
+            return
+        await self.complete(i)
+
+    async def complete(self, i, *args):
         await i.response.defer(ephemeral=True, thinking=True)
         try:
-            result = await self.action(i)
+            result = await self.action(i, *args)
             self.stop()
         except (ValueError, discord.HTTPException) as exc:
             result = f"No se pudo completar la operación. {exc}"
@@ -138,7 +160,7 @@ class Panel(discord.ui.View):
         self.system = system
 
     @discord.ui.button(
-        label="Ver artículos",
+        label="Comprar artículos",
         emoji="🛍️",
         custom_id="lv:eco:shop",
         style=discord.ButtonStyle.primary,
@@ -149,6 +171,28 @@ class Panel(discord.ui.View):
     @discord.ui.button(label="Mi saldo", emoji="🪙", custom_id="lv:eco:balance")
     async def balance(self, i, button):
         await self.system.balance(i)
+
+
+class ShopPicker(discord.ui.Select):
+    def __init__(self, system, products):
+        super().__init__(
+            placeholder="Elige un artículo para comprar",
+            options=[
+                discord.SelectOption(
+                    label=p["name"],
+                    value=p["sku"],
+                    description=f"{p['price']} monedas · {TIERS[p['tier']]}",
+                )
+                for p in products
+            ],
+        )
+        self.system = system
+
+    async def callback(self, i):
+        try:
+            await self.system.preview(i, self.values[0], i.user)
+        except (ValueError, discord.HTTPException) as exc:
+            await private(i, str(exc))
 
 
 class InventoryControls(discord.ui.View):
@@ -399,10 +443,26 @@ class Economy:
             self.store.rows("UPDATE eco_audit SET sent=1 WHERE id=?", (row["id"],))
 
     async def shop(self, i):
+        rotation = self.store.rotation()
+        now = time.time()
+        available = [
+            p
+            for p in rotation["products"]
+            if p["active"]
+            and p["stock"] != 0
+            and (not p["campaign_start"] or p["campaign_start"] <= now)
+            and (not p["campaign_end"] or now < p["campaign_end"])
+        ]
+        view = discord.ui.View(timeout=180)
+        if available:
+            view.add_item(ShopPicker(self, available))
         await private(
             i,
-            "Elige un código con `/comprar` o `/regalar` para revisar y confirmar.",
-            embed=shop_embed(self.store.rotation()),
+            "Elige un artículo para ver el precio y confirmar la compra."
+            if available
+            else "No quedan artículos disponibles en esta rotación.",
+            embed=shop_embed(rotation),
+            view=view if available else None,
         )
 
     async def balance(self, i):
@@ -423,36 +483,57 @@ class Economy:
                 f"Necesitas {p['price']} monedas para comprar este artículo."
             )
 
-        async def deliver():
+        async def deliver(value=""):
             async with self.delivery.lock:
                 member = await i.guild.fetch_member(recipient.id)
                 self.delivery.preflight(member, p["kind"])
-                receipt = self.store.buy(p["id"], i.user.id)
+                receipt = self.store.buy(p["id"], i.user.id, value=value)
+                if receipt["status"] in ("refunded", "expired"):
+                    return "Esta compra ya terminó. Puedes consultar su historial en /movimientos."
                 if receipt["kind"] == "voice" and receipt["status"] == "pending":
                     try:
                         await self.delivery.voice(i.guild, receipt)
                     except (ValueError, discord.HTTPException):
                         return f"Compra {receipt['id']} guardada. La sala está pendiente y se reintentará automáticamente."
-            return f"Compra {receipt['id']} · {receipt['name']} para {member.display_name} · {receipt['price']} 🪙. Disponible en /inventario."
+                if receipt["kind"] == "voice":
+                    room = self.store.purchase(receipt["id"])["resource_id"]
+                    return f"Compra confirmada · {receipt['price']} 🪙. Tu sala está lista: <#{room}>."
+                if self.store.rows(
+                    "SELECT 1 FROM eco_sync WHERE user_id=?", (member.id,)
+                ):
+                    try:
+                        await self.delivery.sync_member(member)
+                    except (ValueError, discord.HTTPException):
+                        return f"Compra guardada en /inventario. La entrega de {receipt['name']} está pendiente. El bot volverá a intentarlo sin cobrarte otra vez."
+            return f"Compra confirmada: {receipt['name']} · {receipt['price']} 🪙. Puedes ver el artículo en /inventario y cambiarlo cuando quieras."
 
-        async def buy(click):
+        field = CUSTOM_FIELDS.get(p["kind"])
+        note = (
+            "Al confirmar, el bot creará la sala."
+            if p["kind"] == "voice"
+            else "Al confirmar, se equipará automáticamente y sustituirá el cosmético activo del mismo tipo."
+        )
+        if field:
+            note += " Se pedirá la personalización antes de cobrar."
+
+        async def buy(click, value=""):
             if recipient.id == i.user.id:
-                return await deliver()
+                return await deliver(value)
 
-            async def accept(_):
-                return await deliver()
+            async def accept(_, value=""):
+                return await deliver(value)
 
             await recipient.send(
-                f"{i.user.display_name} quiere regalarte **{p['name']}**. Pagará {p['price']} 🪙 al aceptar.\n{product_text(p)}",
-                view=Confirm(recipient.id, accept),
+                f"{i.user.display_name} quiere regalarte **{p['name']}**. Pagará {p['price']} 🪙 al aceptar.\n{product_text(p)}\n{note}",
+                view=Confirm(recipient.id, accept, field),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
             return "Se envió la invitación privada. El cobro se aplicará cuando el destinatario acepte antes del vencimiento."
 
         await private(
             i,
-            f"**{p['name']}** para **{discord.utils.escape_markdown(recipient.display_name)}**\n{product_text(p)}\nConfirma antes de <t:{p['expires']}:T>.",
-            view=Confirm(i.user.id, buy),
+            f"**{p['name']}** para **{discord.utils.escape_markdown(recipient.display_name)}**\n{product_text(p)}\n{note}\nConfirma antes de <t:{p['expires']}:T>.",
+            view=Confirm(i.user.id, buy, field if recipient.id == i.user.id else None),
         )
 
     def diagnostics(self):

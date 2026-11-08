@@ -3,27 +3,15 @@
 import asyncio
 import json
 import logging
-import re
 import time
-import unicodedata
 
 import discord
 
+from economy_store import outfit_for
 from meetings import ROLES
 
 log = logging.getLogger("LaVenganzaRP.economia")
 ROLE_KINDS = {"color", "custom_color", "title", "bundle"}
-SLOTS = {
-    "badge": "insignia",
-    "limited": "insignia",
-    "title": "titulo",
-    "theme": "tema",
-    "color": "color",
-    "custom_color": "color",
-    "nickname": "prefijo",
-    "bio": "frase",
-    "celebration": "victoria",
-}
 LABELS = {
     "insignia": "Insignia",
     "titulo": "Título",
@@ -34,19 +22,6 @@ LABELS = {
     "victoria": "Celebración",
     "trofeo": "Trofeo destacado",
 }
-
-
-def clean_label(value, limit):
-    value = " ".join(value.split())
-    if (
-        not value
-        or len(value) > limit
-        or any(c in "@<>`" or unicodedata.category(c) in {"Cc", "Cf"} for c in value)
-    ):
-        raise ValueError(
-            f"Elige un texto sin menciones ni caracteres de control, de hasta {limit} caracteres."
-        )
-    return value
 
 
 class Delivery:
@@ -169,36 +144,8 @@ class Delivery:
 
     def equip(self, member, key, value):
         p = self.store.purchase(key, member.id)
-        data = json.loads(p["payload"])
-        kind = p["kind"]
-        self.preflight(member, kind)
-        if kind == "bundle":
-            selections = {
-                "tema": data["label"],
-                "titulo": data["title"],
-                "color": f"{data['color']:06X}",
-            }
-        else:
-            slot = SLOTS.get(kind)
-            if slot is None:
-                raise ValueError("Este artículo se entrega automáticamente.")
-            if kind == "custom_color":
-                if (
-                    not re.fullmatch(r"#?[0-9a-fA-F]{6}", value)
-                    or int(value.lstrip("#"), 16) == 0
-                ):
-                    raise ValueError(
-                        "Indica un color hexadecimal visible, por ejemplo #0088FF."
-                    )
-                value = value.lstrip("#").upper()
-            elif kind == "color":
-                value = f"{data['color']:06X}"
-            elif kind in ("nickname", "bio"):
-                value = clean_label(value, 8 if kind == "nickname" else 100)
-            else:
-                value = data.get("label", p["name"])
-            selections = {slot: value}
-        self.store.set_outfit(member.id, p["id"], selections)
+        self.preflight(member, p["kind"])
+        self.store.set_outfit(member.id, p["id"], outfit_for(p, value))
 
     async def sync_member(self, member):
         equipped = {r["slot"]: r for r in self.store.equipped(member.id)}
