@@ -162,6 +162,18 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
             daily.send.assert_awaited_once()
             webhook.assert_not_awaited()
 
+    async def test_manual_up_request_survives_reconnect_without_changing_daily_slot(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        with patch.dict(os.environ, {'SERVER_UP_REQUEST_ID': 'test-manual-1'}), \
+             patch.object(self.bot, 'daily_up_channel'), \
+             patch.object(self.bot, 'send_daily_up', AsyncMock(return_value=SimpleNamespace(id=77))) as send:
+            await self.bot.requested_server_up()
+            await self.bot.requested_server_up()
+            send.assert_awaited_once()
+            self.assertEqual(self.bot.get_setting('manual_server_up_request'), 'test-manual-1')
+            self.assertEqual(self.bot.get_setting('daily_server_up_slot'), '')
+
     async def test_maintenance_webhook_mentions_everyone(self):
         from unittest.mock import MagicMock
         import discord

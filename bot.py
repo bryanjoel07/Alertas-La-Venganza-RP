@@ -341,9 +341,25 @@ async def send_daily_up():
     banner = Path(__file__).parent / "assets" / "banners" / "server-up.jpg"
     embed.set_image(url="attachment://server-up.jpg")
     channel = daily_up_channel()
-    await channel.send(content="@everyone", embed=embed, file=discord.File(banner, filename=banner.name),
-                       allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
-    log.info("SERVER UP diario enviado: canal=%s (%s)", channel.name, channel.id)
+    message = await channel.send(content="@everyone", embed=embed, file=discord.File(banner, filename=banner.name),
+                                 allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
+    log.info("SERVER UP enviado: canal=%s (%s) mensaje=%s", channel.name, channel.id, message.id)
+    return message
+
+
+async def requested_server_up():
+    request_id = os.getenv("SERVER_UP_REQUEST_ID", "").strip()
+    if not request_id:
+        return
+    async with client.lock:
+        key = "manual_server_up_request"
+        if get_setting(key) == request_id:
+            return
+        # Reserve before delivery to prevent duplicate mentions on reconnect/timeouts.
+        daily_up_channel()
+        set_setting(key, request_id)
+        message = await send_daily_up()
+        log.info("SERVER UP manual completado: solicitud=%s mensaje=%s", request_id, message.id)
 
 
 async def read_connect_panel():
@@ -1460,6 +1476,10 @@ async def on_ready():
                  permissions.embed_links, permissions.mention_everyone)
     except RuntimeError:
         log.exception("No se pudo resolver el canal del aviso diario SERVER UP")
+    try:
+        await requested_server_up()
+    except Exception:
+        log.exception("Error en envío manual SERVER UP; no se reintentará automáticamente")
     if client.link_spam:
         guild = client.get_guild(GUILD_ID)
         if guild:
