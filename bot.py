@@ -25,7 +25,7 @@ from link_spam import LinkSpamGuard
 from streamers import Streamers
 from live_alerts import LiveAlerts
 from streamer_panel import StreamerPanel
-from server_health import ServerHealthPanel
+from server_health import OriginalPanel
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -218,8 +218,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.streamers, guild=GUILD)
         self.streamer_panel = StreamerPanel(self, self.streamers)
         self.live_alerts = LiveAlerts(self, self.streamers, GUILD_ID)
-        health_channel = int(os.getenv("FIVEM_HEALTH_CHANNEL_ID",str(CONNECT_CHANNEL_ID)))
-        self.health_panel = ServerHealthPanel(self, health_channel, CONNECT_URL, get_setting, set_setting)
+        self.connect_message = None
+        self.original_panel = OriginalPanel(os.getenv("TXADMIN_PANEL_BOT_TOKEN"),CONNECT_CHANNEL_ID,PANEL_MESSAGE_ID)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
@@ -238,13 +238,11 @@ class LaVenganzaBot(discord.Client):
         log.info("Comandos sincronizados: %s", ", ".join(c.name for c in commands))
         if self.monitor_task is None or self.monitor_task.done():
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
-        if self.health_panel.task is None or self.health_panel.task.done():
-            self.health_panel.task = asyncio.create_task(self.health_panel.run(),name="server-health-panel")
 
     async def close(self):
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.monitor_task, self.health_panel.task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -285,9 +283,13 @@ async def send_alert(state, test=False):
 
 
 async def read_connect_panel():
+    client.connect_message = None
     channel = await client.fetch_channel(CONNECT_CHANNEL_ID)
     message = await channel.fetch_message(PANEL_MESSAGE_ID)
+    client.connect_message = message
     updated = message.edited_at or message.created_at
+    if message.embeds and message.embeds[0].timestamp:
+        updated = min(updated, message.embeds[0].timestamp)
     if time.time() - updated.timestamp() > PANEL_MAX_AGE:
         return "stale"
     return detect_status(message)
@@ -348,7 +350,6 @@ async def monitor_server():
                 last_observed = observation
             async with client.lock:
                 maintenance = get_setting("maintenance_active", "0") == "1"
-                client.health_panel.sample = (state,client.tracker.last,client.monitor_sources,maintenance,client.monitor_last_read)
                 if maintenance:
                     client.tracker.reset()
                 else:
@@ -359,7 +360,11 @@ async def monitor_server():
                         await send_alert(event)
                         record_outage(event)
                         client.tracker.confirmed(event)
-                client.health_panel.sample = (state,client.tracker.last,client.monitor_sources,maintenance,client.monitor_last_read)
+            if not maintenance and state == client.tracker.last and client.monitor_sources[1] == "stale":
+                try:
+                    await client.original_panel.update(client.connect_message, state, PANEL_MAX_AGE)
+                except (aiohttp.ClientError, asyncio.TimeoutError):
+                    log.warning("No se pudo editar el estado del panel original; se reintentará.")
         except Exception:
             client.monitor_last_error = int(time.time())
             log.exception("Error monitoreando Connect")
