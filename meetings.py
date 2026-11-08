@@ -55,6 +55,7 @@ class MeetingStore:
                 "CREATE TABLE IF NOT EXISTS meeting_responses (meeting_id INTEGER NOT NULL REFERENCES meetings(id), user_id INTEGER NOT NULL, response TEXT NOT NULL CHECK(response IN ('yes','no','maybe')), updated_at INTEGER NOT NULL, PRIMARY KEY(meeting_id,user_id))",
                 "CREATE TABLE IF NOT EXISTS meeting_attendance (meeting_id INTEGER NOT NULL REFERENCES meetings(id), user_id INTEGER NOT NULL, present INTEGER NOT NULL CHECK(present IN (0,1)), recorded_by INTEGER NOT NULL, recorded_at INTEGER NOT NULL, PRIMARY KEY(meeting_id,user_id))",
                 "CREATE TABLE IF NOT EXISTS meeting_reminders (meeting_id INTEGER NOT NULL REFERENCES meetings(id), seconds INTEGER NOT NULL, state TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(meeting_id,seconds))",
+                "CREATE TABLE IF NOT EXISTS meeting_notice_messages (notice_id INTEGER PRIMARY KEY,meeting_id INTEGER NOT NULL,starts INTEGER NOT NULL,seconds INTEGER NOT NULL,rendered TEXT,done INTEGER DEFAULT 0)",
                 "CREATE INDEX IF NOT EXISTS meetings_status_time ON meetings(status,starts_at)",
             ):
                 db.execute(sql)
@@ -143,9 +144,26 @@ class MeetingStore:
                     return None
             return dict(m), seconds, not inserted
 
-    def reminder_result(self, meeting_id, seconds, state):
+    def reminder_result(self, meeting_id, seconds, state, notice_id=None, starts=None):
         with self.db() as db:
             db.execute("UPDATE meeting_reminders SET state=?,updated_at=? WHERE meeting_id=? AND seconds=?", (state, int(datetime.now(timezone.utc).timestamp()), meeting_id, seconds))
+            if notice_id is not None:
+                db.execute("INSERT OR IGNORE INTO meeting_notice_messages(notice_id,meeting_id,starts,seconds) VALUES(?,?,?,?)",(notice_id,meeting_id,starts,seconds))
+
+    def untracked_notices(self):
+        with self.db() as db:
+            return [dict(r) for r in db.execute("""SELECT m.*,r.seconds FROM meetings m JOIN meeting_reminders r ON r.meeting_id=m.id
+                WHERE r.state='sent' AND NOT EXISTS (SELECT 1 FROM meeting_notice_messages n
+                WHERE n.meeting_id=m.id AND n.starts=m.starts_at AND n.seconds=r.seconds) ORDER BY m.id""")]
+
+    def live_notices(self):
+        with self.db() as db:
+            return [dict(r) for r in db.execute("""SELECT m.*, n.notice_id,n.seconds,n.starts,n.rendered FROM meeting_notice_messages n
+                JOIN meetings m ON m.id=n.meeting_id WHERE n.done=0""")]
+
+    def notice_updated(self, notice_id, rendered, done):
+        with self.db() as db:
+            db.execute("UPDATE meeting_notice_messages SET rendered=?,done=? WHERE notice_id=?", (rendered,int(done),notice_id))
 
 
 def escaped(text):
@@ -155,6 +173,51 @@ def escaped(text):
 def meeting_location(value):
     """Enlaza solo IDs de canal guardados; conserva texto de reuniones anteriores."""
     return value if re.fullmatch(r"<#\d+>", value) else escaped(value)
+
+
+def notice_marker(meeting_id, starts, seconds):
+    local = datetime.fromtimestamp(starts, PR)
+    return f"LA VENGANZA RP | Reunión #{meeting_id} · {local:%d/%m/%Y %H:%M} PR · {REMINDER_LABELS[seconds]}"
+
+def notice_footer(meeting_id, seconds):
+    label = "Aviso de inicio" if not seconds else f"Aviso de {REMINDER_LABELS[seconds]}"
+    return f"LA VENGANZA RP | Reunión #{meeting_id} · {label}"
+
+def matches_notice(embed, meeting_id, starts, seconds):
+    if embed.footer.text == notice_marker(meeting_id,starts,seconds):
+        return True
+    return embed.footer.text == notice_footer(meeting_id,seconds) and embed.timestamp == datetime.fromtimestamp(starts,timezone.utc)
+
+
+def notice_embed(meeting, original_start, seconds, now):
+    starts = meeting["starts_at"]
+    end = meeting["ended_at"]
+    closed = meeting["status"] in ("cancelled", "finished")
+    moved = starts != original_start
+    if closed:
+        title = "✅ REUNIÓN FINALIZADA" if meeting["status"] == "finished" else "🔒 REUNIÓN CANCELADA"
+        status = f"Cierre en tu hora local: <t:{end}:F>" if end else "Reunión cerrada"
+        if meeting["status"] == "finished" and end and end >= starts:
+            status += f" · {(end-starts)//60} min desde el inicio programado"
+    elif moved:
+        title, status = "📅 REUNIÓN REPROGRAMADA", "La fecha indicada es el nuevo horario."
+    elif now >= starts:
+        title = "🎙️ LA REUNIÓN HA COMENZADO"
+        minutes = (now-starts)//60
+        status = "Acaba de comenzar" if not minutes else f"Comenzó hace {minutes} min"
+    else:
+        minutes = (starts-now+59)//60
+        title = f"🔔 REUNIÓN EN {REMINDER_LABELS[seconds].upper()}" if minutes == seconds//60 else "🔔 RECORDATORIO DE REUNIÓN"
+        hours, mins = divmod(minutes,60)
+        status = f"Faltan {hours} h {mins} min" if hours else ("Falta 1 min" if mins == 1 else f"Faltan {mins} min")
+    description = (f"**{escaped(meeting['title'])}**\n🌎 **Inicio en tu hora local:** <t:{starts}:F>\n"
+                   f"🕒 **{status}**\n📍 {meeting_location(meeting['location'])}")
+    if not closed:
+        description += f"\n[Ver reunión](https://discord.com/channels/{GUILD_ID}/{meeting['channel_id']}/{meeting['message_id']})"
+    embed = discord.Embed(title=title, description=description, color=0xD60000,
+                          timestamp=datetime.fromtimestamp(original_start,timezone.utc))
+    embed.set_footer(text=notice_footer(meeting['id'],seconds))
+    return embed, closed
 
 
 class MeetingSystem:
@@ -433,34 +496,72 @@ class MeetingSystem:
                 return
             meeting, seconds, retry = claim
             starts = meeting["starts_at"]
-            local = datetime.fromtimestamp(starts, PR)
-            marker = f"LA VENGANZA RP | Reunión #{meeting_id} · {local:%d/%m/%Y %H:%M} PR · {REMINDER_LABELS[seconds]}"
+            marker = notice_marker(meeting_id, starts, seconds)
             try:
                 channel = self.bot.get_channel(meeting["channel_id"]) or await self.bot.fetch_channel(meeting["channel_id"])
-                delivered = False
+                delivered = None
                 if retry:
                     after = datetime.fromtimestamp(starts - seconds - 1, timezone.utc)
                     async for message in channel.history(limit=None, after=after):
-                        if message.author.id == self.bot.user.id and any(e.footer.text == marker for e in message.embeds):
-                            delivered = True
+                        if message.author.id == self.bot.user.id and any(matches_notice(e,meeting_id,starts,seconds) for e in message.embeds):
+                            delivered = message
                             break
-                if not delivered:
-                    heading = "🔔 RECORDATORIO DE REUNIÓN"
-                    if not seconds:
-                        heading = "🎙️ LA REUNIÓN HA COMENZADO"
-                    elif now - (starts - seconds) < 60:
-                        heading = f"🔔 REUNIÓN EN {REMINDER_LABELS[seconds].upper()}"
-                    url = f"https://discord.com/channels/{GUILD_ID}/{channel.id}/{meeting['message_id']}"
-                    embed = discord.Embed(title=heading, description=f"**{escaped(meeting['title'])}**\n"
-                        f"🇵🇷 {local:%d/%m/%Y · %I:%M %p} — Puerto Rico\n🌎 <t:{starts}:F> · <t:{starts}:R>\n"
-                        f"📍 {meeting_location(meeting['location'])}\n[Ver reunión]({url})", color=0xD60000)
-                    embed.set_footer(text=marker)
+                if delivered is None:
+                    embed, _ = notice_embed(meeting, starts, seconds, now)
                     nonce = int.from_bytes(hashlib.blake2b(marker.encode(), digest_size=8).digest(), "big") >> 1
-                    await channel.send(embed=embed, nonce=nonce, allowed_mentions=discord.AllowedMentions.none())
+                    delivered = await channel.send(embed=embed, nonce=nonce, allowed_mentions=discord.AllowedMentions.none())
             except Exception:
                 await self.call("reminder_result", meeting_id, seconds, "failed")
                 raise
-            await self.call("reminder_result", meeting_id, seconds, "sent")
+            await self.call("reminder_result", meeting_id, seconds, "sent", delivered.id, starts)
+
+    async def recover_old_notices(self):
+        groups = {}
+        for row in await self.call("untracked_notices"):
+            groups.setdefault(row["id"], []).append(row)
+        for meeting_id, rows in groups.items():
+            starts, channel_id = rows[0]["starts_at"], rows[0]["channel_id"]
+            channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+            after = datetime.fromtimestamp(starts-max(r["seconds"] for r in rows)-60, timezone.utc)
+            before = datetime.fromtimestamp(starts+START_GRACE+60, timezone.utc)
+            async for msg in channel.history(limit=None,after=after,before=before):
+                if msg.author.id != self.bot.user.id:
+                    continue
+                for embed in msg.embeds:
+                    for row in rows:
+                        seconds = row["seconds"]
+                        if matches_notice(embed,meeting_id,starts,seconds):
+                            await self.call("reminder_result", meeting_id, seconds, "sent", msg.id, starts)
+                            break
+
+    async def update_notice_clocks(self):
+        recovered = False
+        while not self.bot.is_closed():
+            try:
+                if not recovered:
+                    try:
+                        await self.recover_old_notices()
+                        recovered = True
+                    except Exception:
+                        log.exception("No se pudo recuperar el historial de avisos de reunión")
+                for row in await self.call("live_notices"):
+                    now = int(datetime.now(timezone.utc).timestamp())
+                    embed, done = notice_embed(row,row["starts"],row["seconds"],now)
+                    rendered = hashlib.sha256((embed.title+embed.description).encode()).hexdigest()
+                    if row["rendered"] == rendered:
+                        continue
+                    try:
+                        channel = self.bot.get_channel(row["channel_id"]) or await self.bot.fetch_channel(row["channel_id"])
+                        await channel.get_partial_message(row["notice_id"]).edit(embed=embed)
+                    except discord.NotFound:
+                        done = True
+                    except discord.HTTPException:
+                        log.exception("No se pudo actualizar aviso %s",row["notice_id"])
+                        continue
+                    await self.call("notice_updated",row["notice_id"],rendered,done)
+            except Exception:
+                log.exception("Error actualizando el reloj de reuniones")
+            await asyncio.sleep(15)
 
     async def reminders(self):
         await self.bot.wait_until_ready()
@@ -470,6 +571,9 @@ class MeetingSystem:
             perms = channel.permissions_for(channel.guild.me) if channel and channel.guild.me else None
             ready = bool(perms and perms.view_channel and perms.send_messages and perms.embed_links and perms.read_message_history)
             log.info("Recordatorios de reuniones: %s canal=%s permisos=%s", kind, channel_id, ready)
+        await asyncio.gather(self.send_reminders_loop(), self.update_notice_clocks())
+
+    async def send_reminders_loop(self):
         while not self.bot.is_closed():
             self.last_check_at = int(datetime.now(timezone.utc).timestamp())
             try:

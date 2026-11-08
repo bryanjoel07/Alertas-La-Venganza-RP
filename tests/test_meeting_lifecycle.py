@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 
 import discord
-from meetings import MeetingStore, MeetingSystem, GUILD_ID, STAFF_VOICE_ID, CHANNELS
+from meetings import MeetingStore, MeetingSystem, GUILD_ID, STAFF_VOICE_ID, CHANNELS, notice_embed, notice_marker
 
 
 class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
@@ -105,7 +105,7 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_short_meeting_notifies_at_start_in_its_own_channel(self):
         from time import time
         starts = int(time()) + 90
-        self.channel.send = AsyncMock()
+        self.channel.send = AsyncMock(side_effect=[SimpleNamespace(id=501),SimpleNamespace(id=502)])
         for kind in ('general', 'staff'):
             key = self.system.store.save(('Prueba', starts, 'Voz', 'Agenda', 'Texto'), 1, kind)
             self.system.store.publication(key, 100 + key)
@@ -131,7 +131,7 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
         async def deliver(**kwargs):
             if self.channel.send.await_count == 1:
                 raise OSError("unavailable")
-            history.append(SimpleNamespace(author=self.bot.user, embeds=[kwargs['embed']]))
+            history.append(SimpleNamespace(id=501, author=self.bot.user, embeds=[kwargs['embed']]))
             raise OSError("response lost")
         self.channel.send = AsyncMock(side_effect=deliver)
         for offset in (0, 30):
@@ -143,7 +143,7 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(history), 1)
 
     async def test_move_or_cancel_a_meeting_before_the_reminder(self):
-        self.channel.send = AsyncMock()
+        self.channel.send = AsyncMock(return_value=SimpleNamespace(id=501))
         self.system.store.save(('Movida', 2000010000, 'Voz', 'Agenda', 'Texto'), 1, 'staff', self.key)
         await self.system.send_due_reminder(self.key, 2000000000)
         self.assertNotIn('HA COMENZADO', self.channel.send.await_args.kwargs['embed'].title)
@@ -151,3 +151,31 @@ class MeetingLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.reset_mock()
         await self.system.send_due_reminder(self.key, 2000010000)
         self.channel.send.assert_not_awaited()
+
+    async def test_notice_recovered_from_history_uses_minutes_and_final_time(self):
+        row = self.system.store.get(self.key)
+        start = row['starts_at']
+        old, _ = notice_embed(row,start,900,start-900)
+        self.assertIn('Faltan 15 min',old.description)
+        self.assertIn(f'Inicio en tu hora local:** <t:{start}:F>',old.description)
+        old.set_footer(text=notice_marker(self.key,start,900))
+        old.timestamp = None
+        self.bot.user.id = 9
+        self.assertEqual(self.system.store.claim_reminder(self.key,start-900),900)
+        self.system.store.reminder_result(self.key,900,'sent')
+        async def history(**kwargs):
+            yield SimpleNamespace(id=501,author=self.bot.user,embeds=[old])
+        self.channel.history = history
+        await self.system.recover_old_notices()
+        recovered = self.system.store.live_notices()
+        self.assertEqual([r['notice_id'] for r in recovered], [501])
+        for mins in (2,10):
+            current,_ = notice_embed(recovered[0],start,900,start+60*mins)
+            self.assertIn(f'Comenzó hace {mins} min',current.description)
+            self.assertNotIn(':R>',current.description)
+        row.update(status='finished',ended_at=start+649)
+        final,done = notice_embed(row,start,900,start+3600)
+        self.assertTrue(done)
+        self.assertIn('10 min desde el inicio',final.description)
+        self.assertIn(f'Cierre en tu hora local: <t:{start+649}:F>',final.description)
+        self.assertNotIn('Ver reunión',final.description)
