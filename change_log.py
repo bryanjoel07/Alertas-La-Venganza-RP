@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='staff-recruitment-v1'
-SUMMARY='Transfiere el reclutamiento de staff al bot: formulario en dos pasos con borrador, revisión privada por los siete cargos indicados, mensajes y notas, entrevistas con recordatorio y acceso temporal, decisión confirmada y aviso al candidato. Usa los canales existentes, conserva sus mensajes y sustituye únicamente el panel antiguo respaldado. La administración asigna el rol después; no se modifican roles protegidos ni Ciudadanos.'
-RESTORE=('Para revertir el código, desplegar eb53eb5e623439325da6a752abe4ad6b97109efe conservando SQLite. No restaurar una base antigua. Conservar todas las tablas lv_recruit_* y bot_changes. '
+RELEASE='staff-recruitment-v1.1'
+SUMMARY='Completa las confirmaciones privadas del reclutamiento: desactiva el mensaje de confirmación mediante la respuesta de interacción de Discord antes de guardar, compatible con mensajes efímeros. Mantiene formularios, revisión por los siete cargos, entrevistas y avisos al candidato. La administración sigue asignando los roles después de aceptar.'
+RESTORE=('Para revertir solo esta corrección, desplegar 6b6d4bb636a98b9a552d232d135d6c6153dfdf3c conservando SQLite; esa versión mantiene el flujo, aunque su edición final del mensaje privado puede dar un error visual después de guardar. Para retirar todo el sistema, desplegar eb53eb5e623439325da6a752abe4ad6b97109efe. No restaurar una base antigua. Conservar todas las tablas lv_recruit_* y bot_changes. '
          'La reversión de código no reconstruye el panel funcional del bot anterior: regenerarlo desde la configuración de ese bot usando el texto respaldado en lv_recruit_sources. '
          'Antes de retirar esta versión, restaurar los accesos temporales pendientes de lv_recruit_voice comparando before_json/after_json con el permiso actual; no pisar cambios manuales posteriores. '
          'Los accesos a revisores se registran en RECRUITMENT: restaurar únicamente los tres roles no protegidos y los campos que esa operación cambió, consultando el antes/después. Ver RECLUTAMIENTO.md. '

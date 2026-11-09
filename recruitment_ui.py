@@ -110,11 +110,11 @@ class Confirm(SafeView):
   await reply(i,'Esa confirmación no es tuya.');return False
  @discord.ui.button(label='Confirmar',emoji='✅',style=discord.ButtonStyle.danger)
  async def confirm(self,i,button):
-  await i.response.defer(ephemeral=True,thinking=True)
-  await self.callback(i)
   for child in self.children:child.disabled=True
+  # Component responses can edit the ephemeral prompt. Channel Message.edit cannot.
+  await i.response.edit_message(view=self)
   self.stop()
-  if i.message:await i.message.edit(view=self)
+  await self.callback(i)
  @discord.ui.button(label='Cancelar')
  async def cancel(self,i,button):
   for child in self.children:child.disabled=True

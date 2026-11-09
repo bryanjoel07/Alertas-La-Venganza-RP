@@ -114,6 +114,13 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
  async def test_persistent_controls_after_restart(self):
   view=controls(54,['detail','claim','interview','decision']);self.assertTrue(view.is_persistent());self.assertEqual(len(view.children),4)
   self.assertTrue(RecruitPanel(None).is_persistent())
+ async def test_confirmation_edits_ephemeral_prompt_through_interaction(self):
+  callback=AsyncMock();view=Confirm(99,callback)
+  interaction=NS(response=NS(edit_message=AsyncMock()),message=NS(edit=AsyncMock(side_effect=AssertionError('Ephemeral messages cannot use the channel endpoint'))))
+  await view.confirm.callback(interaction)
+  interaction.response.edit_message.assert_awaited_once_with(view=view)
+  interaction.message.edit.assert_not_awaited();callback.assert_awaited_once_with(interaction)
+  self.assertTrue(all(child.disabled for child in view.children))
  async def test_private_notes_not_in_candidate_pages_even_if_passed(self):
   row={'id':1,'owner':99,'status':'enviada','answers':json.dumps({q[0]:'X'*q[2] for q in QUESTIONS})}
   events=[{'private':1,'action':'nota','text':'SECRETO','created':1}]
