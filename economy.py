@@ -20,6 +20,7 @@ from community_features import CommunityFeatures
 
 log = logging.getLogger("LaVenganzaRP.economia")
 SHOP = "🛍️┊𝐓𝐢𝐞𝐧𝐝𝐚-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞"
+AUDIT_NAME = "🛡️┊𝐑𝐞𝐠𝐢𝐬𝐭𝐫𝐨-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞"
 PREVIOUS_SHOP_NAMES = {"🛍️・tienda-exclusive", "🛍️┊tienda-exclusive"}
 PANEL = "🪙 La Venganza Exclusive"
 DETAILS = {
@@ -386,7 +387,7 @@ class Economy:
         if not isinstance(category,discord.CategoryChannel):
             raise ValueError('No encuentro la categoría configurada para este canal')
         key = "audit_channel" if audit else "shop_channel"
-        name = "registro-exclusive" if audit else SHOP
+        name = AUDIT_NAME if audit else SHOP
         saved = self.store.config(key)
         channel = guild.get_channel(int(saved)) if saved else None
         marker = "La Venganza Exclusive · " + key
@@ -429,6 +430,9 @@ class Economy:
             )
         if audit:
             self.check_private(channel)
+            if channel.name == "registro-exclusive":
+                channel = await channel.edit(name=AUDIT_NAME, reason="Igualar emoji, separador y letras de los canales de Logs")
+                log.info("Canal de registro actualizado: %s (%s)", channel.name, channel.id)
         elif channel.name in PREVIOUS_SHOP_NAMES:
             channel = await channel.edit(
                 name=SHOP,
