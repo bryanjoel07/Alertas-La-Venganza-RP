@@ -13,10 +13,11 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v1.1'
-SUMMARY='El panel de instrucciones de Fotos queda sin fijar y se retira su fijado inicial. El bot solo puede fijar una publicación de ganador registrada después del cierre de la semana. Votos, fotos originales y premios se conservan.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior f75291817ac30d73bf66f3f7173924171921edf2 en Railway, conservando /data y SQLite. Esa versión vuelve a fijar el panel al iniciar. '
-         'La reversión mantiene la votación semanal, los registros lv_photo_* y los premios entregados. No restaurar una base antigua ni retirar premios para revertir el fijado de un panel. '
+RELEASE='weekly-photos-v2'
+SUMMARY='Subir foto abre un formulario de imagen y texto opcional; el bot publica foto, crédito y votos en un solo mensaje, sin respuesta. La tarjeta anterior se migra conservando votos y foto original y se retira solo la respuesta propia del bot tras verificar el reemplazo. Se añade retirada por autor con confirmación y se mantienen las reglas semanales y premios.'
+RESTORE=('Para revertir esta versión: poner PHOTO_CONTEST_ENABLED=0 y desplegar el commit anterior 0801ca84815332d512a02f3b2a65137a69d57815, conservando /data y SQLite. '
+         'El código anterior no comprende las fotos nuevas publicadas por el bot ni las subidas pendientes; mantener el concurso pausado hasta volver a un código compatible. Conservar votos, columnas nuevas, imágenes pendientes y premios; no restaurar una base antigua. '
+         'Las respuestas propias del bot sustituidas conservan su copia en PHOTO_LEGACY_CONTROL. No se puede recuperar su ID original; puede recrearse una tarjeta usando el mismo número de foto y votos, tras actualizar solo su control. Las fotos de jugadores no se borran durante esa migración. '
          'Para revertir un destacado, consultar la operación PHOTO_PIN y restaurar solo el estado fijado del mensaje propio del bot por su ID; no tocar publicaciones de jugadores. No retirar un premio ni cambiar saldos como parte de una reversión de código. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '

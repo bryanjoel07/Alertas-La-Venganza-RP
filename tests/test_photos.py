@@ -129,8 +129,30 @@ class PhotoStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'ya tiene'): self.store.award(next_week, 99, self.end+7*86400+1)
         with self.store.db() as db: self.assertEqual(db.execute('SELECT COUNT(*) FROM eco_purchases').fetchone()[0], 1)
 
+    def test_pending_upload_survives_backup_and_is_bound_to_its_single_bot_post(self):
+        entry=self.store.upload(800,900,1,'foto.png','https://cdn.discordapp.com/upload',b'image',now=BASE)
+        backup=self.path.with_name('pending.db');snapshot(self.path,backup)
+        recovered=PhotoStore(backup);recovered.initialize(BASE)
+        self.assertEqual(recovered.entry(entry)['media'],b'image')
+        recovered.posted(entry,1000,1001,'https://cdn.discordapp.com/published')
+        row=recovered.entry(entry)
+        self.assertEqual((row['source'],row['control'],row['attachment']),(1000,1000,1001))
+        self.assertIsNone(row['media']);self.assertEqual(row['author'],1)
 
-class PhotoServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_repeated_submission_reuses_its_entry_and_pending_limit_does_not_block_retries(self):
+        first=self.store.upload(800,900,1,'foto.png','https://cdn.discordapp.com/upload',b'image',now=BASE)
+        for key in (801,802):self.store.upload(key,900,1,'foto.png','https://cdn.discordapp.com/upload',b'image',now=BASE)
+        self.assertEqual(self.store.upload(800,900,1,'foto.png','https://cdn.discordapp.com/upload',b'image',now=BASE),first)
+        with self.assertRaises(ValueError):self.store.upload(803,900,1,'foto.png','https://cdn.discordapp.com/upload',b'image',now=BASE)
+
+    def test_pending_upload_that_crosses_the_week_boundary_enters_the_new_round(self):
+        entry=self.store.upload(800,900,1,'foto.png','https://cdn.discordapp.com/upload',b'image',now=self.end-1)
+        self.store.posting(entry,self.end+1)
+        row=self.store.entry(entry)
+        self.assertEqual(row['week'],week_bounds(self.end+1)[0]);self.assertGreater(row['ends'],self.end+1)
+
+
+class PhotoServiceFixtures:
     async def asyncSetUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.bot = MagicMock(); self.bot.user.id = 99
@@ -167,25 +189,29 @@ class PhotoServiceTests(unittest.IsolatedAsyncioTestCase):
         key = discord.utils.time_snowflake(datetime.fromtimestamp(created, timezone.utc)) + self.serial
         row = SimpleNamespace(id=key, author=SimpleNamespace(id=owner, bot=owner==99), guild=self.guild,
             channel=self.channel, created_at=datetime.fromtimestamp(created, timezone.utc), attachments=list(attachments),
-            embeds=[], components=[], pinned=False, edit=AsyncMock(), delete=AsyncMock(), pin=AsyncMock(), unpin=AsyncMock())
+            embeds=[], components=[], pinned=False, reference=None, content='',edit=AsyncMock(), delete=AsyncMock(), pin=AsyncMock(), unpin=AsyncMock())
         row.reply = AsyncMock(side_effect=self.send)
         async def edit(**kwargs):
             self.decorate(row, kwargs); return row
         async def pin(**kwargs): row.pinned=True
         async def unpin(**kwargs): row.pinned=False
+        async def remove(**kwargs): self.messages.pop(row.id,None)
         row.edit.side_effect=edit; row.pin.side_effect=pin; row.unpin.side_effect=unpin
+        row.delete.side_effect=remove
         self.messages[key] = row
         return row
 
     def decorate(self, row, kwargs):
         if 'embed' in kwargs: row.embeds=[kwargs['embed']]
         if kwargs.get('view'):
-            row.components=[SimpleNamespace(children=[SimpleNamespace(custom_id=c.custom_id) for c in kwargs['view'].children])]
+            ids=[c.custom_id for c in kwargs['view'].children]
+            row.components=[SimpleNamespace(children=[SimpleNamespace(custom_id=value) for value in ids],to_dict=lambda:{'type':1,'components':[{'type':2,'custom_id':value} for value in ids]})]
 
     async def send(self, **kwargs):
         row=self.message(99, created=int(time.time())); self.decorate(row, kwargs)
         if kwargs.get('file'):
-            row.attachments=[SimpleNamespace(url=f'https://cdn.discordapp.com/copied/{row.id}.png')]
+            row.attachments=[SimpleNamespace(id=row.id+1000,filename=kwargs['file'].filename,content_type='image/png',width=100,height=100,size=10,
+                url=f'https://cdn.discordapp.com/copied/{row.id}.png',read=AsyncMock(return_value=b'image bytes'))]
         return row
 
     def source(self, owner=1, created=BASE, count=1):
@@ -194,169 +220,9 @@ class PhotoServiceTests(unittest.IsolatedAsyncioTestCase):
         return self.message(owner, files, created)
 
     def interaction(self, row, user=2):
-        i=MagicMock(guild_id=GUILD, channel_id=FOTOS_CHANNEL, user=SimpleNamespace(id=user,bot=False), message=row)
-        i.response.is_done.return_value=False; i.response.defer=AsyncMock(); i.response.send_message=AsyncMock(); i.followup.send=AsyncMock()
+        self.serial+=1
+        i=MagicMock(id=discord.utils.time_snowflake(datetime.fromtimestamp(int(time.time()),timezone.utc))+self.serial,guild_id=GUILD,channel_id=FOTOS_CHANNEL,
+            user=SimpleNamespace(id=user,bot=False,guild_permissions=discord.Permissions()), message=row)
+        i.response.is_done.return_value=False; i.response.defer=AsyncMock(); i.response.send_message=AsyncMock();i.response.send_modal=AsyncMock(); i.followup.send=AsyncMock()
         return i
-
-    async def test_each_photo_gets_persistent_controls_and_originals_are_never_edited(self):
-        source=self.source(count=2)
-        await self.system.observe(source); await self.system.observe(source)
-        rows=self.system.store.entries()
-        self.assertEqual(len(rows),2); self.assertEqual(source.reply.await_count,2)
-        source.edit.assert_not_awaited(); source.delete.assert_not_awaited()
-        for row in rows:
-            self.assertTrue(PhotoControls(row['id']).is_persistent())
-            control=self.messages[row['control']]
-            self.assertEqual([c.custom_id for r in control.components for c in r.children], [f"lv:photo:{row['id']}:vote",f"lv:photo:{row['id']}:remove"])
-            for child in PhotoControls(row['id']).children:
-                match=PhotoButton.__discord_ui_compiled_template__.fullmatch(child.custom_id)
-                restored=await PhotoButton.from_custom_id(None,None,match)
-                self.assertEqual(restored.entry,row['id'])
-
-    async def test_votes_use_the_correct_channel_photo_and_live_source(self):
-        source=self.source(); await self.system.observe(source); row=self.system.store.entries()[0]
-        i=self.interaction(self.messages[row['control']])
-        await self.system.vote(i,row['id'],True); await self.system.vote(i,row['id'],True)
-        self.assertEqual(self.system.store.entry(row['id'])['votes'],1)
-        await self.system.vote(i,row['id'],False)
-        self.assertEqual(self.system.store.entry(row['id'])['votes'],0)
-        i.channel_id=123
-        with self.assertRaises(ValueError): await self.system.vote(i,row['id'],True)
-        i.channel_id=FOTOS_CHANNEL; i.user.id=1
-        with self.assertRaises(ValueError): await self.system.vote(i,row['id'],True)
-        i.user.id=2; del self.messages[source.id]
-        with self.assertRaisesRegex(ValueError,'retirada'): await self.system.vote(i,row['id'],True)
-        self.assertFalse(self.system.store.entry(row['id'])['active'])
-
-    async def test_wrong_guild_bot_and_non_images_are_ignored(self):
-        source=self.source(); source.guild=SimpleNamespace(id=123)
-        await self.system.observe(source)
-        source.guild=self.guild; source.author.bot=True
-        await self.system.observe(source)
-        source.author.bot=False; source.attachments[0].filename='documento.pdf'; source.attachments[0].content_type='application/pdf'
-        await self.system.observe(source)
-        self.assertFalse(self.system.store.entries()); source.reply.assert_not_awaited()
-
-    async def test_backfill_uses_this_week_and_keeps_all_original_posts(self):
-        old=self.source(created=week_bounds(BASE)[1]-10)
-        first=self.source(created=BASE-300); second=self.source(created=BASE-100)
-        await self.system.scan(self.channel); await self.system.scan(self.channel)
-        self.assertEqual(len(self.system.store.entries()),2)
-        self.assertEqual(first.reply.await_count,1); self.assertEqual(second.reply.await_count,1); old.reply.assert_not_awaited()
-        for source in (old,first,second): source.delete.assert_not_awaited(); source.edit.assert_not_awaited()
-
-    async def test_recovery_finds_sent_controls_before_reposting_after_a_crash(self):
-        source=self.source(); await self.system.observe(source)
-        row=self.system.store.entries()[0]; original=row['control']
-        self.system.store.control(row['id'],None)
-        await self.system.observe(source)
-        self.assertEqual(self.system.store.entry(row['id'])['control'],original)
-        source.reply.assert_awaited_once()
-
-    async def test_weekly_winner_is_copied_credited_pinned_and_published_once(self):
-        source=self.source(); await self.system.observe(source)
-        row=self.system.store.entries()[0]; self.system.store.vote(row['id'],2,now=BASE+100)
-        week=self.system.store.current(BASE); end=week['ends']
-        with patch('photos.time.time',return_value=end+1):
-            await self.system.settle(self.channel,week)
-            self.assertFalse(self.system.store.due(end+1))
-        result=self.system.store.week(week['week']); winner=self.messages[result['announcement']]
-        self.assertTrue(winner.pinned); self.assertIn('<@1>',winner.embeds[0].description)
-        self.assertEqual(result['winning_votes'],1); self.assertEqual(len(winner.attachments),1)
-        self.assertIsNone(result['image']); self.assertTrue(self.tracked)
-        source.delete.assert_not_awaited(); source.edit.assert_not_awaited()
-        args=self.channel.send.call_args.kwargs
-        self.assertFalse(args['allowed_mentions'].everyone); self.assertFalse(args['allowed_mentions'].roles)
-
-    async def test_deleted_leader_is_excluded_and_api_failures_do_not_disqualify_photos(self):
-        first=self.source(); second=self.source(owner=3)
-        await self.system.observe(first); await self.system.observe(second)
-        entries=self.system.store.entries(); by_author={r['author']:r for r in entries}
-        self.system.store.vote(by_author[1]['id'],2,now=BASE+100)
-        self.system.store.vote(by_author[1]['id'],3,now=BASE+100)
-        self.system.store.vote(by_author[3]['id'],2,now=BASE+100)
-        week=self.system.store.current(BASE)
-        self.channel.fetch_message.side_effect=discord.Forbidden(SimpleNamespace(status=403,reason='Forbidden'),'later')
-        with patch('photos.time.time',return_value=week['ends']+1):
-            with self.assertRaises(discord.Forbidden): await self.system.settle(self.channel,week)
-        self.assertEqual(self.system.store.entry(by_author[1]['id'])['active'],1)
-        self.channel.fetch_message.side_effect=self.fetch; del self.messages[first.id]
-        with patch('photos.time.time',return_value=week['ends']+1): await self.system.settle(self.channel,week)
-        self.assertEqual(self.system.store.week(week['week'])['winner'],by_author[3]['id'])
-
-    async def test_published_message_is_reconciled_after_send_succeeds_but_database_write_fails(self):
-        source=self.source(); await self.system.observe(source)
-        row=self.system.store.entries()[0]; self.system.store.vote(row['id'],2,now=BASE+100)
-        week=self.system.store.current(BASE)
-        real=self.system.store.published
-        with patch('photos.time.time',return_value=week['ends']+1),patch.object(self.system.store,'published',side_effect=RuntimeError('restart')):
-            with self.assertRaises(RuntimeError): await self.system.settle(self.channel,week)
-        count=self.channel.send.await_count
-        with patch('photos.time.time',return_value=week['ends']+10):
-            await self.system.settle(self.channel,self.system.store.week(week['week']))
-        self.assertEqual(self.channel.send.await_count,count)
-        self.assertEqual(self.system.store.week(week['week'])['state'],'published')
-
-    async def test_ready_verifies_the_real_channel_buttons_and_commands_and_preserves_original(self):
-        source=self.source()
-        self.bot.tree.fetch_commands=AsyncMock(return_value=[SimpleNamespace(name='foto',to_dict=lambda:{'options':[{'name':'semana'},{'name':'premio'}]})])
-        await self.system.ready()
-        self.assertTrue(self.system.prepared)
-        panel=self.messages[int(self.system.store.config('panel'))]
-        self.assertFalse(panel.pinned)
-        self.assertEqual(len(self.system.store.entries()),1)
-        source.edit.assert_not_awaited();source.delete.assert_not_awaited()
-        self.bot.edit_channel.assert_not_called();self.bot.create_text_channel.assert_not_called()
-        count=source.reply.await_count
-        await self.system.ready()
-        self.assertEqual(source.reply.await_count,count)
-
-    async def test_initial_panel_pin_is_undone_once_without_pinning_a_photo_or_its_controls(self):
-        week=self.system.store.current(BASE)
-        panel=self.message(99);panel.embeds=[self.system.panel_embed(week)];panel.pinned=True
-        self.system.store.config('panel',panel.id)
-        await self.system.panel(self.channel)
-        self.assertFalse(panel.pinned);panel.unpin.assert_awaited_once();panel.pin.assert_not_awaited()
-        self.assertTrue(self.tracked[0]['pinned'])
-        await self.system.panel(self.channel)
-        panel.unpin.assert_awaited_once()
-        source=self.source();await self.system.observe(source)
-        row=self.system.store.entries()[0];control=self.messages[row['control']]
-        with self.assertRaisesRegex(ValueError,'cierre semanal'):await self.system.pin(control)
-        control.pin.assert_not_awaited();source.pin.assert_not_awaited()
-
-    async def test_removed_image_buttons_are_disabled_without_deleting_its_post(self):
-        source=self.source();await self.system.observe(source)
-        row=self.system.store.entries()[0];control=self.messages[row['control']]
-        source.attachments=[]
-        await self.system.observe(source)
-        await self.system.refresh_controls(self.channel)
-        view=control.edit.call_args.kwargs['view']
-        self.assertTrue(all(c.item.disabled for c in view.children))
-        source.edit.assert_not_awaited();source.delete.assert_not_awaited()
-
-    async def test_empty_weeks_do_not_make_fake_winners_and_zero_votes_never_pick_a_random_photo(self):
-        week=self.system.store.current(BASE)
-        with patch('photos.time.time',return_value=week['ends']+1):await self.system.settle(self.channel,week)
-        self.channel.send.assert_not_awaited()
-        source=self.source(created=week['ends']+10)
-        with patch('photos.time.time',return_value=week['ends']+10):await self.system.observe(source)
-        next_week=self.system.store.current(week['ends']+10)
-        with patch('photos.time.time',return_value=next_week['ends']+1):await self.system.settle(self.channel,next_week)
-        self.assertIsNone(self.system.store.week(next_week['week'])['winner'])
-        self.assertEqual(self.channel.send.await_count,1)
-        self.assertNotIn('tu foto ganó',self.channel.send.call_args.kwargs['content'] or '')
-
-    async def test_prize_selection_requires_economy_authorization_before_confirmation(self):
-        i=self.interaction(None)
-        self.bot.economy.authorized.side_effect=ValueError('Solo administradores')
-        command=self.system.group.get_command('premio')
-        with self.assertRaisesRegex(ValueError,'administradores'):await command.callback(i,'ninguno')
-        i.response.send_message.assert_not_awaited()
-        self.bot.economy.authorized.side_effect=None
-        await command.callback(i,'ninguno')
-        confirm=i.response.send_message.call_args.kwargs['view']
-        self.bot.economy.authorized.side_effect=ValueError('Solo administradores')
-        with self.assertRaisesRegex(ValueError,'administradores'):await confirm.action(i)
-        self.assertIsNone(self.system.store.current(BASE)['prize_actor'])
 

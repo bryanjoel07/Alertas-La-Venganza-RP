@@ -54,6 +54,13 @@ class PhotoStore:
             ]
             for statement in statements:
                 db.execute(statement)
+            columns = {r[1] for r in db.execute('PRAGMA table_info(lv_photo_entries)')}
+            additions = {'post_mode': "TEXT NOT NULL DEFAULT 'reply'", 'caption': "TEXT NOT NULL DEFAULT ''",
+                'media': 'BLOB', 'upload_key': 'TEXT', 'post_started': 'INTEGER', 'retired_control': 'INTEGER'}
+            for column, definition in additions.items():
+                if column not in columns:
+                    db.execute(f'ALTER TABLE lv_photo_entries ADD COLUMN {column} {definition}')
+            db.execute('CREATE UNIQUE INDEX IF NOT EXISTS lv_photo_upload_key ON lv_photo_entries(upload_key)')
             db.execute('INSERT OR IGNORE INTO lv_photo_config VALUES (?,?)', ('since', str(week_bounds(now)[1])))
 
     def config(self, key, value=None):
@@ -92,6 +99,51 @@ class PhotoStore:
     def image_url(self, entry, url):
         with self.db() as db:
             db.execute('UPDATE lv_photo_entries SET url=? WHERE id=?', (url, entry))
+
+    def upload(self, key, attachment, author, filename, url, data, caption='', now=None):
+        now = int(time.time()) if now is None else now
+        upload_key = f'{key}:{attachment}'
+        with self.db() as db:
+            previous = db.execute('SELECT id FROM lv_photo_entries WHERE upload_key=?', (upload_key,)).fetchone()
+            if previous:
+                return previous[0]
+            if db.execute("SELECT COUNT(*) FROM lv_photo_entries WHERE author=? AND post_mode='pending'", (author,)).fetchone()[0] >= 3:
+                raise ValueError('Tienes fotos pendientes de publicar. Espera un momento, bro.')
+            total = db.execute('SELECT COALESCE(SUM(LENGTH(media)),0) FROM lv_photo_entries').fetchone()[0]
+            if total + len(data) > 100*1024*1024:
+                raise ValueError('Hay varias fotos pendientes. Inténtalo de nuevo en un momento.')
+            week, _, _ = self.ensure_in(db, now)
+            return db.execute('''INSERT INTO lv_photo_entries(week,source,attachment,author,filename,url,created,post_mode,media,upload_key,caption)
+                VALUES (?,?,?,?,?,?,?,'pending',?,?,?)''', (week,key,attachment,author,filename,url,now,data,upload_key,caption)).lastrowid
+
+    def stage_post(self, entry, data):
+        with self.db() as db:
+            db.execute("""UPDATE lv_photo_entries SET post_mode='pending',media=?,retired_control=COALESCE(retired_control,control),control=NULL
+                WHERE id=? AND post_mode='reply'""", (data,entry))
+
+    def posting(self, entry, now=None):
+        now = int(time.time()) if now is None else now
+        with self.db() as db:
+            row = db.execute('SELECT e.*,w.ends FROM lv_photo_entries e JOIN lv_photo_weeks w ON w.week=e.week WHERE e.id=?', (entry,)).fetchone()
+            if row['upload_key'] and row['ends'] <= now:
+                week, _, _ = self.ensure_in(db, now)
+                db.execute('UPDATE lv_photo_entries SET week=?,created=? WHERE id=?', (week,now,entry))
+            db.execute('UPDATE lv_photo_entries SET post_started=COALESCE(post_started,?) WHERE id=?', (now,entry))
+
+    def posted(self, entry, message, attachment, url):
+        with self.db() as db:
+            db.execute("""UPDATE lv_photo_entries SET post_mode='post',control=?,media=NULL,url=?,
+                source=CASE WHEN upload_key IS NULL THEN source ELSE ? END,
+                attachment=CASE WHEN upload_key IS NULL THEN attachment ELSE ? END,
+                rendered_count=-1,rendered_closed=-1 WHERE id=?""", (message,url,message,attachment,entry))
+
+    def retired(self, entry):
+        with self.db() as db:
+            db.execute('UPDATE lv_photo_entries SET retired_control=NULL WHERE id=?', (entry,))
+
+    def pending_posts(self):
+        with self.db() as db:
+            return [r[0] for r in db.execute("SELECT id FROM lv_photo_entries WHERE (post_mode='pending' AND active=1) OR retired_control IS NOT NULL")]
 
     @staticmethod
     def query():
@@ -150,7 +202,10 @@ class PhotoStore:
     def deleted(self, message):
         with self.db() as db:
             db.execute('UPDATE lv_photo_entries SET active=0 WHERE source=?', (message,))
-            db.execute('UPDATE lv_photo_entries SET control=NULL,rendered_count=-1 WHERE control=?', (message,))
+            db.execute("""UPDATE lv_photo_entries SET active=0,rendered_closed=1,
+                rendered_count=(SELECT COUNT(*) FROM lv_photo_votes WHERE entry=lv_photo_entries.id)
+                WHERE control=? AND post_mode='post'""", (message,))
+            db.execute("UPDATE lv_photo_entries SET control=NULL,rendered_count=-1 WHERE control=? AND post_mode='reply'", (message,))
 
     def due(self, now=None):
         now = int(time.time()) if now is None else now

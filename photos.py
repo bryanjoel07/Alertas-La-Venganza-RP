@@ -21,9 +21,13 @@ IMAGE_TYPES = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'}
 PANEL_TITLE = '📸 FOTO DE LA SEMANA | LA VENGANZA RP'
 
 
+def is_image(attachment):
+    return Path(attachment.filename).suffix.lower() in IMAGE_TYPES and (
+        (attachment.content_type or '').startswith('image/') or (attachment.width and attachment.height))
+
+
 def images(message):
-    return [a for a in message.attachments if Path(a.filename).suffix.lower() in IMAGE_TYPES
-            and ((a.content_type or '').startswith('image/') or (a.width and a.height))]
+    return [a for a in message.attachments if is_image(a)]
 
 
 def closed(entry, now=None):
@@ -60,11 +64,60 @@ class PhotoButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:photo
             await answer(i, 'No pudimos completar el voto ahora. Inténtalo otra vez.')
 
 
+class UploadButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:photo:upload'):
+    def __init__(self):
+        super().__init__(discord.ui.Button(label='Subir foto',emoji='📸',custom_id='lv:photo:upload',style=discord.ButtonStyle.primary))
+
+    @classmethod
+    async def from_custom_id(cls, i, item, match):
+        return cls()
+
+    async def callback(self, i):
+        try:
+            await i.client.photos.open_upload(i)
+        except ValueError as error:
+            await answer(i,str(error))
+        except discord.HTTPException:
+            await answer(i,'No pudimos abrir la subida ahora. Inténtalo otra vez.')
+
+
+class UploadForm(discord.ui.Modal):
+    def __init__(self, system):
+        super().__init__(title='Subir tu foto',timeout=600)
+        self.system=system
+        self.photo=discord.ui.FileUpload(custom_id='photo',min_values=1,max_values=1)
+        self.caption=discord.ui.TextInput(custom_id='caption',style=discord.TextStyle.paragraph,required=False,max_length=500,placeholder='Un título o lo que quieras contar de tu foto.')
+        self.add_item(discord.ui.Label(text='Elige tu foto',component=self.photo))
+        self.add_item(discord.ui.Label(text='¿Quieres ponerle un texto?',component=self.caption))
+
+    async def on_submit(self,i):
+        await i.response.defer(ephemeral=True,thinking=True)
+        try:
+            if len(self.photo.values)!=1:
+                raise ValueError('Elige una foto para subirla, bro.')
+            await self.system.submit_upload(i,self.photo.values[0],self.caption.value)
+        except ValueError as error:
+            await answer(i,str(error))
+        except discord.HTTPException:
+            await answer(i,'La foto quedó pendiente si alcanzó a guardarse. El bot volverá a intentar publicarla.')
+
+    async def on_error(self,i,error):
+        log.error('PHOTOS upload_error',exc_info=error)
+        await answer(i,'No pudimos completar la subida. Revisa /foto semana antes de intentarlo otra vez.')
+
+
+class PhotoUploadPanel(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(UploadButton())
+
+
 class PhotoControls(discord.ui.View):
     def __init__(self, entry, count=0, disabled=False):
         super().__init__(timeout=None)
         self.add_item(PhotoButton(entry, 'vote', count, disabled))
         self.add_item(PhotoButton(entry, 'remove', count, disabled))
+        self.add_item(UploadButton())
 
 
 class PhotoSystem:
@@ -86,7 +139,7 @@ class PhotoSystem:
 
     async def start(self):
         await self.call('initialize')
-        self.bot.add_dynamic_items(PhotoButton)
+        self.bot.add_dynamic_items(PhotoButton,UploadButton)
         self.task = asyncio.create_task(self.loop(), name='photo-of-the-week')
 
     async def channel(self):
@@ -96,20 +149,26 @@ class PhotoSystem:
         return channel
 
     def source_link(self, entry):
-        return f"https://discord.com/channels/{self.guild_id}/{FOTOS_CHANNEL}/{entry['source']}"
+        target=entry['control'] if entry.get('post_mode')=='post' and entry['control'] else entry['source']
+        return f"https://discord.com/channels/{self.guild_id}/{FOTOS_CHANNEL}/{target}"
 
     def control_embed(self, row):
         embed = discord.Embed(title=f"📸 Foto #{row['id']} · Votación semanal", color=COLOR,
             description=f"Publicada por <@{row['author']}> · **{row['votes']} votos**\n" +
                 ('Votación cerrada.' if closed(row) else f"Cierra <t:{row['ends']}:F>.") +
-                f"\n[Ver la foto]({self.source_link(row)})")
-        embed.set_thumbnail(url=row['url'])
+                (f"\n[Ver la foto]({self.source_link(row)})" if row.get('post_mode','reply')=='reply' else ''))
+        if row.get('post_mode') in ('pending','post'):
+            embed.set_image(url=row['url'])
+            if row.get('caption'):
+                embed.description=discord.utils.escape_markdown(row['caption'])+'\n\n'+embed.description
+        else:
+            embed.set_thumbnail(url=row['url'])
         embed.set_footer(text=f"La Venganza RP · Foto #{row['id']} · {row['week']}")
         return embed
 
     def panel_embed(self, week):
         embed = discord.Embed(title=PANEL_TITLE, color=COLOR, description=
-            'Sube tus fotos aquí y el bot pondrá **❤️ Votar** y **↩️ Quitar voto** debajo de cada una.\n\n'
+            'Pulsa **📸 Subir foto**, elige la imagen y envíala. Tu foto aparecerá con tu nombre y los botones **❤️ Votar** y **↩️ Quitar voto** en la misma publicación.\n\n'
             'Puedes votar una vez por cada foto de los demás y cambiar de opinión quitando tu voto. '
             'Las fotos compiten de lunes a domingo, hora de Puerto Rico. '
             'Al terminar la semana destacamos la más votada con el nombre de quien la publicó. '
@@ -159,9 +218,9 @@ class PhotoSystem:
         if message and message.author.id != self.bot.user.id:
             raise ValueError('El panel guardado no pertenece a este bot.')
         if message:
-            await message.edit(embed=self.panel_embed(week), allowed_mentions=discord.AllowedMentions.none())
+            await message.edit(embed=self.panel_embed(week), view=PhotoUploadPanel(), allowed_mentions=discord.AllowedMentions.none())
         else:
-            message = await channel.send(embed=self.panel_embed(week), allowed_mentions=discord.AllowedMentions.none())
+            message = await channel.send(embed=self.panel_embed(week), view=PhotoUploadPanel(), allowed_mentions=discord.AllowedMentions.none())
         self.store.config('panel', message.id)
         self.store.config('panel_week', week['week'])
         if message.pinned:
@@ -180,41 +239,122 @@ class PhotoSystem:
         attachments = images(message)
         await self.call('sync_source', message.id, {a.id for a in attachments})
         item = next((a for a in attachments if a.id == row['attachment']), None)
-        if message.author.id != row['author']:
+        own_post=row.get('post_mode')=='post' and row['source']==row['control'] and message.author.id==self.bot.user.id
+        if message.author.id != row['author'] and not own_post:
             raise ValueError('La publicación de la foto no coincide con su autor.')
         if item:
             row['url'] = item.url
             await self.call('image_url', row['id'], item.url)
         return message, item
 
-    async def ensure_control(self, row, source):
-        channel = source.channel
-        control = None
-        if row['control']:
+    async def upload_channel(self,i):
+        if not self.enabled() or i.guild_id!=self.guild_id or i.channel_id!=FOTOS_CHANNEL or i.user.bot:
+            raise ValueError('Usa 📸 Subir foto dentro del canal de Fotos de La Venganza RP.')
+        channel=await self.channel()
+        permissions=channel.permissions_for(i.user)
+        if not permissions.view_channel or not permissions.send_messages:
+            raise ValueError('Necesitas poder escribir en Fotos para subir una foto.')
+        return channel
+
+    async def open_upload(self,i):
+        await self.upload_channel(i)
+        await i.response.send_modal(UploadForm(self))
+
+    async def submit_upload(self,i,attachment,caption=''):
+        channel=await self.upload_channel(i)
+        if not is_image(attachment):
+            raise ValueError('Elige una imagen JPG, PNG, WEBP, GIF o AVIF.')
+        limit=min(channel.guild.filesize_limit,MAX_UPLOAD)
+        if not 0<attachment.size<=limit:
+            raise ValueError(f'El bot puede subir fotos de hasta {limit//1048576} MB. Usa una foto más ligera, bro.')
+        data=await attachment.read()
+        if not data or len(data)>limit:
+            raise ValueError('La foto supera lo que puede publicar el bot. Usa una más ligera.')
+        async with self.lock:
+            entry=await self.call('upload',i.id,attachment.id,i.user.id,attachment.filename,attachment.url,data,caption.strip())
+            message=await self.ensure_post(await self.call('entry',entry),channel)
+        await answer(i,f'📸 Tu foto ya está publicada con tus votos: {self.source_link(self.store.entry(entry))}')
+        log.info('PHOTOS upload_published entry=%s message=%s owner=%s',entry,message.id,i.user.id)
+
+    async def cleanup_legacy(self,row,channel):
+        old_id=row.get('retired_control')
+        if not old_id or old_id in (row['source'],row['control']):
+            return
+        try:
+            old=await channel.fetch_message(old_id)
+        except discord.NotFound:
+            await self.call('retired',row['id']);return
+        ids=[getattr(c,'custom_id',None) for r in old.components for c in r.children]
+        if old.author.id!=self.bot.user.id or old.attachments or f"lv:photo:{row['id']}:vote" not in ids or not old.reference or old.reference.message_id!=row['source']:
+            log.warning('PHOTOS legacy_cleanup_skipped entry=%s message=%s',row['id'],old_id)
+            return
+        async def snapshot():
             try:
-                control = await channel.fetch_message(row['control'])
+                current=await channel.fetch_message(old_id)
+                return {'channel':channel.id,'message':old_id,'author':current.author.id,'content':current.content,
+                    'embeds':[e.to_dict() for e in current.embeds],'components':[r.to_dict() for r in current.components]}
             except discord.NotFound:
-                await self.call('deleted', row['control'])
-        if not control and row['notice_started']:
-            after = datetime.fromtimestamp(row['notice_started'] - 5, timezone.utc)
-            async for previous in channel.history(after=after, oldest_first=True, limit=None):
-                ids = [getattr(c, 'custom_id', '') for r in previous.components for c in r.children]
-                if previous.author.id == self.bot.user.id and f"lv:photo:{row['id']}:vote" in ids:
-                    control = previous
-                    break
-        if control:
-            if control.author.id != self.bot.user.id:
-                raise ValueError('El control de votos no pertenece al bot.')
-            await self.call('control', row['id'], control.id)
-            if row['rendered_count'] != row['votes'] or row['rendered_closed'] != int(closed(row)):
-                await control.edit(embed=self.control_embed(row), view=PhotoControls(row['id'], row['votes'], closed(row)), allowed_mentions=discord.AllowedMentions.none())
+                return {'channel':channel.id,'message':old_id,'deleted':True}
+        async def remove():
+            try:await old.delete()
+            except discord.NotFound:pass
+        await self.bot.changes.tracked('PHOTO_LEGACY_CONTROL','Reemplazar respuesta de votos por foto completa',remove,
+            request_id=str(old_id),snapshot=snapshot)
+        await self.call('retired',row['id'])
+        log.info('PHOTOS legacy_card_replaced entry=%s old_reply=%s photo_post=%s votes=%s original_preserved=True',
+            row['id'],old_id,row['control'],row['votes'])
+
+    async def ensure_post(self,row,channel):
+        if row['post_mode']=='post':
+            message=await channel.fetch_message(row['control'])
         else:
-            await self.call('control_started', row['id'], int(time.time()))
-            control = await source.reply(embed=self.control_embed(row), view=PhotoControls(row['id'], row['votes'], closed(row)),
-                mention_author=False, allowed_mentions=discord.AllowedMentions.none())
-            await self.call('control', row['id'], control.id)
-        await self.call('rendered', row['id'], row['votes'], closed(row))
-        return control
+            message=None
+            if row['post_started']:
+                after=datetime.fromtimestamp(row['post_started']-5,timezone.utc)
+                async for candidate in channel.history(after=after,oldest_first=True,limit=None):
+                    ids=[getattr(c,'custom_id',None) for r in candidate.components for c in r.children]
+                    if candidate.author.id==self.bot.user.id and not candidate.reference and f"lv:photo:{row['id']}:vote" in ids:
+                        message=candidate;break
+            if not message:
+                await self.call('posting',row['id'])
+                row=await self.call('entry',row['id'])
+                kwargs={}
+                embed=self.control_embed(row)
+                if row['media'] is not None:
+                    filename=f"foto-{row['id']}{Path(row['filename']).suffix.lower()}"
+                    embed.set_image(url='attachment://'+filename)
+                    kwargs['file']=discord.File(io.BytesIO(row['media']),filename=filename)
+                elif row['upload_key']:
+                    raise ValueError('No encontramos la imagen de esta subida. Vuelve a subirla, bro.')
+                message=await channel.send(embed=embed,view=PhotoControls(row['id'],row['votes'],closed(row)),
+                    allowed_mentions=discord.AllowedMentions.none(),**kwargs)
+            confirmed=await channel.fetch_message(message.id)
+            if confirmed.reference or not any(e.image.url for e in confirmed.embeds):
+                raise RuntimeError('Discord no confirmó la publicación de foto con votos.')
+            attached=confirmed.attachments[0] if confirmed.attachments else None
+            await self.call('posted',row['id'],confirmed.id,attached.id if attached else row['attachment'],attached.url if attached else row['url'])
+            row=await self.call('entry',row['id'])
+            message=confirmed
+        if message.author.id!=self.bot.user.id:
+            raise ValueError('Esta publicación no pertenece al bot.')
+        if message.attachments:
+            row['url']=message.attachments[0].url
+        await message.edit(embed=self.control_embed(row),view=PhotoControls(row['id'],row['votes'],closed(row)),allowed_mentions=discord.AllowedMentions.none())
+        await self.call('rendered',row['id'],row['votes'],closed(row))
+        await self.cleanup_legacy(row,channel)
+        return message
+
+    async def ensure_control(self, row, source):
+        if row['post_mode']=='reply':
+            image=next((a for a in images(source) if a.id==row['attachment']),None)
+            if not image:
+                raise ValueError('La foto original ya no está disponible.')
+            data=None
+            if image.size<=min(source.guild.filesize_limit,MAX_UPLOAD):
+                data=await image.read()
+            await self.call('stage_post',row['id'],data)
+            row=await self.call('entry',row['id'])
+        return await self.ensure_post(row,source.channel)
 
     async def observe(self, message):
         if not self.enabled() or not message.guild or message.guild.id != self.guild_id or message.channel.id != FOTOS_CHANNEL or message.author.bot:
@@ -222,12 +362,6 @@ class PhotoSystem:
         async with self.lock:
             attachments = images(message)
             await self.call('sync_source', message.id, {a.id for a in attachments})
-            for attachment in attachments:
-                created = int(max(message.created_at.timestamp(), discord.utils.snowflake_time(attachment.id).timestamp()))
-                entry = await self.call('register', message.id, attachment.id, message.author.id, attachment.filename, attachment.url, created)
-                if entry is not None:
-                    row = await self.call('entry', entry)
-                    await self.ensure_control(row, message)
 
     async def edited(self, payload):
         if self.enabled() and payload.guild_id == self.guild_id and payload.channel_id == FOTOS_CHANNEL:
@@ -258,10 +392,15 @@ class PhotoSystem:
             try:
                 async with self.lock:
                     row = await self.call('entry', row['id'])
-                    if row['control']:
+                    if row['post_mode']=='pending':
+                        if row['active']:
+                            await self.ensure_post(row,channel)
+                    elif row['control']:
                         message = await channel.fetch_message(row['control'])
                         if message.author.id != self.bot.user.id:
                             raise ValueError('Ese mensaje no pertenece al bot.')
+                        if row['post_mode']=='post' and message.attachments:
+                            row['url']=message.attachments[0].url
                         await message.edit(embed=self.control_embed(row), view=PhotoControls(row['id'], row['votes'], closed(row)), allowed_mentions=discord.AllowedMentions.none())
                         await self.call('rendered', row['id'], row['votes'], closed(row))
                     elif not closed(row):
@@ -413,29 +552,46 @@ class PhotoSystem:
             for row in await self.call('entries', week['week']):
                 if row['active']:
                     async with self.lock:
-                        source, image = await self.source(channel, row)
-                        if source and image:
+                        if row['post_mode']=='pending':
+                            message=await self.ensure_post(row,channel)
+                        else:
+                            source, image = await self.source(channel, row)
+                            if not source or not image:
+                                continue
                             if source.pinned:
                                 pinned_sources.append(source.id)
                             message = await self.ensure_control(row, source)
-                            confirmed = await channel.fetch_message(message.id)
-                            ids = [getattr(c, 'custom_id', None) for r in confirmed.components for c in r.children]
-                            if ids != [f"lv:photo:{row['id']}:vote", f"lv:photo:{row['id']}:remove"]:
-                                raise RuntimeError('Discord no confirmó los dos botones de la foto.')
-                            verified += 1
+                        confirmed = await channel.fetch_message(message.id)
+                        ids = [getattr(c, 'custom_id', None) for r in confirmed.components for c in r.children]
+                        if ids != [f"lv:photo:{row['id']}:vote", f"lv:photo:{row['id']}:remove",'lv:photo:upload'] or confirmed.reference:
+                            raise RuntimeError('Discord no confirmó la foto y sus botones en una sola publicación.')
+                        verified += 1
             commands = await self.bot.tree.fetch_commands(guild=discord.Object(id=self.guild_id))
             command = next((c.to_dict() for c in commands if c.name == 'foto'), {})
-            if not {'semana', 'premio'} <= {o['name'] for o in command.get('options', [])}:
+            if not {'semana', 'premio','subir','retirar'} <= {o['name'] for o in command.get('options', [])}:
                 raise RuntimeError('Discord no confirmó los comandos de Fotos.')
             self.prepared = True
             log.info('PHOTOS pin_policy_verified winner_only_after_close=True panel_pinned=False current_week_pinned_sources=%s', pinned_sources)
-            log.info('PHOTOS controls_verified channel=%s entries=%s buttons=vote,remove commands=semana,premio self_votes=False', channel.id, verified)
+            form=UploadForm(self).to_dict()
+            if form['components'][0]['component']['type']!=19:
+                raise RuntimeError('No se confirmó el selector de fotos del formulario.')
+            log.info('PHOTOS controls_verified channel=%s entries=%s buttons=vote,remove,upload commands=semana,premio,subir,retirar self_votes=False single_photo_post=True replies=False', channel.id, verified)
             log.info('PHOTOS ready channel=%s name=%s week=%s entries=%s closes=%s timezone=America/Puerto_Rico originals_preserved=True persistent_buttons=True',
                 channel.id, channel.name, week['week'], len(self.store.entries(week['week'])), week['ends'])
 
     async def tick(self):
         channel = await self.channel()
         await self.scan(channel)
+        for entry in await self.call('pending_posts'):
+            try:
+                async with self.lock:
+                    row=await self.call('entry',entry)
+                    if row['post_mode']=='pending' and row['active']:
+                        await self.ensure_post(row,channel)
+                    elif row['post_mode']=='post':
+                        await self.cleanup_legacy(row,channel)
+            except Exception:
+                log.exception('PHOTOS post_pending entry=%s',entry)
         for week in await self.call('due'):
             try:
                 await self.settle(channel, week)
@@ -462,6 +618,35 @@ class PhotoSystem:
             await asyncio.sleep(60)
 
     def register(self):
+        @self.group.command(name='subir',description='Subir una foto con tu nombre y los votos en la misma publicación')
+        async def upload(i:discord.Interaction):
+            await self.open_upload(i)
+
+        @self.group.command(name='retirar',description='Retirar una foto tuya publicada por el bot')
+        async def withdraw(i:discord.Interaction,foto:app_commands.Range[int,1]):
+            def check(click,row):
+                if click.guild_id!=self.guild_id or not row or row['post_mode']!='post' or not row['active']:
+                    raise ValueError('Esa foto no está disponible para retirar.')
+                if click.user.id!=row['author'] and not click.user.guild_permissions.manage_messages:
+                    raise ValueError('Solo el autor o el staff que puede moderar mensajes puede retirar esta foto.')
+            row=await self.call('entry',foto);check(i,row)
+            from economy import Confirm
+            async def confirmed(click):
+                async with self.lock:
+                    current=await self.call('entry',foto);check(click,current)
+                    channel=await self.channel()
+                    message=await channel.fetch_message(current['control'])
+                    if message.author.id!=self.bot.user.id:
+                        raise ValueError('Esa publicación no pertenece al bot.')
+                    async def snapshot():
+                        return {'entry':foto,'photo_message':current['control'],'owner':current['author'],'active':self.store.entry(foto)['active'],'votes':self.store.entry(foto)['votes']}
+                    async def remove():
+                        await message.delete()
+                        await self.call('deleted',message.id)
+                    await self.bot.changes.tracked('PHOTO_WITHDRAW','Retirar foto por petición de su autor o staff',remove,request_id=str(click.id),snapshot=snapshot)
+                return 'Tu foto quedó retirada de la votación.'
+            await answer(i,'¿Retirar esta foto y sacarla de la votación?',view=Confirm(i.user.id,confirmed))
+
         @self.group.command(name='semana', description='Ver las fotos más votadas y cuándo cierra la semana')
         async def standings(i: discord.Interaction):
             if i.guild_id != self.guild_id:
