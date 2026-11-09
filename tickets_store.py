@@ -7,13 +7,13 @@ import time
 
 STATES={'nuevo','en_atencion','esperando_jugador','resuelto','cerrado'}
 DEPARTMENTS={
- 'soporte':('🛠️','Soporte técnico','Problema y desde cuándo ocurre'),
- 'jugador':('🚨','Reportar jugador','ID del jugador, fecha y pruebas'),
- 'tienda':('🛍️','Problema con tienda','Compra afectada y qué ocurrió'),
- 'donacion':('💳','Donaciones','Concepto y referencia; nunca datos de tarjeta'),
- 'apelacion':('⚖️','Apelar sanción','Sanción, fecha y motivo de apelación'),
- 'faccion':('🥷','Gangas y negocios','Ganga o negocio y solicitud'),
- 'staff':('🔒','Reportar al staff','Reporte reservado para administradores'),
+ 'soporte':('🛠️','Soporte técnico','Algo no funciona o necesitas una mano.'),
+ 'jugador':('🚨','Reportar jugador','Cuéntanos qué pasó con otro jugador.'),
+ 'tienda':('🛍️','Problema con tienda','¿Compraste algo y tienes un problema?'),
+ 'donacion':('💳','Donaciones','Cuéntanos qué quieres donar y cómo.'),
+ 'apelacion':('⚖️','Apelar sanción','¿Te pusieron un castigo y quieres hablarlo?'),
+ 'faccion':('🥷','Gangas y negocios','Lo que necesites para tu ganga o negocio.'),
+ 'staff':('🔒','Reportar al staff','Cuéntanos qué pasó. Lo ven los administradores.'),
 }
 PROTECTED={1245008186440683530,1300627506801541230,1300619682486947931,1245010156576833536}
 NORMAL_STAFF={1300627732954349619,1300631163362218054,1567253212937846935}

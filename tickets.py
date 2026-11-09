@@ -15,8 +15,9 @@ from access_layout import merged_raw
 
 import discord
 from discord import app_commands
+from ticket_forms import FORMS
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
-from tickets_ui import TicketPanel,TicketAction,TicketControls,TextForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
+from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
 
 log=logging.getLogger('LaVenganzaRP.tickets')
 PANEL_CHANNEL=1513423707467415642
@@ -138,7 +139,7 @@ class TicketSystem:
   embed.add_field(name='Responsable',value=f"<@{row['assignee']}>" if row['assignee'] else 'Pendiente de asignación')
   embed.add_field(name='Prioridad',value=row['priority'])
   for key,value in json.loads(row['form']).items():
-   if value:embed.add_field(name=key.capitalize(),value=discord.utils.escape_markdown(value)[:1024],inline=False)
+   if value:embed.add_field(name=key[:1].upper()+key[1:],value=discord.utils.escape_markdown(value)[:1024],inline=False)
   if row.get('purchase_id'):embed.add_field(name='Compra vinculada',value=f"`{row['purchase_id']}` · Staff puede consultar /ticket compra",inline=False)
   if row.get('deleted_at'):embed.add_field(name='Archivo conservado',value=f"Canal eliminado <t:{row['deleted_at']}:F>. La transcripción y las pruebas siguen disponibles.",inline=False)
   if row.get('resolution'):embed.add_field(name='Resolución',value=discord.utils.escape_markdown(row['resolution'])[:1024],inline=False)
@@ -253,7 +254,9 @@ class TicketSystem:
    rows=await asyncio.to_thread(self.bot.economy.store.rows,'SELECT id FROM eco_purchases WHERE id=? AND (buyer=? OR recipient=?)',(purchase,i.user.id,i.user.id))
    if not rows:raise ValueError('Esa compra no te pertenece.')
   if excluded and not await self.member(i.guild,excluded):
-   form=dict(form,reportado_id=str(excluded));excluded=None
+   form=dict(form)
+   if str(excluded) not in form.values():form['ID de la persona reportada']=str(excluded)
+   excluded=None
   async with self.lock:
    rid=await self.call('create',i.user.id,department,subject,form,excluded,purchase)
    row=self.store.get(rid)
@@ -638,6 +641,11 @@ class TicketSystem:
      except discord.NotFound:log.warning('TICKETS missing_closed_channel id=%s',ticket['id'])
    elif ticket['department']=='faccion' and ticket['channel']:await self.refresh(ticket)
   log.info('TICKETS closed_delete_controls_verified upgraded=%s category=%s',upgraded,closed.id)
+  for department,questions in FORMS.items():
+   modal=OpenForm(self,department)
+   payload=modal.to_dict()
+   if len(payload['components'])!=len(questions):raise RuntimeError('No se confirmó un formulario de tickets')
+   log.info('TICKETS form_verified department=%s questions=%s',department,[q.label for q in questions])
   log.info('TICKETS department_labels_verified labels=%s',labels)
   log.info('TICKETS closed_navigation_verified location=closed_category main_button_removed=True category=%s existing_closed_cases=%s',closed.id,sum(listed_ticket(r,{c.id:c for c in all_channels if isinstance(c,discord.TextChannel)},True) for r in self.store.list(limit=10000)))
   log.info('TICKETS panel_verified channel=%s message=%s closed_category=%s legacy_channels_untouched=True protected_roles_untouched=True',panel.id,message.id,closed.id)

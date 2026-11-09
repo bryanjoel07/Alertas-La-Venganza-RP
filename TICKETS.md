@@ -4,7 +4,7 @@ Entrada: canal `1513423707467415642`. La activación usa `TICKETS_ENABLED=1`.
 
 ## Atención al jugador
 
-El panel oficial ofrece Soporte técnico, Reportar jugador, Problemas con tienda, Donaciones, Apelar sanción, Gangas/negocios y Reportar al staff. Cada formulario solicita asunto, detalles, referencia y pruebas; los reportes permiten identificar al reportado por ID de Discord. Los adjuntos se envían dentro del caso. La tienda permite vincular únicamente compras propias (como pagador o destinatario).
+El panel oficial ofrece Soporte técnico, Reportar jugador, Problemas con tienda, Donaciones, Apelar sanción, Gangas/negocios y Reportar al staff. Cada tema tiene preguntas propias con palabras sencillas. Soporte pregunta qué pasa y desde cuándo; reportes preguntan quién fue, qué pasó, cuándo y qué pruebas hay; tienda pregunta por la compra y qué salió mal; Donaciones pregunta qué tipo de donación quieres hacer, qué quieres donar, cuánto y cómo; apelaciones preguntan por el castigo y qué pasó; Gangas pregunta el nombre, qué haces ahí y qué necesitas. Los reportes permiten añadir el ID de Discord de la persona, si se conoce. Los adjuntos se envían dentro del caso. La tienda permite vincular únicamente compras propias (como pagador o destinatario).
 
 Se permite un caso activo por usuario y motivo, hasta tres abiertos y una apertura por minuto. Se conserva el mismo canal al cerrar y reabrir. El autor puede reabrir durante siete días; después necesita al staff. Los participantes adicionales no pueden cerrar ni reabrir por su cuenta.
 

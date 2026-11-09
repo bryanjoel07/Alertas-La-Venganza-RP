@@ -1,11 +1,11 @@
 """Persistent ticket controls; every callback is authorized again by the service."""
-import re
 import json
 from contextlib import suppress
 import logging
 import discord
 from discord import app_commands
 from tickets_store import DEPARTMENTS
+from ticket_forms import FORMS,submission
 
 async def reply(i,text=None,**kwargs):
  sender=i.followup.send if i.response.is_done() else i.response.send_message
@@ -17,37 +17,36 @@ class SafeView(discord.ui.View):
   await reply(i,str(error) if isinstance(error,ValueError) else 'No se pudo completar esa acción. El caso sigue guardado.')
 
 class OpenForm(discord.ui.Modal):
- def __init__(self,system,department,purchase=''):
+ def __init__(self,system,department,purchase='',purchase_name=''):
   super().__init__(title=DEPARTMENTS[department][1],timeout=600)
   self.system,self.department,self.purchase=system,department,purchase
-  self.subject=discord.ui.TextInput(label='Asunto',max_length=100)
-  self.details=discord.ui.TextInput(label=DEPARTMENTS[department][2][:45],style=discord.TextStyle.paragraph,max_length=2000)
-  self.reference=discord.ui.TextInput(label='Fecha, organización o referencia',required=False,max_length=200)
-  self.proofs=discord.ui.TextInput(label='Enlaces a pruebas (archivos después de abrir)',style=discord.TextStyle.paragraph,required=False,max_length=1000)
-  for item in (self.subject,self.details,self.reference,self.proofs):self.add_item(item)
-  self.target=None
-  if department in ('staff','jugador'):
-   self.target=discord.ui.TextInput(label='ID Discord del reportado, si lo sabes',required=False,max_length=20)
-   self.add_item(self.target)
+  self.inputs={}
+  for question in FORMS[department]:
+   value=discord.ui.TextInput(label=question.label,placeholder=question.hint or None,
+      max_length=question.limit,required=question.required,
+      style=discord.TextStyle.paragraph if question.paragraph else discord.TextStyle.short,
+      default=purchase_name[:question.limit] if question.key=='item' and purchase_name else None)
+   self.inputs[question.key]=value;self.add_item(value)
  async def on_submit(self,i):
   await i.response.defer(ephemeral=True,thinking=True)
   try:
-   excluded=None
-   if self.target and self.target.value:
-    if not re.fullmatch(r'\d{17,20}',self.target.value):raise ValueError('El ID de Discord debe tener entre 17 y 20 números. Deja ese campo vacío si solo conoces el ID del juego.')
-    excluded=int(self.target.value)
-    if excluded==i.user.id:raise ValueError('No puedes indicar tu propio ID como reportado.')
-   await self.system.open(i,self.department,self.subject.value,dict(detalles=self.details.value,
-       referencia=self.reference.value,pruebas=self.proofs.value),excluded,self.purchase or None)
-  except (ValueError,discord.HTTPException) as error:await reply(i,str(error) if isinstance(error,ValueError) else 'Discord no permitió completar la apertura. El intento quedó registrado para revisión.')
+   subject,form,excluded=submission(self.department,{key:value.value for key,value in self.inputs.items()},i.user.id)
+   await self.system.open(i,self.department,subject,form,excluded,self.purchase or None)
+  except (ValueError,discord.HTTPException) as error:
+   await reply(i,str(error) if isinstance(error,ValueError) else 'No pudimos abrir el ticket. Inténtalo otra vez o avisa al staff.')
+ async def on_error(self,i,error):
+  logging.getLogger('LaVenganzaRP.tickets').error('Ticket opening form failed',exc_info=error)
+  await reply(i,'No pudimos abrir el ticket. Inténtalo otra vez o avisa al staff.')
 
 class PurchasePicker(discord.ui.Select):
  def __init__(self,system,purchases):
   options=[discord.SelectOption(label=f"{p['name']} · {p['status']}"[:100],value=p['id'],description=f"{p['price']} 🪙 · Compra {p['id']}"[:100]) for p in purchases[:24]]
   options.append(discord.SelectOption(label='Otro problema de tienda / sin compra',value='none'))
   super().__init__(placeholder='Selecciona tu compra afectada',options=options)
-  self.system=system
- async def callback(self,i):await i.response.send_modal(OpenForm(self.system,'tienda','' if self.values[0]=='none' else self.values[0]))
+  self.system=system;self.purchases={p['id']:p for p in purchases}
+ async def callback(self,i):
+  chosen=self.values[0]
+  await i.response.send_modal(OpenForm(self.system,'tienda','' if chosen=='none' else chosen,self.purchases.get(chosen,{}).get('name','')))
 
 class DepartmentPicker(discord.ui.Select):
  def __init__(self,system):

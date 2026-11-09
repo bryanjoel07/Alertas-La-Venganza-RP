@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='advanced-tickets-v1.9'
-SUMMARY='Retirar Tickets cerrados del panel principal; su consulta permanece en la categoría de cerrados. Las listas solo incluyen canales existentes y excluyen casos eliminados o de prueba. Se vuelve a validar el caso al seleccionarlo.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 5390abb819d9d2c50075c493c27d02fff363cfda en Railway. '
+RELEASE='advanced-tickets-v2.0'
+SUMMARY='Cada tipo de ticket tiene sus propias preguntas, con palabras sencillas. Donaciones pregunta qué quieres donar, cuánto y cómo. Se conserva la compra elegida en Tienda y la exclusión del reportado en reportes.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior a0348f3f917a5272f245cad9ffacfbaa07a7b67d en Railway. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '
