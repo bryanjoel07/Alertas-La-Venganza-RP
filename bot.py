@@ -31,6 +31,7 @@ from obscenities import ObscenityFilter
 from daily_up import announce_daily_up
 from economy import Economy
 from profiles_hub import ProfileTree
+from server_audit import audit_server
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1527,6 +1528,10 @@ async def on_ready():
         log.exception("No se pudo reanudar observación de reuniones Staff")
     if DATA_DIR == "/tmp":
         log.warning("SQLite está en /tmp. Antes de reiniciar o montar un volumen, exporta y verifica un respaldo externo; consulta DESPLIEGUE_IPHONE.md.")
+    try:
+        await audit_server(client, GUILD_ID, DB_PATH)
+    except Exception:
+        log.exception("No se pudo completar la auditoría de lectura del servidor")
 
 
 @client.event
