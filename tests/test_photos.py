@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 from backup import snapshot
-from economy_store import SCHEMA
+from economy_store import SCHEMA, EconomyStore
 from photo_store import PhotoStore, week_bounds
 from photos import PhotoSystem, PhotoButton, PhotoControls, FOTOS_CHANNEL
 
@@ -158,6 +158,10 @@ class PhotoServiceFixtures:
         self.bot = MagicMock(); self.bot.user.id = 99
         self.system = PhotoSystem(self.bot, Path(temp.name)/'photos.db', GUILD)
         self.system.store.initialize(BASE)
+        self.bot.economy.store=EconomyStore(self.system.store.path)
+        with self.system.store.db() as db:
+            for statement in SCHEMA.split(';'):
+                if statement.strip():db.execute(statement)
         self.clock = patch('photos.time.time', return_value=BASE); self.clock.start(); self.addCleanup(self.clock.stop)
         self.channel = MagicMock(spec=discord.TextChannel); self.channel.id = FOTOS_CHANNEL; self.channel.name = '📸┊𝐅𝐨𝐭𝐨𝐬'
         self.guild = SimpleNamespace(id=GUILD, me=SimpleNamespace(id=99), filesize_limit=100000)

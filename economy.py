@@ -17,6 +17,7 @@ from meetings import ROLES
 from profiles_hub import ensure_profiles
 from server_fixes import fix_high_priorities
 from community_features import CommunityFeatures
+from photo_store import COIN_REWARDS
 
 log = logging.getLogger("LaVenganzaRP.economia")
 SHOP = "🛍️┊𝐓𝐢𝐞𝐧𝐝𝐚-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞"
@@ -113,6 +114,10 @@ def shop_embed(r):
                 body=body[:950].rsplit('\n',1)[0]+'\nConsulta el catálogo para ver todos.'
             embed.add_field(name=label,value=body,inline=False)
     embed.add_field(name="Cómo funciona",value="**1.** Consulta la ficha y el precio.\n**2.** Pulsa **Vista previa gratis**.\n**3.** Usa **Revisar compra** y confirma.\nLo adquirido se gestiona en `/inventario`. Los recuerdos de eventos aparecen según tu participación confirmada.",inline=False)
+    embed.add_field(name='📸 Gana monedas con tus fotos',value=
+        'Participa en <#1513422142014754976>. Cada semana: '+
+        ' · '.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),COIN_REWARDS))+
+        '. Van directo a tu saldo para gastarlas aquí. Un puesto por jugador; usa `/foto semana` para ver cómo va.',inline=False)
     embed.set_footer(text="Monedas de la comunidad · Beneficios dentro de Discord · La vista previa no cobra ni equipa")
     return embed
 

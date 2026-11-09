@@ -13,16 +13,14 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v2.3'
-SUMMARY='Habilita la autorización de lectura de miembros de esta aplicación cuando Discord rechaza el directorio completo de menciones. Cambia únicamente GATEWAY_GUILD_MEMBERS_LIMITED mediante la API documentada y guarda flags antes/después; conserva las demás opciones y la suscripción del Gateway. Mantiene la lista privada con páginas, búsqueda por usuario/apodo y cinco menciones, sin modificar roles ni canales.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 7f24cb1ed8378bddc893aabfdd446a0fd63785ab, conservando /data y SQLite. '
-         'La autorización de lectura de miembros permanece al volver al código anterior. Si se necesita desactivarla, consultar PHOTO_MEMBER_ACCESS y quitar únicamente GATEWAY_GUILD_MEMBERS_LIMITED si estaba apagado en before, preservando los demás flags actuales; también se puede desactivar Server Members Intent en el portal de esta aplicación. '
-         'Para volver al selector nativo, desplegar e81e0583d68949adf8f829e5ec535e253e86b05b. El directorio solo se guarda temporalmente en memoria; fotos, votos, menciones persistidas, imágenes pendientes y premios mantienen el mismo formato. No restaurar una base antigua. '
-         'Las respuestas propias del bot sustituidas conservan su copia en PHOTO_LEGACY_CONTROL. No se puede recuperar su ID original; puede recrearse una tarjeta usando el mismo número de foto y votos, tras actualizar solo su control. Las fotos de jugadores no se borran durante esa migración. '
-         'Para revertir un destacado, consultar la operación PHOTO_PIN y restaurar solo el estado fijado del mensaje propio del bot por su ID; no tocar publicaciones de jugadores. No retirar un premio ni cambiar saldos como parte de una reversión de código. '
-         'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
-         'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
-         'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '
+RELEASE='weekly-photos-v3'
+SUMMARY='Fotos entrega un podio semanal de tres jugadores distintos: 500, 300 y 150 monedas en sus saldos existentes de la tienda. Cuenta la mejor foto de cada autor con al menos un voto y conserva el desempate por antigüedad. Podio, recibos, imagen ganadora y movimientos se guardan juntos, sin duplicar premios tras reinicios. Incluye clasificación provisional, enlaces a fotos y tienda e instrucciones en los paneles y la guía; mantiene el artículo opcional como extra del primer lugar.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 759f0d234075d5af4c7efdb63ddf7e5b8de8d7c0, conservando /data y SQLite. '
+         'El código anterior vuelve al destacado de una sola foto y no paga monedas de Fotos. Conservar lv_photo_podium, podium_closed, coins_since, eco_accounts y eco_ledger: la migración es aditiva. No restaurar una base antigua ni retirar monedas o artículos como parte de revertir código. '
+         'Antes de revertir, completar los anuncios pendientes de semanas con podio ya pagado usando esta versión, o mantener PHOTO_CONTEST_ENABLED=0 hasta completarlos. El código anterior no comprende el podio congelado: no permitir que recalcule una semana ya pagada. '
+         'Los recibos photo-coins: y las acciones podio_monedas permiten consultar los premios; mantener saldos, compras posteriores, votos y respaldos actuales. '
+         'Para un fijado, consultar PHOTO_PIN y restaurar solo el estado anterior del mensaje propio del bot por ID. No retirar fijados ni fotos de jugadores. '
+         'Para otros cambios de Discord, descargar /cambios detalle, comparar antes/después y restaurar únicamente los campos autorizados por ID. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin. No borrar canales ni recrearlos: se perdería su historial.')
 
 

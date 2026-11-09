@@ -12,7 +12,7 @@ import discord
 from discord import app_commands
 
 from economy_store import SLOTS
-from photo_store import PhotoStore, week_bounds
+from photo_store import PhotoStore, week_bounds, COIN_REWARDS
 from photo_members import MemberDirectory,DirectoryUnavailable,MemberPicker,NativePickerFallback
 
 log = logging.getLogger('LaVenganzaRP.photos')
@@ -137,7 +137,7 @@ class PhotoSystem:
         self.ready_lock = asyncio.Lock()
         self.prepared = False
         self.task = None
-        self.group = app_commands.Group(name='foto', description='Fotos, votos y ganador de la semana')
+        self.group = app_commands.Group(name='foto', description='Fotos, votos y premios semanales para la tienda')
         self.register()
 
     def enabled(self):
@@ -184,8 +184,13 @@ class PhotoSystem:
             'Si empatan, gana la que se publicó primero.\n\n'
             f"**Cierre de esta semana:** <t:{week['ends']}:F>\n"
             'Usa `/foto semana` para ver cómo va la votación.')
+        embed.add_field(name='🪙 Premios de la semana',value=
+            '\n'.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),COIN_REWARDS))+
+            '\nUn puesto por jugador: cuenta tu foto más votada, con al menos un voto. '
+            'Al cerrar la semana, las monedas van directo a tu saldo para comprar cosas para tu perfil. '
+            'Mira tus monedas con `/saldo`.',inline=False)
         if week['prize_name']:
-            embed.add_field(name='🎁 Premio de esta semana', value=week['prize_name'], inline=False)
+            embed.add_field(name='🎁 Extra para el primer lugar', value=week['prize_name'], inline=False)
         embed.set_footer(text='LA VENGANZA RP · Fotos de la semana')
         return embed
 
@@ -483,8 +488,18 @@ class PhotoSystem:
                 description=f"📸 Publicada por <@{row['author']}>\n❤️ **{week['winning_votes']} votos**\n[Ver la publicación original]({self.source_link(row)})")
             if week['image_url']:
                 embed.set_image(url=week['image_url'])
+            podium=self.store.ranking(week['week']) if week['podium_closed'] is not None else []
+            if podium:
+                embed.add_field(name='🏅 Podio de la semana',value='\n\n'.join(
+                    f"{('🥇','🥈','🥉')[r['place']-1]} <@{r['author']}> · **{r['coins']} monedas** · ❤️ {r['votes']} votos\n"
+                    f"[Ver su foto]({self.source_link(r)})" for r in podium),inline=False)
+                shop=self.bot.economy.store.config('shop_channel')
+                embed.add_field(name='🛍️ A disfrutar esos premios',value=
+                    'Las monedas ya están en sus saldos. Usa `/saldo` para verlas y '+
+                    (f'pásate por <#{shop}>' if shop else 'pásate por la tienda')+
+                    ' para comprar cosas para tu perfil.',inline=False)
             if week['prize_name']:
-                embed.add_field(name='🎁 Premio', value=week['prize_name'] + ('\nYa está en tu inventario. Usa `/inventario` para verlo.' if week['prize_receipt'] else '\nEl staff está pendiente de su entrega.'), inline=False)
+                embed.add_field(name='🎁 Extra para el primer lugar', value=week['prize_name'] + ('\nYa está en tu inventario. Usa `/inventario` para verlo.' if week['prize_receipt'] else '\nEl staff está pendiente de su entrega.'), inline=False)
         else:
             embed = discord.Embed(title='📸 FOTO DE LA SEMANA', color=COLOR,
                 description='Esta semana no hubo fotos con votos para elegir una ganadora. La nueva ronda ya está abierta: ¡sube tu foto y participa!')
@@ -494,34 +509,42 @@ class PhotoSystem:
 
     async def settle(self, channel, week):
         async with self.lock:
+            week=await self.call('week',week['week'])
+            if not week or week['state']=='published' or week['ends']>int(time.time()):return
             rows = await self.call('entries', week['week'])
-            winner_image = None
-            for row in rows:
-                if row['active'] and row['votes']:
-                    _, image = await self.source(channel, row)
-                    if image:
-                        winner_image = image
-                        break
-            week = await self.call('freeze', week['week'])
+            if week['podium_closed'] is None:
+                winner_image=None;eligible=[];authors=set()
+                for row in rows:
+                    if row['active'] and row['votes'] and row['author'] not in authors:
+                        _,image=await self.source(channel,row)
+                        if image:
+                            authors.add(row['author']);eligible.append((row['id'],row['author'],row['votes']))
+                            if winner_image is None:winner_image=image
+                            if len(eligible)==3:break
+                week=await self.call('freeze',week['week'])
+                media=None
+                if eligible:
+                    limit=min(getattr(channel.guild,'filesize_limit',MAX_UPLOAD),MAX_UPLOAD)
+                    data=None
+                    if winner_image.size<=limit:
+                        try:data=await winner_image.read()
+                        except discord.HTTPException:data=await winner_image.read(use_cached=True)
+                        if len(data)>limit:data=None
+                    filename=f"foto-{eligible[0][0]}{Path(winner_image.filename).suffix.lower()}"
+                    media=(data,filename,winner_image.url)
+                podium=await self.call('reward_podium',week['week'],self.bot.user.id,expected=eligible,media=media)
+                week = await self.call('week', week['week'])
+                if week['podium_closed'] is None and week['winner'] and media:
+                    if week['winner']!=eligible[0][0]:
+                        raise ValueError('Las fotos cambiaron mientras cerraba la semana. Se revisarán otra vez.')
+                    await self.call('stage',week['week'],*media)
+                    week=await self.call('week',week['week'])
+                if week['podium_closed'] is not None:
+                    log.info('PHOTOS podium_paid week=%s places=%s users=%s coins=%s',week['week'],len(podium),
+                        [r['author'] for r in podium],[r['coins'] for r in podium])
             if not rows:
                 await self.call('published', week['week'], None)
                 return
-            if week['winner'] and not week['filename']:
-                limit = min(getattr(channel.guild, 'filesize_limit', MAX_UPLOAD), MAX_UPLOAD)
-                data = None
-                if winner_image.size <= limit:
-                    try:
-                        data = await winner_image.read()
-                    except discord.HTTPException:
-                        data = await winner_image.read(use_cached=True)
-                    if len(data) > limit:
-                        data = None
-                filename = f"foto-{week['winner']}{Path(winner_image.filename).suffix.lower()}"
-                await self.call('stage', week['week'], data, filename, winner_image.url)
-                week = await self.call('week', week['week'])
-            elif week['winner'] and week['image'] is None:
-                await self.call('stage', week['week'], None, week['filename'], winner_image.url)
-                week = await self.call('week', week['week'])
             message = None
             if week['publishing']:
                 after = datetime.fromtimestamp(week['publishing'] - 5, timezone.utc)
@@ -538,8 +561,12 @@ class PhotoSystem:
                     embed.set_image(url='attachment://' + week['filename'])
                     kwargs['file'] = discord.File(io.BytesIO(week['image']), filename=week['filename'])
                 row = self.store.entry(week['winner']) if week['winner'] else None
-                message = await channel.send(content=f"🏆 <@{row['author']}>, ¡tu foto ganó esta semana!" if row else None,
-                    embed=embed, allowed_mentions=discord.AllowedMentions(users=[discord.Object(row['author'])] if row else False, roles=False, everyone=False), **kwargs)
+                podium=self.store.ranking(week['week']) if week['podium_closed'] is not None else []
+                winners=[r['author'] for r in podium] or ([row['author']] if row else [])
+                content=('🏆 ¡Ya tenemos el podio de Fotos de esta semana! '+
+                    ' '.join(f'<@{uid}>' for uid in winners)+' 🎉') if podium else (f"🏆 <@{row['author']}>, ¡tu foto ganó esta semana!" if row else None)
+                message = await channel.send(content=content,
+                    embed=embed, allowed_mentions=discord.AllowedMentions(users=[discord.Object(uid) for uid in winners], roles=False, everyone=False), **kwargs)
             url = message.attachments[0].url if message.attachments else week['image_url']
             await self.call('published', week['week'], message.id, url)
             log.info('PHOTOS winner_published week=%s winner=%s votes=%s message=%s', week['week'], week['winner'], week['winning_votes'], message.id)
@@ -583,7 +610,17 @@ class PhotoSystem:
             permissions = channel.permissions_for(channel.guild.me)
             if not all(getattr(permissions, p) for p in ('view_channel', 'read_message_history', 'send_messages', 'embed_links', 'attach_files')):
                 raise ValueError('El bot necesita ver Fotos, leer el historial y enviar mensajes, imágenes y enlaces.')
+            if Path(self.bot.economy.store.path).resolve()!=self.store.path.resolve():
+                raise RuntimeError('Fotos y la tienda deben usar la misma base para entregar las monedas.')
+            rewards=await self.call('reward_status')
             await self.panel(channel)
+            panel=await channel.fetch_message(int(self.store.config('panel')))
+            prize_field=next((f.value for e in panel.embeds for f in e.fields if f.name=='🪙 Premios de la semana'),'')
+            if not all(f'{coins} monedas' in prize_field for coins in COIN_REWARDS):
+                raise RuntimeError('Discord no confirmó los premios de Fotos en su panel.')
+            log.info('PHOTOS economy_verified rewards=%s currency=eco_accounts ledger=eco_ledger same_database=True '
+                'distinct_players=True minimum_votes=1 ties=earliest_photo coins_since=%s paid_positions=%s panel_verified=True',
+                list(rewards['rewards']),rewards['since'],rewards['paid_positions'])
             await self.scan(channel)
             # Recheck existing controls after offline deletions without touching original posts.
             week = await self.call('current')
@@ -708,19 +745,22 @@ class PhotoSystem:
                 return 'Tu foto quedó retirada de la votación.'
             await answer(i,'¿Retirar esta foto y sacarla de la votación?',view=Confirm(i.user.id,confirmed))
 
-        @self.group.command(name='semana', description='Ver las fotos más votadas y cuándo cierra la semana')
+        @self.group.command(name='semana', description='Ver el podio de Fotos, sus premios y cuándo cierra la semana')
         async def standings(i: discord.Interaction):
             if i.guild_id != self.guild_id:
                 raise ValueError('Consulta la votación desde La Venganza RP.')
             await i.response.defer(ephemeral=True)
             week = await self.call('current')
-            rows = [r for r in await self.call('entries', week['week']) if r['active']]
+            rows = await self.call('ranking', week['week'])
             embed = self.panel_embed(week)
-            for n, row in enumerate(rows[:5], 1):
-                embed.add_field(name=f"{n}. Foto #{row['id']} · {row['votes']} votos", value=f"<@{row['author']}> · [Ver foto]({self.source_link(row)})", inline=False)
+            embed.add_field(name='🏅 Así va el podio',value='Todavía puede cambiar hasta que cierre la semana.' if rows else
+                'Todavía no hay fotos con votos. ¡Sube la tuya y participa!',inline=False)
+            for row in rows:
+                embed.add_field(name=f"{('🥇','🥈','🥉')[row['place']-1]} Foto #{row['id']} · {row['votes']} votos",
+                    value=f"<@{row['author']}> · **{row['coins']} monedas** si termina aquí · [Ver foto]({self.source_link(row)})",inline=False)
             await answer(i, None, embed=embed)
 
-        @self.group.command(name='premio', description='Elegir o quitar el premio de la tienda para una semana')
+        @self.group.command(name='premio', description='Elegir o quitar el artículo extra para el primer lugar')
         async def prize(i: discord.Interaction, articulo: str, semana: str = None):
             self.bot.economy.authorized(i)
             await i.response.defer(ephemeral=True)
@@ -742,18 +782,18 @@ class PhotoSystem:
                 if row['state'] == 'published' and row['winner']:
                     await self.deliver_prize(channel, row)
                 await self.panel(channel)
-                return 'Premio guardado. Se entrega al ganador en su inventario, sin cobrarle ni equiparlo.' if sku else 'Esta semana queda sin premio de tienda.'
+                return 'Extra guardado para el primer lugar. Se entrega en su inventario, además de las monedas.' if sku else 'Esta semana queda sin artículo extra. Los premios de monedas siguen activos.'
             item = next((p for p in self.bot.economy.store.products() if p['sku'] == sku and p['active'] and p['kind'] in SLOTS), None)
             if sku and not item:
                 raise ValueError('Elige un artículo de perfil del catálogo.')
-            await answer(i, f"¿Guardar **{discord.utils.escape_markdown(item['name']) if item else 'Sin premio'}** para la semana del {target}?",
+            await answer(i, f"¿Guardar **{discord.utils.escape_markdown(item['name']) if item else 'Sin artículo extra'}** para el primer lugar de la semana del {target}?",
                 view=Confirm(i.user.id, confirmed))
 
         @prize.autocomplete('articulo')
         async def prize_choices(i, current):
             self.bot.economy.authorized(i)
             products = await asyncio.to_thread(self.bot.economy.store.products)
-            choices = [app_commands.Choice(name='Sin premio de tienda', value='ninguno')]
+            choices = [app_commands.Choice(name='Sin artículo extra (se mantienen las monedas)', value='ninguno')]
             choices.extend(app_commands.Choice(name=p['name'][:100], value=p['sku']) for p in products
                 if p['active'] and p['kind'] in SLOTS and current.casefold() in (p['name']+' '+p['sku']).casefold())
             return choices[:25]
