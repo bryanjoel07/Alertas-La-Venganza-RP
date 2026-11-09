@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='catalogo-registro-v1'
-SUMMARY='Tienda con catálogo paginado, fichas de beneficios y probador gratuito antes de comprar. Registro persistente de versiones y operaciones administrativas del bot.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 1e02a08001fa9c42c63a6cd0df677233ec76532f en Railway. '
+RELEASE='cosmetic-role-hierarchy-v2'
+SUMMARY='Corregida la compra de títulos decorativos para jugadores con rango superior al bot: se valida el rol cosmético, sin modificar rangos protegidos. Se mantienen las comprobaciones de colores y apodos.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 212e42a1eed5a106889a49ac0279d63a1dfc38f1 en Railway. '
          'Conservar el volumen /data y la base SQLite actual: volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin. No borrar canales ni recrearlos: se perdería su historial.')

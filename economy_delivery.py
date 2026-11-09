@@ -47,13 +47,11 @@ class Delivery:
         guild = member.guild
         me = guild.me
         if kind in ROLE_KINDS:
-            if (
-                not me.guild_permissions.manage_roles
-                or member.top_role >= me.top_role
-                or guild.owner_id == member.id
-            ):
+            # The role assignment endpoint checks the assigned role's hierarchy,
+            # not the recipient's highest role (unlike nickname edits).
+            if not me.guild_permissions.manage_roles:
                 raise ValueError(
-                    "La jerarquía o los permisos actuales del bot impiden entregar el rol a este jugador."
+                    "El bot necesita Gestionar roles para entregar este cosmético."
                 )
             if kind != "title":
                 blocking = [
