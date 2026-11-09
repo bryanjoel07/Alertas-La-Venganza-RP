@@ -16,7 +16,7 @@ from access_layout import merged_raw
 import discord
 from discord import app_commands
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
-from tickets_ui import TicketPanel,TicketAction,TicketControls,TextForm,ChoiceView,CasePicker,DeleteConfirm,reply
+from tickets_ui import TicketPanel,TicketAction,TicketControls,TextForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
 
 log=logging.getLogger('LaVenganzaRP.tickets')
 PANEL_CHANNEL=1513423707467415642
@@ -524,6 +524,40 @@ class TicketSystem:
     raise RuntimeError(f'Discord no confirmó acceso de {role.name} a {channel.id}')
   log.info('TICKETS staff_visibility_verified channel=%s name=%s roles=%s',confirmed.id,confirmed.name,[(str(r.id),r.name) for r in roles])
   return confirmed
+ async def ensure_closed_index(self,guild,category):
+  marker='lv-closed-ticket-index'
+  channels=await guild.fetch_channels()
+  saved=self.store.config('closed_index_channel')
+  candidates=[c for c in channels if isinstance(c,discord.TextChannel) and (str(c.id)==saved or c.topic==marker)]
+  if len(candidates)>1:raise ValueError('Hay varios índices de archivo; no se creará otro')
+  channel=candidates[0] if candidates else None
+  if not channel:
+   permissions={guild.default_role:discord.PermissionOverwrite(view_channel=False,send_messages=False,create_public_threads=False,create_private_threads=False),
+     guild.me:discord.PermissionOverwrite(view_channel=True,send_messages=True,read_message_history=True,embed_links=True)}
+   permissions.update({role:discord.PermissionOverwrite(view_channel=True,read_message_history=True) for role in closed_staff_roles(guild)})
+   async def create():return await guild.create_text_channel('📂┊𝐀𝐫𝐜𝐡𝐢𝐯𝐨-𝐓𝐢𝐜𝐤𝐞𝐭𝐬',category=category,topic=marker,overwrites=permissions,reason='Índice privado para mantener visible la categoría de tickets cerrados')
+   channel=await self.bot.changes.tracked('CLOSED_ARCHIVE_INDEX','Crear índice de tickets cerrados',create,request_id=str(category.id))
+  self.store.config('closed_index_channel',channel.id)
+  if channel.topic!=marker:raise ValueError('El canal guardado no es el índice del archivo')
+  if channel.category_id!=category.id:
+   async def move():return await channel.edit(category=category,sync_permissions=False,reason='Situar índice dentro de Tickets Cerrados')
+   await self.bot.changes.tracked('CLOSED_ARCHIVE_INDEX_MOVE','Colocar índice de cerrados',move,request_id=str(time.time_ns()))
+  channel=await self.grant_closed_visibility(await self.bot.fetch_channel(channel.id))
+  embed=discord.Embed(title='🔒 ARCHIVO DE TICKETS | LA VENGANZA RP',color=0xD60000,
+    description='**Esta categoría recibe los tickets cuando se cierran.**\nLos canales permanecen aquí hasta que el staff confirma su eliminación.\n\nPulsa **Consultar tickets cerrados** para ver los casos autorizados y descargar sus transcripciones y pruebas. Los archivos siguen disponibles aunque se elimine el canal del caso.\n\nEste índice mantiene visible la categoría aunque no queden canales de tickets.')
+  message=None;saved_message=self.store.config('closed_index_message')
+  if saved_message:
+   with suppress(discord.NotFound):message=await channel.fetch_message(int(saved_message))
+  if not message:
+   async for previous in channel.history(limit=20):
+    if previous.author.id==self.bot.user.id and any(e.title==embed.title for e in previous.embeds):message=previous;break
+  if message:await message.edit(embed=embed,view=ClosedArchivePanel(self))
+  else:message=await channel.send(embed=embed,view=ClosedArchivePanel(self),allowed_mentions=discord.AllowedMentions.none())
+  self.store.config('closed_index_message',message.id)
+  confirmed=await channel.fetch_message(message.id)
+  if not any(getattr(c,'custom_id',None)=='lv:ticket:closed' for row in confirmed.components for c in row.children):raise ValueError('Discord no confirmó el índice de archivo')
+  if channel.permissions_for(guild.default_role).view_channel:raise ValueError('El índice de tickets debe ser privado')
+  log.info('TICKETS closed_index_verified category=%s channel=%s message=%s staff_visible=True persistent=True',category.id,channel.id,message.id)
  async def install(self):
   guild=self.bot.get_guild(self.guild_id)
   panel=await self.bot.fetch_channel(PANEL_CHANNEL)
@@ -538,6 +572,7 @@ class TicketSystem:
    async def place():return await closed.edit(position=anchor.position+1,reason='Situar Tickets Cerrados junto a Tickets para encontrarlo')
    await self.bot.changes.tracked('CLOSED_CATEGORY_POSITION','Colocar categoría Tickets Cerrados',place,request_id=str(time.time_ns()))
   if closed.permissions_for(guild.default_role).view_channel:raise ValueError('La categoría de cerrados no es privada.')
+  await self.ensure_closed_index(guild,closed)
   # Keep existing tickets and third-party controls operational. Record old panel IDs for migration.
   if not self.store.config('legacy_panels'):
    legacy=[]

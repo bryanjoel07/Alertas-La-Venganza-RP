@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='advanced-tickets-v1.7'
-SUMMARY='Visibilidad explícita de Tickets Cerrados para todos los rangos de staff solicitados, sin cambiar permisos generales ni jerarquía. Se desactiva la publicación de cambios en Registro Exclusive y se vacía ese canal con copia privada verificada.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 74f985d3df852f1c9514760d3d13e7286639297e en Railway. '
+RELEASE='advanced-tickets-v1.8'
+SUMMARY='Índice privado permanente dentro de la categoría Tickets Cerrados para mantenerla visible aunque se eliminen todos sus casos. Acceso explícito para los siete rangos del staff; los avisos de cambios siguen desactivados en Registro Exclusive.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 984f99eea6cc138eb0352d172dcc7384cea10d12 en Railway. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '

@@ -71,6 +71,12 @@ class TicketPanel(SafeView):
  @discord.ui.button(label='Gestión Staff',emoji='🧰',custom_id='lv:ticket:dashboard',row=1)
  async def dashboard(self,i,button):await self.system.show_list(i,own=False)
 
+class ClosedArchivePanel(SafeView):
+ def __init__(self,system):
+  super().__init__(timeout=None);self.system=system
+ @discord.ui.button(label='Consultar tickets cerrados',emoji='📂',custom_id='lv:ticket:closed')
+ async def closed(self,i,button):await self.system.show_closed(i)
+
 ACTIONS={'claim':('Reclamar','🙋'),'wait':('Solicitar pruebas','📎'),'resolve':('Resolver','✅'),
  'close':('Cerrar','🔒'),'reopen':('Reabrir','🔓'),'transcript':('Transcripción','📄'),
  'note':('Nota interna','📝'),'transfer':('Transferir','🔀'),'priority':('Prioridad','🚩'),
