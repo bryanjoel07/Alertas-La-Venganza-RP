@@ -7,6 +7,8 @@ import discord
 from discord.http import Route
 
 PAGE_SIZE=25
+APPLICATION_ID=1567658433497399408
+GUILD_ID=1244988345327550565
 
 
 def name_key(value):
@@ -30,6 +32,43 @@ class MemberDirectory:
         self.bot,self.guild_id=bot,guild_id
         self.lock=asyncio.Lock()
         self.members=[];self.loaded_at=0;self.source='';self.last_error=None
+
+    async def enable_member_listing(self):
+        """Enable only our app's documented limited member flag, with a durable snapshot."""
+        if self.guild_id!=GUILD_ID or self.bot.user.id!=APPLICATION_ID:
+            raise ValueError('Esta configuración pertenece al bot de La Venganza RP.')
+
+        async def application():
+            app=await self.bot.application_info()
+            if app.id!=APPLICATION_ID:
+                raise ValueError('La aplicación no corresponde a este bot.')
+            return app
+
+        app=await application()
+        if app.flags.gateway_guild_members or app.flags.gateway_guild_members_limited:
+            return False
+        if app.approximate_guild_count>=100 or len(self.bot.guilds)>=100:
+            return False
+
+        async def snapshot():
+            current=await application()
+            return dict(application_id=str(current.id),flags=current.flags.value,
+                gateway_member_subscription=self.bot.intents.members)
+
+        async def enable():
+            current=await application()
+            if current.approximate_guild_count>=100:
+                raise ValueError('Esta aplicación necesita habilitar miembros desde su portal.')
+            flags=current.flags
+            flags.gateway_guild_members_limited=True
+            await current.edit(flags=flags,reason='Permitir la lista de menciones en Fotos')
+            verified=await application()
+            if not verified.flags.gateway_guild_members_limited:
+                raise RuntimeError('Discord no confirmó el acceso a la lista de miembros.')
+
+        await self.bot.changes.tracked('PHOTO_MEMBER_ACCESS','Habilitar lectura de miembros para menciones de Fotos',enable,
+            request_id=f'{APPLICATION_ID}:members-v1',snapshot=snapshot)
+        return True
 
     async def load(self,guild,force=False):
         if guild.id!=self.guild_id:

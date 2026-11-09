@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 import discord
-from photo_members import MemberDirectory,DirectoryUnavailable,MemberPicker,MentionSearch,name_key
+from photo_members import MemberDirectory,DirectoryUnavailable,MemberPicker,MentionSearch,name_key,APPLICATION_ID,GUILD_ID
 from test_photos import PhotoServiceFixtures,GUILD
 
 
@@ -51,6 +51,59 @@ class DirectoryTests(unittest.IsolatedAsyncioTestCase):
         directory,_,http=self.directory([])
         with self.assertRaises(ValueError):await directory.load(SimpleNamespace(id=123))
         http.get_members.assert_not_awaited()
+
+
+class MemberAccessTests(unittest.IsolatedAsyncioTestCase):
+    def setup_access(self,initial=(1<<19)|(1<<23)):
+        class App:
+            id=APPLICATION_ID
+            approximate_guild_count=1
+            value=initial
+            @property
+            def flags(self):return discord.ApplicationFlags._from_value(self.value)
+        app=App();snapshots=[]
+        async def edit(**kwargs):
+            self.assertEqual(len(snapshots),1,'Before-state must be durable before editing.')
+            app.value=kwargs['flags'].value
+        app.edit=AsyncMock(side_effect=edit)
+        async def tracked(env,title,operation,*,request_id,snapshot):
+            snapshots.append(await snapshot());await operation();snapshots.append(await snapshot())
+        bot=SimpleNamespace(user=SimpleNamespace(id=APPLICATION_ID),application_info=AsyncMock(return_value=app),
+            guilds=[SimpleNamespace(id=GUILD_ID)],intents=discord.Intents.default(),
+            changes=SimpleNamespace(tracked=AsyncMock(side_effect=tracked)))
+        return MemberDirectory(bot,GUILD_ID),app,snapshots
+
+    async def test_only_member_flag_is_enabled_after_scoped_before_state_is_saved(self):
+        directory,app,snapshots=self.setup_access();before=app.value
+        self.assertTrue(await directory.enable_member_listing())
+        self.assertEqual(app.value,before|(1<<15))
+        self.assertEqual(snapshots[0],dict(application_id=str(APPLICATION_ID),flags=before,gateway_member_subscription=False))
+        self.assertEqual(snapshots[1]['flags'],app.value)
+        self.assertFalse(directory.bot.intents.members)
+        self.assertEqual(app.edit.call_args.kwargs['reason'],'Permitir la lista de menciones en Fotos')
+        self.assertFalse(await directory.enable_member_listing())
+        app.edit.assert_awaited_once()
+
+    async def test_existing_verified_or_limited_access_is_not_changed(self):
+        for flags in (1<<14,1<<15):
+            directory,app,_=self.setup_access(flags)
+            self.assertFalse(await directory.enable_member_listing())
+            app.edit.assert_not_awaited();directory.bot.changes.tracked.assert_not_awaited()
+
+    async def test_other_bots_applications_and_large_apps_are_not_modified(self):
+        directory,app,_=self.setup_access();directory.guild_id=1
+        with self.assertRaises(ValueError):await directory.enable_member_listing()
+        directory,app,_=self.setup_access();app.id=1
+        with self.assertRaises(ValueError):await directory.enable_member_listing()
+        app.edit.assert_not_awaited()
+        directory,app,_=self.setup_access();app.approximate_guild_count=100
+        self.assertFalse(await directory.enable_member_listing());app.edit.assert_not_awaited()
+
+    async def test_api_refusal_is_propagated_without_changing_other_settings(self):
+        directory,app,snapshots=self.setup_access();before=app.value
+        app.edit.side_effect=discord.Forbidden(SimpleNamespace(status=403,reason='Forbidden'),'not permitted')
+        with self.assertRaises(discord.Forbidden):await directory.enable_member_listing()
+        self.assertEqual(app.value,before);self.assertEqual(len(snapshots),1)
 
 
 class MemberPickerTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):

@@ -13,10 +13,11 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v2.2'
-SUMMARY='Menciones de Fotos con directorio privado obtenido del servidor, páginas de 25 y búsqueda por usuario, apodo o nombre con letras normales. Conserva hasta cinco elegidos al cambiar de página; después abre Elegir foto con esas personas. Se verifican de nuevo su pertenencia y acceso al publicar, sin cambiar roles ni intents del Gateway.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior e81e0583d68949adf8f829e5ec535e253e86b05b, conservando /data y SQLite. '
-         'El código anterior vuelve al selector nativo de Discord. El directorio nuevo solo se guarda temporalmente en memoria; fotos, votos, menciones persistidas, imágenes pendientes y premios mantienen el mismo formato. No restaurar una base antigua. '
+RELEASE='weekly-photos-v2.3'
+SUMMARY='Habilita la autorización de lectura de miembros de esta aplicación cuando Discord rechaza el directorio completo de menciones. Cambia únicamente GATEWAY_GUILD_MEMBERS_LIMITED mediante la API documentada y guarda flags antes/después; conserva las demás opciones y la suscripción del Gateway. Mantiene la lista privada con páginas, búsqueda por usuario/apodo y cinco menciones, sin modificar roles ni canales.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 7f24cb1ed8378bddc893aabfdd446a0fd63785ab, conservando /data y SQLite. '
+         'La autorización de lectura de miembros permanece al volver al código anterior. Si se necesita desactivarla, consultar PHOTO_MEMBER_ACCESS y quitar únicamente GATEWAY_GUILD_MEMBERS_LIMITED si estaba apagado en before, preservando los demás flags actuales; también se puede desactivar Server Members Intent en el portal de esta aplicación. '
+         'Para volver al selector nativo, desplegar e81e0583d68949adf8f829e5ec535e253e86b05b. El directorio solo se guarda temporalmente en memoria; fotos, votos, menciones persistidas, imágenes pendientes y premios mantienen el mismo formato. No restaurar una base antigua. '
          'Las respuestas propias del bot sustituidas conservan su copia en PHOTO_LEGACY_CONTROL. No se puede recuperar su ID original; puede recrearse una tarjeta usando el mismo número de foto y votos, tras actualizar solo su control. Las fotos de jugadores no se borran durante esa migración. '
          'Para revertir un destacado, consultar la operación PHOTO_PIN y restaurar solo el estado fijado del mensaje propio del bot por su ID; no tocar publicaciones de jugadores. No retirar un premio ni cambiar saldos como parte de una reversión de código. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '

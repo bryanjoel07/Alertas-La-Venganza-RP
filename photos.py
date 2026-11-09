@@ -611,7 +611,18 @@ class PhotoSystem:
             if not {'semana', 'premio','subir','retirar'} <= {o['name'] for o in command.get('options', [])}:
                 raise RuntimeError('Discord no confirmó los comandos de Fotos.')
             try:
-                members=await self.member_directory.load(channel.guild)
+                try:
+                    members=await self.member_directory.load(channel.guild)
+                except DirectoryUnavailable as error:
+                    if error.reason!='permission':raise
+                    try:
+                        enabled=await self.member_directory.enable_member_listing()
+                    except discord.HTTPException as enable_error:
+                        log.warning('PHOTOS member_access_enable_failed status=%s',enable_error.status)
+                        raise error from None
+                    if not enabled:raise
+                    log.info('PHOTOS member_access_enabled application=%s gateway_subscription_unchanged=True',self.bot.user.id)
+                    members=await self.member_directory.load(channel.guild,force=True)
                 log.info('PHOTOS member_directory_verified total=%s visible_in_photos=%s source=%s pages_of=25 normalized_name_search=True offline_included=True',
                     len(members),sum(channel.permissions_for(m).view_channel for m in members),self.member_directory.source)
             except DirectoryUnavailable as error:
