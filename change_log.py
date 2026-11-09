@@ -13,10 +13,10 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v2'
-SUMMARY='Subir foto abre un formulario de imagen y texto opcional; el bot publica foto, crédito y votos en un solo mensaje, sin respuesta. La tarjeta anterior se migra conservando votos y foto original y se retira solo la respuesta propia del bot tras verificar el reemplazo. Se añade retirada por autor con confirmación y se mantienen las reglas semanales y premios.'
-RESTORE=('Para revertir esta versión: poner PHOTO_CONTEST_ENABLED=0 y desplegar el commit anterior 0801ca84815332d512a02f3b2a65137a69d57815, conservando /data y SQLite. '
-         'El código anterior no comprende las fotos nuevas publicadas por el bot ni las subidas pendientes; mantener el concurso pausado hasta volver a un código compatible. Conservar votos, columnas nuevas, imágenes pendientes y premios; no restaurar una base antigua. '
+RELEASE='weekly-photos-v2.1'
+SUMMARY='Subir foto permite elegir opcionalmente hasta cinco personas para mencionar. Se guarda la selección junto a la imagen pendiente y solo se permite avisar a los usuarios elegidos que pueden ver Fotos; actualizar votos o recuperar una publicación no repite la notificación.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior cdbca6fa59586d56a38c69957341d886335560d5, conservando /data y SQLite. '
+         'El código anterior mantiene las fotos y votos pero no ofrece el selector de personas ni avisa a las seleccionadas en subidas nuevas. La columna mentions es aditiva: conservarla, junto a imágenes pendientes y premios. No restaurar una base antigua. '
          'Las respuestas propias del bot sustituidas conservan su copia en PHOTO_LEGACY_CONTROL. No se puede recuperar su ID original; puede recrearse una tarjeta usando el mismo número de foto y votos, tras actualizar solo su control. Las fotos de jugadores no se borran durante esa migración. '
          'Para revertir un destacado, consultar la operación PHOTO_PIN y restaurar solo el estado fijado del mensaje propio del bot por su ID; no tocar publicaciones de jugadores. No retirar un premio ni cambiar saldos como parte de una reversión de código. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '

@@ -203,6 +203,7 @@ class PhotoServiceFixtures:
 
     def decorate(self, row, kwargs):
         if 'embed' in kwargs: row.embeds=[kwargs['embed']]
+        if 'content' in kwargs: row.content=kwargs['content'] or ''
         if kwargs.get('view'):
             ids=[c.custom_id for c in kwargs['view'].children]
             row.components=[SimpleNamespace(children=[SimpleNamespace(custom_id=value) for value in ids],to_dict=lambda:{'type':1,'components':[{'type':2,'custom_id':value} for value in ids]})]

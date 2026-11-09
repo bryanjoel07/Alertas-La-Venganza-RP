@@ -56,7 +56,8 @@ class PhotoStore:
                 db.execute(statement)
             columns = {r[1] for r in db.execute('PRAGMA table_info(lv_photo_entries)')}
             additions = {'post_mode': "TEXT NOT NULL DEFAULT 'reply'", 'caption': "TEXT NOT NULL DEFAULT ''",
-                'media': 'BLOB', 'upload_key': 'TEXT', 'post_started': 'INTEGER', 'retired_control': 'INTEGER'}
+                'media': 'BLOB', 'upload_key': 'TEXT', 'post_started': 'INTEGER', 'retired_control': 'INTEGER',
+                'mentions': "TEXT NOT NULL DEFAULT '[]'"}
             for column, definition in additions.items():
                 if column not in columns:
                     db.execute(f'ALTER TABLE lv_photo_entries ADD COLUMN {column} {definition}')
@@ -100,7 +101,7 @@ class PhotoStore:
         with self.db() as db:
             db.execute('UPDATE lv_photo_entries SET url=? WHERE id=?', (url, entry))
 
-    def upload(self, key, attachment, author, filename, url, data, caption='', now=None):
+    def upload(self, key, attachment, author, filename, url, data, caption='', now=None, mentions=()):
         now = int(time.time()) if now is None else now
         upload_key = f'{key}:{attachment}'
         with self.db() as db:
@@ -113,8 +114,8 @@ class PhotoStore:
             if total + len(data) > 100*1024*1024:
                 raise ValueError('Hay varias fotos pendientes. Inténtalo de nuevo en un momento.')
             week, _, _ = self.ensure_in(db, now)
-            return db.execute('''INSERT INTO lv_photo_entries(week,source,attachment,author,filename,url,created,post_mode,media,upload_key,caption)
-                VALUES (?,?,?,?,?,?,?,'pending',?,?,?)''', (week,key,attachment,author,filename,url,now,data,upload_key,caption)).lastrowid
+            return db.execute('''INSERT INTO lv_photo_entries(week,source,attachment,author,filename,url,created,post_mode,media,upload_key,caption,mentions)
+                VALUES (?,?,?,?,?,?,?,'pending',?,?,?,?)''', (week,key,attachment,author,filename,url,now,data,upload_key,caption,json.dumps(list(dict.fromkeys(mentions))))).lastrowid
 
     def stage_post(self, entry, data):
         with self.db() as db:

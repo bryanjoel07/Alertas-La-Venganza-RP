@@ -51,6 +51,10 @@ class PhotoUploadTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload[0]['component']['type'],19)
         self.assertEqual(payload[0]['component']['max_values'],1)
         self.assertFalse(payload[1]['component']['required'])
+        self.assertEqual(payload[2]['component']['type'],5)
+        self.assertFalse(payload[2]['component']['required'])
+        self.assertEqual(payload[2]['component']['min_values'],0)
+        self.assertEqual(payload[2]['component']['max_values'],5)
         form.photo._values=[self.source().attachments[0]];form.caption._value='Desde la ciudad'
         i.channel_id=123
         await form.on_submit(i)
@@ -184,3 +188,50 @@ class PhotoUploadTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         self.bot.economy.authorized.side_effect=ValueError('Solo administradores')
         with self.assertRaises(ValueError):await confirm.action(i)
         self.assertIsNone(self.system.store.current(BASE)['prize_actor'])
+
+    def members(self):
+        users={uid:SimpleNamespace(id=uid) for uid in (2,3)}
+        self.guild.get_member=lambda uid:users.get(uid)
+        self.guild.fetch_member=AsyncMock(side_effect=discord.NotFound(SimpleNamespace(status=404,reason='Missing'),'missing'))
+        return users
+
+    async def test_optional_people_are_mentioned_only_once_when_the_photo_is_published(self):
+        users=self.members();form=UploadForm(self.system)
+        form.photo._values=[self.source().attachments[0]];form.caption._value='Con <@4> @everyone <@&999>'
+        form.mentions._values=[users[2],users[3]]
+        i=self.interaction(None,user=1);await form.on_submit(i)
+        row=self.system.store.entries()[0];message=self.messages[row['control']]
+        self.assertEqual(message.content,'<@2> <@3>')
+        sent=self.channel.send.call_args.kwargs['allowed_mentions']
+        self.assertEqual([u.id for u in sent.users],[2,3]);self.assertFalse(sent.everyone);self.assertFalse(sent.roles)
+        voter=self.interaction(message,user=2)
+        await self.system.vote(voter,row['id'],True);await self.system.vote(voter,row['id'],False)
+        self.assertEqual(self.channel.send.await_count,1);self.assertEqual(message.content,'<@2> <@3>')
+        self.assertTrue(all(not c.kwargs['allowed_mentions'].users for c in message.edit.await_args_list))
+
+    async def test_upload_without_mentions_publishes_normally_without_notifying_anyone(self):
+        row,message,_,_=await self.upload()
+        self.assertEqual(message.content,'')
+        self.assertEqual(row['mentions'],'[]')
+        self.assertFalse(self.channel.send.call_args.kwargs['allowed_mentions'].users)
+
+    async def test_people_outside_the_server_or_without_channel_access_are_rejected(self):
+        users=self.members();photo=self.source().attachments[0];i=self.interaction(None,user=1)
+        with self.assertRaisesRegex(ValueError,'ya no está'):
+            await self.system.submit_upload(i,photo,mentions=[SimpleNamespace(id=8)])
+        self.channel.permissions_for=lambda user:discord.Permissions(view_channel=user.id!=3,send_messages=True)
+        with self.assertRaisesRegex(ValueError,'no puede ver'):
+            await self.system.submit_upload(i,photo,mentions=[users[3]])
+        with self.assertRaisesRegex(ValueError,'hasta 5'):
+            await self.system.submit_upload(i,photo,mentions=[users[2]]*6)
+        self.assertFalse(self.system.store.entries());self.channel.send.assert_not_awaited()
+
+    async def test_selected_people_survive_a_pending_upload_restart_without_an_extra_notification(self):
+        users=self.members();photo=self.source().attachments[0];i=self.interaction(None,user=1)
+        with patch.object(self.system.store,'posted',side_effect=RuntimeError('restart')):
+            with self.assertRaises(RuntimeError):await self.system.submit_upload(i,photo,mentions=[users[2]])
+        row=self.system.store.entries()[0]
+        self.assertEqual(row['mentions'],'[2]')
+        await self.system.ensure_post(row,self.channel)
+        self.assertEqual(self.channel.send.await_count,1)
+        self.assertEqual(self.messages[self.system.store.entry(row['id'])['control']].content,'<@2>')

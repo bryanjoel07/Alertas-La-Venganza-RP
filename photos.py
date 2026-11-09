@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime, timezone
 import io
+import json
 import logging
 import os
 from pathlib import Path
@@ -87,15 +88,17 @@ class UploadForm(discord.ui.Modal):
         self.system=system
         self.photo=discord.ui.FileUpload(custom_id='photo',min_values=1,max_values=1)
         self.caption=discord.ui.TextInput(custom_id='caption',style=discord.TextStyle.paragraph,required=False,max_length=500,placeholder='Un título o lo que quieras contar de tu foto.')
+        self.mentions=discord.ui.UserSelect(custom_id='mentions',placeholder='Elige personas (opcional)',min_values=0,max_values=5,required=False)
         self.add_item(discord.ui.Label(text='Elige tu foto',component=self.photo))
         self.add_item(discord.ui.Label(text='¿Quieres ponerle un texto?',component=self.caption))
+        self.add_item(discord.ui.Label(text='¿Quieres mencionar a alguien?',component=self.mentions))
 
     async def on_submit(self,i):
         await i.response.defer(ephemeral=True,thinking=True)
         try:
             if len(self.photo.values)!=1:
                 raise ValueError('Elige una foto para subirla, bro.')
-            await self.system.submit_upload(i,self.photo.values[0],self.caption.value)
+            await self.system.submit_upload(i,self.photo.values[0],self.caption.value,self.mentions.values)
         except ValueError as error:
             await answer(i,str(error))
         except discord.HTTPException:
@@ -260,8 +263,22 @@ class PhotoSystem:
         await self.upload_channel(i)
         await i.response.send_modal(UploadForm(self))
 
-    async def submit_upload(self,i,attachment,caption=''):
+    async def submit_upload(self,i,attachment,caption='',mentions=()):
         channel=await self.upload_channel(i)
+        selected=[]
+        if len(mentions)>5:
+            raise ValueError('Puedes mencionar hasta 5 personas en tu foto.')
+        for user in mentions:
+            uid=getattr(user,'id',None)
+            if not isinstance(uid,int) or uid<=0:
+                raise ValueError('Elige a las personas desde el campo de menciones.')
+            member=user if isinstance(user,discord.Member) and user.guild.id==self.guild_id else channel.guild.get_member(uid)
+            if member is None:
+                try:member=await channel.guild.fetch_member(uid)
+                except discord.NotFound:raise ValueError('Esa persona ya no está en el servidor.') from None
+            if not channel.permissions_for(member).view_channel:
+                raise ValueError('Esa persona no puede ver el canal de Fotos.')
+            if uid not in selected:selected.append(uid)
         if not is_image(attachment):
             raise ValueError('Elige una imagen JPG, PNG, WEBP, GIF o AVIF.')
         limit=min(channel.guild.filesize_limit,MAX_UPLOAD)
@@ -271,7 +288,7 @@ class PhotoSystem:
         if not data or len(data)>limit:
             raise ValueError('La foto supera lo que puede publicar el bot. Usa una más ligera.')
         async with self.lock:
-            entry=await self.call('upload',i.id,attachment.id,i.user.id,attachment.filename,attachment.url,data,caption.strip())
+            entry=await self.call('upload',i.id,attachment.id,i.user.id,attachment.filename,attachment.url,data,caption.strip(),mentions=selected)
             message=await self.ensure_post(await self.call('entry',entry),channel)
         await answer(i,f'📸 Tu foto ya está publicada con tus votos: {self.source_link(self.store.entry(entry))}')
         log.info('PHOTOS upload_published entry=%s message=%s owner=%s',entry,message.id,i.user.id)
@@ -326,8 +343,10 @@ class PhotoSystem:
                     kwargs['file']=discord.File(io.BytesIO(row['media']),filename=filename)
                 elif row['upload_key']:
                     raise ValueError('No encontramos la imagen de esta subida. Vuelve a subirla, bro.')
-                message=await channel.send(embed=embed,view=PhotoControls(row['id'],row['votes'],closed(row)),
-                    allowed_mentions=discord.AllowedMentions.none(),**kwargs)
+                mentions=json.loads(row['mentions'])
+                message=await channel.send(content=' '.join(f'<@{uid}>' for uid in mentions) or None,
+                    embed=embed,view=PhotoControls(row['id'],row['votes'],closed(row)),
+                    allowed_mentions=discord.AllowedMentions(users=[discord.Object(id=uid) for uid in mentions],roles=False,everyone=False,replied_user=False),**kwargs)
             confirmed=await channel.fetch_message(message.id)
             if confirmed.reference or not any(e.image.url for e in confirmed.embeds):
                 raise RuntimeError('Discord no confirmó la publicación de foto con votos.')
@@ -339,7 +358,12 @@ class PhotoSystem:
             raise ValueError('Esta publicación no pertenece al bot.')
         if message.attachments:
             row['url']=message.attachments[0].url
-        await message.edit(embed=self.control_embed(row),view=PhotoControls(row['id'],row['votes'],closed(row)),allowed_mentions=discord.AllowedMentions.none())
+        edit={'embed':self.control_embed(row),'view':PhotoControls(row['id'],row['votes'],closed(row)),
+            'allowed_mentions':discord.AllowedMentions.none()}
+        content=' '.join(f'<@{uid}>' for uid in json.loads(row['mentions']))
+        if (message.content or '')!=content:
+            edit['content']=content or None
+        await message.edit(**edit)
         await self.call('rendered',row['id'],row['votes'],closed(row))
         await self.cleanup_legacy(row,channel)
         return message
@@ -570,11 +594,15 @@ class PhotoSystem:
             command = next((c.to_dict() for c in commands if c.name == 'foto'), {})
             if not {'semana', 'premio','subir','retirar'} <= {o['name'] for o in command.get('options', [])}:
                 raise RuntimeError('Discord no confirmó los comandos de Fotos.')
-            self.prepared = True
             log.info('PHOTOS pin_policy_verified winner_only_after_close=True panel_pinned=False current_week_pinned_sources=%s', pinned_sources)
             form=UploadForm(self).to_dict()
             if form['components'][0]['component']['type']!=19:
                 raise RuntimeError('No se confirmó el selector de fotos del formulario.')
+            mentions=form['components'][2]['component']
+            if mentions['type']!=5 or mentions.get('required') or mentions['min_values']!=0 or mentions['max_values']!=5:
+                raise RuntimeError('No se confirmó el campo opcional de menciones.')
+            self.prepared = True
+            log.info('PHOTOS upload_form_verified image=True optional_caption=True optional_mentions=True max_mentions=5 notify_selected_only=True')
             log.info('PHOTOS controls_verified channel=%s entries=%s buttons=vote,remove,upload commands=semana,premio,subir,retirar self_votes=False single_photo_post=True replies=False', channel.id, verified)
             log.info('PHOTOS ready channel=%s name=%s week=%s entries=%s closes=%s timezone=America/Puerto_Rico originals_preserved=True persistent_buttons=True',
                 channel.id, channel.name, week['week'], len(self.store.entries(week['week'])), week['ends'])
