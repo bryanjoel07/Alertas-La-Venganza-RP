@@ -56,7 +56,7 @@ class AnswerForm(discord.ui.Modal):
  async def on_submit(self,i):
   await i.response.defer(ephemeral=True,thinking=True)
   try:await self.system.answer(i,self.token,self.answer.value)
-  except ValueError as error:await reply(i,str(error),view=controls(self.token,['answer']))
+  except ValueError as error:await reply(i,str(error))
  async def on_error(self,i,error):
   log.error('Minigame answer failed',exc_info=error)
   await reply(i,'No pude comprobar la respuesta. Tu progreso se conserva; vuelve a abrir la pregunta.')

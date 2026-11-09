@@ -11,7 +11,12 @@ from economy_store import EconomyStore
 from minigame_catalog import KINDS
 
 REWARD=25
-COOLDOWN=8
+ANSWER_INTERVAL=12*60*60
+
+class AnswerWait(ValueError):
+ def __init__(self,next_at):
+  self.next_at=next_at
+  super().__init__(f'⏳ Ya usaste tu turno, bro. Puedes responder otra vez <t:{next_at}:R>\nPróximo turno: <t:{next_at}:F>.')
 
 def normalize(text):
  text=unicodedata.normalize('NFKD',str(text)).casefold()
@@ -47,8 +52,17 @@ class MinigameStore:
     '''CREATE TABLE IF NOT EXISTS lv_game_attempts(op TEXT PRIMARY KEY,user INTEGER NOT NULL,session TEXT NOT NULL,
      result TEXT NOT NULL,created INTEGER NOT NULL)''',
     '''CREATE TABLE IF NOT EXISTS lv_game_config(key TEXT PRIMARY KEY,value TEXT NOT NULL)''',
+    '''CREATE TABLE IF NOT EXISTS lv_game_turns(user INTEGER PRIMARY KEY,last_answer INTEGER NOT NULL)''',
    ]
    for sql in statements:db.execute(sql)
+   # Carry actual answers forward from the previous release, including wrong guesses.
+   # Replays of completed/skipped sessions never start or extend the waiting period.
+   latest={}
+   for row in db.execute('SELECT user,created,result FROM lv_game_attempts'):
+    if json.loads(row['result']).get('state') in {'correct','wrong'}:
+     latest[row['user']]=max(latest.get(row['user'],row['created']),row['created'])
+   for user,stamp in latest.items():
+    db.execute('INSERT INTO lv_game_turns VALUES (?,?) ON CONFLICT(user) DO UPDATE SET last_answer=MAX(last_answer,excluded.last_answer)',(user,stamp))
    db.execute('UPDATE lv_game_questions SET enabled=0')
    for q in questions:
     if q['kind'] not in KINDS or not q['id'] or not q['aliases'] or not all(normalize(a) for a in q['aliases']):raise ValueError('Pregunta incompleta.')
@@ -65,6 +79,14 @@ class MinigameStore:
   return dict(row)
  def get(self,token,user):
   with self.db() as db:return self._session(db,token,user)
+ @staticmethod
+ def _availability(db,user,stamp):
+  row=db.execute('SELECT last_answer FROM lv_game_turns WHERE user=?',(user,)).fetchone()
+  next_at=row['last_answer']+ANSWER_INTERVAL if row else None
+  return {'available':next_at is None or stamp>=next_at,'next_at':next_at,
+   'last_answer':row['last_answer'] if row else None}
+ def availability(self,user,now=None):
+  with self.db() as db:return self._availability(db,user,int(time.time()) if now is None else now)
  def open(self,user,kind,previous=None,skip=False,now=None):
   if kind not in KINDS:raise ValueError('Elige fotos, roleplay o acertijos.')
   stamp=int(time.time()) if now is None else now
@@ -89,13 +111,15 @@ class MinigameStore:
    receipt=db.execute('SELECT * FROM lv_game_attempts WHERE op=?',(op,)).fetchone()
    if receipt:
     if receipt['user']!=user or receipt['session']!=token:raise ValueError('Ese intento pertenece a otra pregunta.')
-    result=json.loads(receipt['result']);result['replayed']=True;return result
+    result=json.loads(receipt['result']);result['replayed']=True
+    if result['state'] in {'correct','wrong'}:result.setdefault('next_at',receipt['created']+ANSWER_INTERVAL)
+    return result
    session=self._session(db,token,user);question=json.loads(session['payload'])
    balance=db.execute('SELECT balance FROM eco_accounts WHERE user_id=?',(user,)).fetchone();balance=balance[0] if balance else 0
    result={'state':'already' if session['status']=='correct' else 'skipped','coins':0,'balance':balance,'question':session['question']}
    if session['status']=='active':
-    last=db.execute('SELECT MAX(created) FROM lv_game_attempts WHERE user=?',(user,)).fetchone()[0]
-    if last is not None and stamp-last<COOLDOWN:raise ValueError(f'Espera {COOLDOWN-(stamp-last)} segundos antes de probar otra respuesta.')
+    turn=self._availability(db,user,stamp)
+    if not turn['available']:raise AnswerWait(turn['next_at'])
     correct=normalize(text) in {normalize(a) for a in question['aliases']}
     result['state']='correct' if correct else 'wrong'
     if correct:
@@ -109,6 +133,8 @@ class MinigameStore:
       db.execute('INSERT INTO lv_game_wins VALUES (?,?,?,?,?,?)',(user,session['question'],token,REWARD,ledger_op,stamp))
       result['coins']=REWARD;result['balance']=balance+REWARD
      db.execute("UPDATE lv_game_sessions SET status='correct',updated=? WHERE id=?",(stamp,token))
+    db.execute('INSERT INTO lv_game_turns VALUES (?,?) ON CONFLICT(user) DO UPDATE SET last_answer=excluded.last_answer',(user,stamp))
+    result['next_at']=stamp+ANSWER_INTERVAL
    db.execute('INSERT INTO lv_game_attempts VALUES (?,?,?,?,?)',(op,user,token,json.dumps(result),stamp))
    return result
  def progress(self,user):
@@ -120,7 +146,8 @@ class MinigameStore:
     kinds.append({'kind':kind,'total':total,'won':won})
    coins=db.execute('SELECT COALESCE(SUM(coins),0) FROM lv_game_wins WHERE user=?',(user,)).fetchone()[0]
    balance=db.execute('SELECT balance FROM eco_accounts WHERE user_id=?',(user,)).fetchone()
-   return {'kinds':kinds,'coins':coins,'balance':balance[0] if balance else 0}
+   return {'kinds':kinds,'coins':coins,'balance':balance[0] if balance else 0,
+    'turn':self._availability(db,user,int(time.time()))}
  def ranking(self):
   with self.db() as db:return [dict(r) for r in db.execute('SELECT user,COUNT(*) AS correct,SUM(coins) AS coins FROM lv_game_wins GROUP BY user ORDER BY correct DESC,MIN(created),user LIMIT 10')]
  def audit(self):

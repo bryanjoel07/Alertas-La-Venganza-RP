@@ -13,11 +13,10 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='minigames-v1'
-SUMMARY='Añade minijuegos desde un panel en General: 50 imágenes recreadas de lugares de GTA V, 25 preguntas de roleplay y 25 acertijos, con pistas y respuestas privadas. Cada pregunta correcta paga 25 monedas al saldo de la tienda una vez por jugador, con acierto, saldo y recibo en una misma transacción. Incluye progreso y ranking persistentes. No cambia canales, roles ni permisos.'
-RESTORE=('Para retirar los minijuegos, desplegar 1838de442938bcf1cffbc2a14e66067e05d19b02 conservando la SQLite actual. No restaurar una base antigua, retirar monedas pagadas ni borrar lv_game_* o movimientos minigame:*. Los controles del juego dejarán de estar atendidos al retirar el código; no borrar mensajes históricos de General para revertir. Ver MINIJUEGOS.md. '
+RELEASE='minigames-12h-v1'
+SUMMARY='Limita los minijuegos a una respuesta cada 12 horas por jugador, hasta dos en 24 horas entre los tres modos. El intento cuenta al enviar una respuesta correcta o incorrecta; ver preguntas y pistas no lo consume. Guarda el tiempo junto al intento y muestra el próximo turno. Recupera la última respuesta real de la versión anterior y conserva premios, progreso y saldo.'
+RESTORE=('Para revertir el límite, desplegar ea246942c701fd723a944f77b68c498398c713d4 conservando la SQLite actual: esa versión permite responder cada ocho segundos. Mantener lv_game_turns y lv_game_attempts; al regresar a la versión con límite se recupera la última respuesta real, incluso durante la reversión. No restaurar una base antigua, retirar monedas ni borrar lv_game_* o movimientos minigame:*. Ver MINIJUEGOS.md. '
          'Conservar reclutamiento, tickets, fotos, podios, archivos, votos, ajustes, compras, saldos y AutoMod. La administración sigue asignando el rol después de aceptar una solicitud de staff. '
-         'Los accesos temporales de entrevista siguen a cargo del sistema de reclutamiento; no retirar ni sobrescribir sus registros lv_recruit_voice. '
          'No reiniciar daily_server_up_slot ni duplicar anuncios o premios. Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
 
 

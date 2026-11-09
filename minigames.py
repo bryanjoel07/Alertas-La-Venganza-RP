@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 
 from minigame_catalog import load_bank,ASSETS,KINDS
-from minigame_store import MinigameStore,REWARD,normalize
+from minigame_store import MinigameStore,REWARD,ANSWER_INTERVAL,AnswerWait,normalize
 from minigame_ui import GamePanel,GameAction,AnswerForm,controls,reply,RED
 
 log=logging.getLogger('LaVenganzaRP.minigames')
@@ -46,6 +46,8 @@ class MinigameSystem:
  async def play(self,i,kind,previous=None,skip=False):
   if not i.response.is_done():await i.response.defer(ephemeral=True,thinking=True)
   await self.member(i)
+  turn=await self.call('availability',i.user.id)
+  if not turn['available']:return await reply(i,str(AnswerWait(turn['next_at'])))
   row=await self.call('open',i.user.id,kind,previous=previous,skip=skip)
   if row is None:
    await reply(i,'¡Ya acertaste todas las preguntas de este modo! 🏆\nPuedes probar los otros modos desde estos botones.',view=GamePanel(self));return
@@ -53,7 +55,7 @@ class MinigameSystem:
  async def show_question(self,i,row):
   q=json.loads(row['payload'])
   embed=discord.Embed(title={'foto':'📸 ¿Conoces Los Santos?','roleplay':'🎭 ¿Qué tanto sabes de rol?','acertijo':'🧩 A ver si te sale…'}[q['kind']],
-   description=q['prompt']+'\n\nPulsa **Responder** y escribe tu respuesta.\n🪙 **25 monedas si aciertas.**',color=RED)
+   description=q['prompt']+'\n\nPulsa **Responder** y escribe tu respuesta.\n🪙 **25 monedas si aciertas.**\n⏳ Tienes un intento cada 12 horas, aciertes o no.',color=RED)
   embed.set_footer(text=('Recreación de un lugar de GTA V · ' if q['kind']=='foto' else '')+'Un premio por pregunta y jugador · Tu progreso se guarda')
   kwargs={}
   if q.get('image'):
@@ -68,6 +70,10 @@ class MinigameSystem:
    if row['status']!='active':
     await i.response.defer(ephemeral=True)
     return await reply(i,'Esta pregunta ya terminó. Pulsa «Siguiente» para seguir jugando.',view=controls(token,['next']))
+   turn=await self.call('availability',i.user.id)
+   if not turn['available']:
+    await i.response.defer(ephemeral=True)
+    return await reply(i,str(AnswerWait(turn['next_at'])))
    await i.response.send_modal(AnswerForm(self,token))
   elif action=='hint':
    if row['status']!='active':return await reply(i,'Esta pregunta ya terminó.',view=controls(token,['next']))
@@ -82,12 +88,13 @@ class MinigameSystem:
   result=await self.call('answer',i.user.id,token,text,str(i.id),self.bot.user.id)
   q=json.loads(row['payload'])
   if result['state']=='wrong':
-   return await reply(i,'Por ahí no, bro. Prueba otra vez o pide una pista.',view=controls(token,['answer','hint','skip']))
+   return await reply(i,f'No era esa, bro. Puedes intentarlo de nuevo <t:{result["next_at"]}:R>.\nPróximo turno: <t:{result["next_at"]}:F>.')
   if result['state']=='skipped':return await reply(i,'Esa pregunta ya la cambiaste. Abre el juego para seguir con la actual.',view=GamePanel(self))
   if result['state']=='already':
    return await reply(i,'Esa ya la acertaste y su premio está guardado. Vamos con la siguiente.',view=controls(token,['next']))
   embed=discord.Embed(title='✅ ¡Esa es!',color=RED,description=f'**{q["answer"]}**\n{q["explanation"]}\n\n🪙 **+{result["coins"]} monedas**\nTu saldo de la tienda: **{result["balance"]:,} monedas**.')
-  embed.set_footer(text='Puedes usarlas en la Tienda Exclusive y verlas con /saldo o /perfil.')
+  embed.add_field(name='Tu próximo turno',value=f'<t:{result["next_at"]}:F> · <t:{result["next_at"]}:R>',inline=False)
+  embed.set_footer(text='Un intento cada 12 horas entre los tres modos · Monedas para la Tienda Exclusive')
   await reply(i,embed=embed,view=controls(token,['next']))
   log.info('MINIGAME paid question=%s user=%s coins=%s receipt=%s replayed=%s',q['id'],i.user.id,result['coins'],i.id,result.get('replayed',False))
  async def progress(self,i):
@@ -97,6 +104,8 @@ class MinigameSystem:
    description='\n'.join(f'**{KINDS[k["kind"]]}:** {k["won"]}/{k["total"]} acertadas' for k in progress['kinds']))
   embed.add_field(name='Ganaste jugando',value=f'{progress["coins"]:,} monedas')
   embed.add_field(name='Saldo actual de la tienda',value=f'{progress["balance"]:,} monedas')
+  turn=progress['turn']
+  embed.add_field(name='Tu próximo turno',value='Disponible ahora' if turn['available'] else f'<t:{turn["next_at"]}:F> · <t:{turn["next_at"]}:R>',inline=False)
   await reply(i,embed=embed)
  async def ranking(self,i):
   await i.response.defer(ephemeral=True,thinking=True);await self.member(i);rows=await self.call('ranking')
@@ -142,7 +151,7 @@ class MinigameSystem:
   counts={kind:sum(q['kind']==kind for q in self.bank) for kind in KINDS}
   embed=discord.Embed(title='🧩 Un rato de juegos, bro',color=RED,
    description=f'📸 **Adivina el lugar:** {counts["foto"]} imágenes de sitios de GTA V.\n🎭 **Roleplay:** {counts["roleplay"]} preguntas para poner a prueba lo que sabes.\n🧩 **Acertijos:** {counts["acertijo"]} para darle al coco.\n\n'
-   '**Cada acierto te da 25 monedas para la tienda.**\nCada pregunta paga una sola vez por jugador. Las respuestas se escriben por privado y tu progreso queda guardado.\n\nElige un modo para empezar 👇')
+   '**Cada acierto te da 25 monedas para la tienda.**\n⏳ **Un intento cada 12 horas: hasta dos al día entre los tres modos.**\nEl tiempo empieza al enviar tu respuesta, aciertes o no. Abrir una pregunta o pedir una pista no gasta el turno.\nCada pregunta paga una sola vez por jugador. Tus respuestas y progreso son privados.\n\nElige un modo para empezar 👇')
   embed.set_footer(text=MARKER)
   if message:
    if message.author.id!=self.bot.user.id:raise ValueError('El mensaje guardado no pertenece a este bot.')
@@ -154,7 +163,7 @@ class MinigameSystem:
   expected={'lv:game:start:foto','lv:game:start:roleplay','lv:game:start:acertijo','lv:game:progress','lv:game:ranking'}
   if ids!=expected:raise ValueError('Discord no guardó todos los botones del juego.')
   return message
- async def ready(self,force=False,request='minigames-general-v1'):
+ async def ready(self,force=False,request='minigames-general-v2-12h'):
   async with self.lock:
    if self.prepared and not force:return
    await self.bot.changes.tracked('MINIGAME_PANEL','Preparar minijuegos en General',self.publish_panel,
@@ -164,5 +173,5 @@ class MinigameSystem:
    commands=await self.bot.tree.fetch_commands(guild=discord.Object(self.guild_id))
    if not {'jugar','minijuegos'}<={c.name for c in commands}:raise ValueError('Discord todavía no confirmó los comandos del juego.')
    self.prepared=True
-   log.info('MINIGAME ready channel=%s panel=%s questions=%s reward=%s wins=%s invalid_rewards=%s images=%s persistent_controls=True roles_unchanged=True',
-    GENERAL,await self.call('config','panel'),json.dumps(audit['questions']),REWARD,audit['wins'],audit['invalid_rewards'],len(list(ASSETS.glob('lugar-*.png'))))
+   log.info('MINIGAME ready channel=%s panel=%s questions=%s reward=%s wins=%s invalid_rewards=%s images=%s answer_interval_hours=%s all_modes_shared=True wrong_answers_count=True persistent_controls=True roles_unchanged=True',
+    GENERAL,await self.call('config','panel'),json.dumps(audit['questions']),REWARD,audit['wins'],audit['invalid_rewards'],len(list(ASSETS.glob('lugar-*.png'))),ANSWER_INTERVAL//3600)

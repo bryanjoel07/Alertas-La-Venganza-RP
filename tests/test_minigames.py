@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock,Mock,patch
 import discord
 from economy_store import SCHEMA,EconomyStore
 from minigame_catalog import load_bank,ASSETS
-from minigame_store import MinigameStore,normalize
+from minigame_store import MinigameStore,ANSWER_INTERVAL,AnswerWait,normalize
 from minigame_ui import GamePanel,AnswerForm,controls,GameAction
 from minigames import MinigameSystem,GENERAL
 from backup import snapshot
@@ -61,11 +61,55 @@ class GameStoreTests(unittest.TestCase):
   with self.assertRaises(ValueError):self.store.get(row['id'],100)
   with self.assertRaises(ValueError):self.store.open(100,'foto',previous=row['id'],skip=True)
   with self.assertRaises(ValueError):self.store.answer(100,row['id'],'Chiliad','forged',555,now=100)
- def test_wrong_guess_cooldown_carries_between_modes(self):
+ def test_wrong_guess_consumes_the_turn_across_all_modes_for_exactly_12_hours(self):
   row=self.store.open(99,'roleplay');self.store.answer(99,row['id'],'Wrong','first',555,now=100)
   other=self.store.open(99,'acertijo')
   with self.assertRaises(ValueError):self.store.answer(99,other['id'],'rio','fast',555,now=101)
-  result=self.store.answer(99,other['id'],'rio','okay',555,now=108);self.assertEqual(result['coins'],25)
+  with self.assertRaises(AnswerWait):self.store.answer(99,other['id'],'rio','still-early',555,now=100+ANSWER_INTERVAL-1)
+  result=self.store.answer(99,other['id'],'rio','okay',555,now=100+ANSWER_INTERVAL);self.assertEqual(result['coins'],25)
+  self.assertEqual(result['next_at'],100+2*ANSWER_INTERVAL)
+ def test_correct_answer_blocks_other_modes_and_does_not_reset_at_midnight(self):
+  stamp=23*3600+59*60
+  row=self.store.open(99,'roleplay');self.store.answer(99,row['id'],'mg','first',555,now=stamp)
+  other=self.store.open(99,'acertijo')
+  with self.assertRaises(AnswerWait) as caught:self.store.answer(99,other['id'],'rio','after-midnight',555,now=24*3600)
+  self.assertEqual(caught.exception.next_at,stamp+ANSWER_INTERVAL)
+  self.assertEqual(self.eco.account(99)['balance'],25)
+ def test_duplicate_submission_does_not_push_back_the_next_turn(self):
+  row=self.store.open(99,'roleplay');self.store.answer(99,row['id'],'mg','same',555,now=100)
+  self.store.answer(99,row['id'],'mg','same',555,now=1000)
+  self.store.answer(99,row['id'],'mg','old-modal',555,now=2000)
+  self.assertEqual(self.store.availability(99,now=2000)['next_at'],100+ANSWER_INTERVAL)
+ def test_viewing_skipping_and_hints_do_not_consume_the_turn(self):
+  first=self.store.open(99,'foto');self.store.get(first['id'],99)
+  self.store.open(99,'foto',previous=first['id'],skip=True)
+  self.assertTrue(self.store.availability(99,now=100)['available'])
+ def test_concurrent_wrong_answers_only_consume_one_turn(self):
+  row=self.store.open(99,'roleplay')
+  def attempt(op):
+   try:return self.store.answer(99,row['id'],'Wrong',op,555,now=100)['state']
+   except AnswerWait:return 'blocked'
+  with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(attempt,['first','second']))
+  self.assertCountEqual(results,['wrong','blocked'])
+  self.assertEqual(self.store.availability(99,now=100)['next_at'],100+ANSWER_INTERVAL)
+ def test_existing_actual_answers_seed_the_timer_but_old_button_receipts_do_not(self):
+  row=self.store.open(99,'roleplay');self.store.answer(99,row['id'],'mg','first',555,now=100)
+  self.store.answer(99,row['id'],'mg','old-button',555,now=1000)
+  with self.store.db() as db:db.execute('DROP TABLE lv_game_turns')
+  self.store.initialize(QUESTIONS)
+  self.assertEqual(self.store.availability(99,now=200)['next_at'],100+ANSWER_INTERVAL)
+  self.store.initialize(QUESTIONS)
+  self.assertEqual(self.store.availability(99,now=300)['next_at'],100+ANSWER_INTERVAL)
+ def test_wrong_answer_wait_survives_backup_and_restore(self):
+  row=self.store.open(99,'roleplay');self.store.answer(99,row['id'],'Wrong','first',555,now=100)
+  copy=Path(self.tmp.name)/'copy.sqlite';snapshot(self.path,copy);restored=MinigameStore(copy);restored.initialize(QUESTIONS)
+  with self.assertRaises(AnswerWait):restored.answer(99,row['id'],'mg','too-soon',555,now=200)
+  self.assertEqual(restored.availability(99,now=200)['next_at'],100+ANSWER_INTERVAL)
+ def test_different_players_have_independent_turns(self):
+  first=self.store.open(99,'roleplay');second=self.store.open(100,'roleplay')
+  self.store.answer(99,first['id'],'mg','first',555,now=100)
+  self.assertTrue(self.store.availability(100,now=100)['available'])
+  self.assertEqual(self.store.answer(100,second['id'],'mg','second',555,now=100)['coins'],25)
  def test_skip_does_not_pay_and_picks_another_unwon_question(self):
   row=self.store.open(99,'foto');other=self.store.open(99,'foto',previous=row['id'],skip=True)
   self.assertNotEqual(row['question'],other['question']);self.assertEqual(self.eco.account(99)['balance'],0)
@@ -137,6 +181,12 @@ class GameUiTests(unittest.IsolatedAsyncioTestCase):
   row=await self.system.call('open',99,'roleplay');self.system.member=AsyncMock()
   i=NS(user=NS(id=100),response=NS(defer=AsyncMock()))
   with self.assertRaises(ValueError):await self.system.action(i,row['id'],'hint')
+ async def test_answer_button_shows_countdown_instead_of_opening_another_form(self):
+  row=await self.system.call('open',99,'roleplay');await self.system.call('answer',99,row['id'],'Wrong','first',555)
+  self.system.member=AsyncMock()
+  i=NS(user=NS(id=99),response=NS(defer=AsyncMock(),send_modal=AsyncMock()))
+  with patch('minigames.reply',new=AsyncMock()) as send:await self.system.action(i,row['id'],'answer')
+  i.response.send_modal.assert_not_awaited();self.assertIn('Próximo turno',send.call_args.args[1])
  async def test_photo_is_bound_inside_embed_with_no_duplicate_content(self):
   question=next(q for q in load_bank() if q['id']=='foto01')
   row={'id':'a'*24,'payload':json.dumps(question)}
