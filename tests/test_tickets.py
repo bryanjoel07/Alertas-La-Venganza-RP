@@ -225,3 +225,14 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(result.id,51)
   self.assertEqual(self.system.store.config('closed_category'),'51')
   created.edit.assert_awaited_once()
+
+ async def test_attachment_uses_original_url_and_falls_back_to_cache(self):
+  missing=discord.NotFound(SimpleNamespace(status=404,reason='Not Found'),'missing')
+  attachment=SimpleNamespace(id=900,filename='proof.txt',url='https://cdn.discordapp.com/proof',size=5,
+      read=AsyncMock(side_effect=[missing,b'proof']))
+  message=SimpleNamespace(id=902,author=SimpleNamespace(id=1,display_name='Jugador'),content='Prueba',embeds=[],
+      attachments=[attachment],created_at=datetime.now(timezone.utc),edited_at=None)
+  await self.system.capture(self.system.store.get(self.rid),message,notify=False)
+  self.assertEqual(self.system.store.blob(self.rid,900),b'proof')
+  self.assertEqual(attachment.read.await_args_list[0].kwargs,{})
+  self.assertEqual(attachment.read.await_args_list[1].kwargs,{'use_cached':True})

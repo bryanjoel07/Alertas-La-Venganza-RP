@@ -295,12 +295,14 @@ class TicketSystem:
    await self.call('file',row['id'],message.id,attachment.id,attachment.filename,attachment.url,attachment.size)
    try:
     if attachment.size>int(self.store.config('max_file_mb'))*1048576:raise ValueError(f"El archivo supera el máximo de {self.store.config('max_file_mb')} MB por prueba.")
-    async with self.file_lock:data=await attachment.read(use_cached=True)
+    async with self.file_lock:
+     try:data=await attachment.read()
+     except discord.HTTPException:data=await attachment.read(use_cached=True)
     await self.call('save_blob',row['id'],attachment.id,data)
    except (discord.HTTPException,ValueError,asyncio.TimeoutError) as error:
     await self.call('file',row['id'],message.id,attachment.id,attachment.filename,attachment.url,attachment.size,state='no_respaldado')
     if notify:await message.channel.send(f"⚠️ La prueba `{discord.utils.escape_markdown(attachment.filename)[:100]}` no quedó respaldada. "+(str(error) if isinstance(error,ValueError) else 'Vuelve a adjuntarla para reintentar.'),allowed_mentions=discord.AllowedMentions.none())
-    log.warning('TICKETS proof_incomplete ticket=%s attachment=%s',row['id'],attachment.id)
+    log.warning('TICKETS proof_incomplete ticket=%s attachment=%s error_type=%s status=%s reason=%s',row['id'],attachment.id,type(error).__name__,getattr(error,'status',None),str(error) if isinstance(error,ValueError) else 'CDN download failed')
  async def observe(self,message):
   if not self.enabled() or not message.guild or message.guild.id!=self.guild_id or message.author.bot:return
   row=await self.call('get',channel=message.channel.id)
