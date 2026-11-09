@@ -96,10 +96,16 @@ async def apply_layout(http,guild_id,positions):
     # Discord allows only one parent_id change per bulk request (error 40009).
     await http.bulk_channel_update(guild_id,order,reason=reason)
     moves = [item for item in positions if 'parent_id' in item]
+    blocked = []
     for item in moves:
-        await http.bulk_channel_update(guild_id,[item],reason=reason)
+        try:
+            await http.bulk_channel_update(guild_id,[item],reason=reason)
+        except discord.Forbidden:
+            blocked.append(item['id'])
+            log.warning('NAVIGATION blocked_channel=%s destination=%s reason=MissingAccess',item['id'],item['parent_id'])
     if moves:
         await http.bulk_channel_update(guild_id,order,reason=reason)
+    return blocked
 
 
 async def arrange_navigation(bot,guild_id,path):
@@ -125,8 +131,18 @@ async def arrange_navigation(bot,guild_id,path):
             item.update(parent_id=moves[item['id']],lock_permissions=False)
     # The same request may run again after a restart; do not overwrite its rollback snapshot.
     target = {item['id']:item['position'] for item in positions}
+    blocked = []
     if moves or any(c['position']!=target[c['id']] for c in before):
-        await apply_layout(bot.http,guild.id,positions)
+        blocked = await apply_layout(bot.http,guild.id,positions)
+        if blocked:
+            old_parents = {c['id']:c['parent'] for c in before}
+            for channel in projected:
+                if channel['id'] in blocked:
+                    channel['parent'] = old_parents[channel['id']]
+                    moves.pop(channel['id'],None)
+            positions = plan(projected)
+            target = {item['id']:item['position'] for item in positions}
+            await apply_layout(bot.http,guild.id,positions)
     after = inventory(await guild.fetch_channels())
     if protected_state(projected)!=protected_state(after):
         raise RuntimeError('Cambió la estructura o los permisos durante la ordenación; revisar antes de continuar')
@@ -148,4 +164,7 @@ async def arrange_navigation(bot,guild_id,path):
         children = sorted((v for v in after if v['parent']==c['id']),key=lambda v:(v['bucket'],v['position']))
         log.info('NAVIGATION %s category=%s position=%s channels=%s',request,c['name'],c['position'],
                  json.dumps([v['name'] for v in children],ensure_ascii=False))
-    log.info('NAVIGATION %s verified channels=%s permissions_unchanged=True snapshot=%s',request,len(after),snapshot.name)
+    for channel in after:
+        if channel['id'] in REGROUP and os.getenv('NAVIGATION_REGROUP')=='1':
+            log.info('NAVIGATION %s assignment=%s parent=%s blocked=%s',request,channel['name'],channel['parent'],channel['id'] in blocked)
+    log.info('NAVIGATION %s verified channels=%s permissions_unchanged=True blocked=%s snapshot=%s',request,len(after),blocked,snapshot.name)

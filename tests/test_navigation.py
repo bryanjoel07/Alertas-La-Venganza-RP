@@ -89,3 +89,22 @@ class DiscordMoveTests(unittest.IsolatedAsyncioTestCase):
             dict(id='2',position=1,parent_id='10',lock_permissions=False),
             dict(id='3',position=2,parent_id='11',lock_permissions=False)])
         self.assertEqual(moved,['2','3'])
+
+    async def test_one_private_channel_does_not_block_other_moves(self):
+        import discord
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from navigation import apply_layout
+        changed=[]
+        async def api(guild_id,payload,**kwargs):
+            for item in payload:
+                if 'parent_id' in item:
+                    if item['id']=='2':
+                        raise discord.Forbidden(SimpleNamespace(status=403,reason='Forbidden'),{'code':50001,'message':'Missing Access'})
+                    changed.append(item['id'])
+        http=SimpleNamespace(bulk_channel_update=AsyncMock(side_effect=api))
+        blocked=await apply_layout(http,123,[dict(id='1',position=0),
+            dict(id='2',position=1,parent_id='10',lock_permissions=False),
+            dict(id='3',position=2,parent_id='11',lock_permissions=False)])
+        self.assertEqual(blocked,['2'])
+        self.assertEqual(changed,['3'])
