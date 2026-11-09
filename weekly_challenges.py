@@ -34,7 +34,7 @@ class WeeklyChallenges:
         week,start,end = week_bounds(now)
         start = max(start,int(self.store.get(db,'challenges_since',str(now))))
         # Event timestamps may use UTC or PR; compare using SQLite's UTC normalizer.
-        eligible = "status='finished' AND unixepoch(starts_at)>=? AND unixepoch(starts_at)<?"
+        eligible = "(status='finished' OR (status='closed' AND (winner1 IS NOT NULL OR winner2 IS NOT NULL OR winner3 IS NOT NULL))) AND unixepoch(starts_at)>=? AND unixepoch(starts_at)<?"
         participating = db.execute(f'''SELECT 1 FROM events e JOIN eco_participants p ON p.event_id=e.id
             WHERE p.user_id=? AND p.actor IS NOT NULL AND {eligible} LIMIT 1''',(user,start,end)).fetchone()
         podium = db.execute(f'''SELECT 1 FROM events WHERE {eligible}

@@ -55,6 +55,12 @@ class WeeklyTests(unittest.TestCase):
         self.activity();self.weekly.claim(7,self.now)
         self.assertEqual(self.weekly.claim(7,self.now+7*86400),0)
 
+    def test_archived_results_remain_eligible(self):
+        self.activity()
+        with self.store.db() as db:
+            db.execute("UPDATE events SET status='closed' WHERE id=1")
+        self.assertEqual(self.weekly.claim(7,self.now),450)
+
     def test_monday_midnight_puerto_rico_boundary(self):
         a=int(datetime.fromisoformat('2026-11-09T03:59:59+00:00').timestamp())
         self.assertEqual(week_bounds(a)[0],'2026-11-02')
