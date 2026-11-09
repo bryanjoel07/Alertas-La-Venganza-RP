@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='advanced-tickets-v1.2'
-SUMMARY='Respaldo de pruebas de tickets: descargar el adjunto original y recurrir a la caché de Discord si el original no está disponible. Registro explícito de archivos que requieren reintento.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 6146b2ee5239653b9c8554f7c12fbfadd4d04ffb en Railway. '
+RELEASE='advanced-tickets-v1.3'
+SUMMARY='Verificación de tickets: comparar permisos por contenido, sin depender del orden en que Discord devuelve las excepciones. Archivo de pruebas original y caché verificado en dos casos privados.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 41282a9bc799a0137dc9e7d88b183ff7e6372f83 en Railway. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin. No borrar canales ni recrearlos: se perdería su historial.')

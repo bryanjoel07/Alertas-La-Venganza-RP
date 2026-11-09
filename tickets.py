@@ -547,7 +547,7 @@ class TicketSystem:
   if not request or self.store.config('selftest-complete:'+request):return
   if not re.fullmatch('[A-Za-z0-9_-]{1,80}',request):raise ValueError('Identificador de prueba inválido')
   guild=self.bot.get_guild(self.guild_id)
-  original_channels={c.id:(c.category_id,c.name,[(o.type,o.id,o.allow,o.deny) for o in c._overwrites]) for c in await guild.fetch_channels()}
+  original_channels={c.id:(c.category_id,c.name,sorted((o.type,o.id,o.allow,o.deny) for o in c._overwrites)) for c in await guild.fetch_channels()}
   protected_before={r.id:(r.name,r.position,r.permissions.value,r.colour.value) for r in await guild.fetch_roles() if r.id in PROTECTED}
   async with self.lock:
    for index,department in enumerate(('soporte','staff')):
@@ -604,7 +604,9 @@ class TicketSystem:
   for channel in await guild.fetch_channels():
    if channel.id in original_channels and not (getattr(channel,'topic','') or '').startswith('lv-ticket:'):
     before=original_channels[channel.id]
-    if (channel.category_id,channel.name,[(o.type,o.id,o.allow,o.deny) for o in channel._overwrites])!=before:raise RuntimeError('Un canal anterior cambió durante la prueba')
+    if (channel.category_id,channel.name,sorted((o.type,o.id,o.allow,o.deny) for o in channel._overwrites))!=before:
+     log.error('TICKETS selftest_existing_channel_change id=%s parent_changed=%s name_changed=%s permissions_changed=%s',channel.id,channel.category_id!=before[0],channel.name!=before[1],sorted((o.type,o.id,o.allow,o.deny) for o in channel._overwrites)!=before[2])
+     raise RuntimeError('Un canal anterior cambió durante la prueba')
   self.store.config('selftest-complete:'+request,'verified')
   log.info('TICKETS selftest_complete request=%s protected_roles_unchanged=True legacy_channels_unchanged=True',request)
  def register(self):
