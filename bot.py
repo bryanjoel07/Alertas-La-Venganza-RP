@@ -33,6 +33,7 @@ from economy import Economy
 from profiles_hub import ProfileTree
 from server_audit import audit_server
 from fivem_probe import FiveMProbe
+from navigation import arrange_navigation
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1471,6 +1472,10 @@ async def on_raw_message_delete(payload):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    try:
+        await arrange_navigation(client, GUILD_ID, DB_PATH)
+    except Exception:
+        log.exception("No se pudo completar la ordenación de navegación")
     try:
         channel = daily_up_channel()
         log.info("Destino SERVER UP diario 18:30 Puerto Rico: %s (%s); alertas caída/recuperación: %s",
