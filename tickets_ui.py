@@ -65,6 +65,8 @@ class TicketPanel(SafeView):
   super().__init__(timeout=None);self.system=system;self.add_item(DepartmentPicker(system))
  @discord.ui.button(label='Mis tickets',emoji='📂',custom_id='lv:ticket:mine',row=1)
  async def mine(self,i,button):await self.system.show_list(i,own=True)
+ @discord.ui.button(label='Tickets cerrados',emoji='🔒',custom_id='lv:ticket:closed',row=1)
+ async def closed(self,i,button):await self.system.show_closed(i)
  @discord.ui.button(label='Gestión Staff',emoji='🧰',custom_id='lv:ticket:dashboard',row=1)
  async def dashboard(self,i,button):await self.system.show_list(i,own=False)
 

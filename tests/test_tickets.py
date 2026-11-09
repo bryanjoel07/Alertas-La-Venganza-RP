@@ -236,3 +236,21 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(self.system.store.blob(self.rid,900),b'proof')
   self.assertEqual(attachment.read.await_args_list[0].kwargs,{})
   self.assertEqual(attachment.read.await_args_list[1].kwargs,{'use_cached':True})
+
+ async def test_closed_shortcut_filters_other_players_and_reserved_cases(self):
+  self.system.store.transition(self.rid,'cerrado',5,'Resuelto')
+  other=self.system.store.create(8,'soporte','Otro caso',{},now=1000)
+  self.system.store.update(other,status='nuevo',channel=101)
+  self.system.store.transition(other,'cerrado',5,'Privado')
+  reserved=self.system.store.create(9,'staff','Reservado',{},now=1000)
+  self.system.store.update(reserved,status='nuevo',channel=102)
+  self.system.store.transition(reserved,'cerrado',3,'Reservado')
+  await self.system.show_closed(self.i)
+  body=self.i.response.send_message.call_args.kwargs['embed'].description
+  self.assertIn(f'**#{self.rid}**',body);self.assertNotIn(f'**#{other}**',body);self.assertNotIn(f'**#{reserved}**',body)
+  self.i.user=self.staff
+  await self.system.show_closed(self.i)
+  body=self.i.response.send_message.call_args.kwargs['embed'].description
+  self.assertIn(f'**#{other}**',body);self.assertNotIn(f'**#{reserved}**',body)
+  panel=TicketPanel(self.system)
+  self.assertIn('lv:ticket:closed',[item.custom_id for item in panel.children])

@@ -252,25 +252,30 @@ class TicketSystem:
   roles=[r for r in channel.guild.roles if r.id in ids]
   mentions=' '.join(f'<@&{r.id}>' for r in roles)
   await channel.send(f"{mentions} Nuevo caso #{row['id']} pendiente de asignación.",allowed_mentions=discord.AllowedMentions(roles=roles,users=False,everyone=False))
- async def show_list(self,i,own=False,page=1):
+ async def show_closed(self,i,page=1):
+  reviewer=i.user.guild_permissions.administrator or bool({r.id for r in i.user.roles}&ALL_STAFF) or any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
+  await self.show_list(i,own=not reviewer,page=page,closed_only=True)
+ async def show_list(self,i,own=False,page=1,closed_only=False):
   if not i.response.is_done():await i.response.defer(ephemeral=True)
   coordinator=any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
   if not own and not (i.user.guild_permissions.administrator or {r.id for r in i.user.roles}&ALL_STAFF or coordinator):raise ValueError('Panel reservado para el staff.')
   # Fetch beyond one department then filter BEFORE displaying anything, including statistics.
   all_rows=await self.call('list',owner=i.user.id if own else None,limit=10000)
-  visible=[r for r in all_rows if (own or can_staff(i.user,r,self.store)) and not json.loads(r['form']).get('selftest')]
+  visible=[r for r in all_rows if (own or can_staff(i.user,r,self.store)) and (closed_only or not json.loads(r['form']).get('selftest')) and (not closed_only or r['status']=='cerrado')]
   visible=sorted(visible,key=lambda r:(r['status']=='cerrado',-r['id']))
   rows=visible[(page-1)*25:page*25]
   lines=[f"**#{r['id']}** · {DEPARTMENTS[r['department']][1]} · {STATE_LABELS.get(r['status'],r['status'])} · "+(f"<#{r['channel']}>" if r['channel'] else 'Preparando') for r in rows]
-  embed=discord.Embed(title='📂 Mis tickets' if own else '🧰 Gestión de tickets',description='\n'.join(lines) or 'No hay casos en esta página.',color=0xD60000)
-  if not own:
+  title=('🔒 Mis tickets cerrados' if own else '🔒 Tickets cerrados autorizados') if closed_only else ('📂 Mis tickets' if own else '🧰 Gestión de tickets')
+  embed=discord.Embed(title=title,description='\n'.join(lines) or 'No hay casos en esta página.',color=0xD60000)
+  if not own and not closed_only:
    active=[r for r in visible if r['status'] not in ('cerrado','fallido','creando')]
    responses=[r['first_response']-r['created'] for r in visible if r['first_response']]
    ratings=[r['rating'] for r in visible if r['rating'] is not None]
    embed.add_field(name='Seguimiento',value=f"Activos: {len(active)} · Sin responsable: {sum(not r['assignee'] for r in active)}\n"+
        (f"Primera respuesta media: {sum(responses)/len(responses)/60:.0f} min" if responses else 'Primera respuesta: sin datos')+
        (f" · Valoración: {sum(ratings)/len(ratings):.1f}/5" if ratings else ''),inline=False)
-  embed.set_footer(text=f'Página {page} · /ticket gestion pagina:{page+1}' if not own else f'Página {page} · /ticket mis pagina:{page+1}')
+  command='cerrados' if closed_only else 'gestion' if not own else 'mis'
+  embed.set_footer(text=f'Página {page} · /ticket {command} pagina:{page+1}')
   view=discord.ui.View(timeout=180)
   if rows:view.add_item(CasePicker(self,rows,not own))
   await reply(i,embed=embed,view=view)
@@ -469,11 +474,12 @@ class TicketSystem:
   confirmed=await panel.fetch_message(message.id)
   ids=[getattr(c,'custom_id',None) for r in confirmed.components for c in r.children]
   labels=[option.label for row in confirmed.components for component in row.children for option in getattr(component,'options',[])]
-  if 'lv:ticket:department' not in ids or DEPARTMENTS['faccion'][1] not in labels:raise ValueError('Discord no confirmó el panel de tickets actualizado.')
+  if 'lv:ticket:department' not in ids or 'lv:ticket:closed' not in ids or DEPARTMENTS['faccion'][1] not in labels:raise ValueError('Discord no confirmó el panel de tickets actualizado.')
   for ticket in self.store.list(limit=10000):
    if ticket['department']=='faccion' and ticket['channel']:
     await self.refresh(ticket)
   log.info('TICKETS department_labels_verified labels=%s',labels)
+  log.info('TICKETS closed_navigation_verified button=lv:ticket:closed category=%s states=%s',closed.id,self.store.stats()['states'])
   log.info('TICKETS panel_verified channel=%s message=%s closed_category=%s legacy_channels_untouched=True protected_roles_untouched=True',panel.id,message.id,closed.id)
  async def ready(self):
   if not self.enabled():return
@@ -617,6 +623,8 @@ class TicketSystem:
  def register(self):
   @self.group.command(name='mis',description='Consultar tus tickets activos y cerrados')
   async def mine(i:discord.Interaction,pagina:app_commands.Range[int,1,1000000]=1):await self.show_list(i,True,pagina)
+  @self.group.command(name='cerrados',description='Consultar los tickets cerrados que tienes autorizados')
+  async def closed(i:discord.Interaction,pagina:app_commands.Range[int,1,1000000]=1):await self.show_closed(i,pagina)
   @self.group.command(name='gestion',description='Panel privado de responsables, pendientes y atención')
   async def dashboard(i:discord.Interaction,pagina:app_commands.Range[int,1,1000000]=1):await self.show_list(i,False,pagina)
   @self.group.command(name='acceso',description='Abrir un ticket como revisor autorizado')

@@ -24,7 +24,7 @@ Controles persistentes: Reclamar, Solicitar pruebas, Resolver, Cerrar, Reabrir, 
 
 Comandos principales:
 
-- `/ticket mis` y `/ticket gestion`: listas paginadas. Los datos reservados se filtran antes de calcular estadísticas.
+- `/ticket mis`, `/ticket cerrados` y `/ticket gestion`: listas paginadas. El panel incluye un botón Tickets cerrados para abrir la lista autorizada desde el canal de entrada. Los datos reservados se filtran antes de calcular estadísticas.
 - `/ticket acceso`, `/ticket estado`, `/ticket transferir`, `/ticket participante`.
 - `/ticket nota`, `/ticket notas`, `/ticket historial`.
 - `/ticket transcripcion` y `/ticket archivo` descargan copias privadas tras verificar de nuevo la autorización.
