@@ -68,3 +68,24 @@ class NavigationTests(unittest.TestCase):
         for id in ('1569151200673140897','1569084821983076512'):
             self.assertEqual(next(c['parent'] for c in projected if c['id']==id),'4')
         self.assertEqual(protected_state(items),before)
+
+
+class DiscordMoveTests(unittest.IsolatedAsyncioTestCase):
+    async def test_discord_parent_change_limit_and_permission_preservation(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from navigation import apply_layout
+        moved=[]
+        async def api(guild_id,payload,**kwargs):
+            parent_changes=[c for c in payload if 'parent_id' in c]
+            if len(parent_changes)>1:
+                raise ValueError('Discord 40009: Only one parent_id modified at a time')
+            for item in parent_changes:
+                self.assertFalse(item['lock_permissions'])
+                self.assertNotIn('permission_overwrites',item)
+                moved.append(item['id'])
+        http=SimpleNamespace(bulk_channel_update=AsyncMock(side_effect=api))
+        await apply_layout(http,123,[dict(id='1',position=0),
+            dict(id='2',position=1,parent_id='10',lock_permissions=False),
+            dict(id='3',position=2,parent_id='11',lock_permissions=False)])
+        self.assertEqual(moved,['2','3'])

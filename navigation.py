@@ -90,6 +90,18 @@ def protected_state(items):
     return {c['id']:(c['name'],c['type'],c['parent'],c['overwrites']) for c in items}
 
 
+async def apply_layout(http,guild_id,positions):
+    reason = 'Organizar categorías y canales: SERVER abre, Logs cierra; conservar permisos sin sincronizar'
+    order = [dict(id=item['id'],position=item['position']) for item in positions]
+    # Discord allows only one parent_id change per bulk request (error 40009).
+    await http.bulk_channel_update(guild_id,order,reason=reason)
+    moves = [item for item in positions if 'parent_id' in item]
+    for item in moves:
+        await http.bulk_channel_update(guild_id,[item],reason=reason)
+    if moves:
+        await http.bulk_channel_update(guild_id,order,reason=reason)
+
+
 async def arrange_navigation(bot,guild_id,path):
     request = os.getenv('NAVIGATION_REQUEST_ID','').strip()
     if not request or getattr(bot,'_navigation_request',None)==request:
@@ -114,8 +126,7 @@ async def arrange_navigation(bot,guild_id,path):
     # The same request may run again after a restart; do not overwrite its rollback snapshot.
     target = {item['id']:item['position'] for item in positions}
     if moves or any(c['position']!=target[c['id']] for c in before):
-        await bot.http.bulk_channel_update(guild.id,positions,
-            reason='Organizar categorías y canales: SERVER abre, Logs cierra; conservar permisos sin sincronizar')
+        await apply_layout(bot.http,guild.id,positions)
     after = inventory(await guild.fetch_channels())
     if protected_state(projected)!=protected_state(after):
         raise RuntimeError('Cambió la estructura o los permisos durante la ordenación; revisar antes de continuar')
