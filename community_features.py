@@ -75,6 +75,12 @@ class GuideView(discord.ui.View):
         super().__init__(timeout=None)
         self.features = features
 
+    async def interaction_check(self,i):
+        log.info('Botón guía recibido: %s',i.data.get('custom_id','desconocido'))
+        if not i.response.is_done():
+            await i.response.defer(ephemeral=True,thinking=True)
+        return True
+
     @discord.ui.button(label='Mi perfil',emoji='👤',custom_id='lvrp:guide:profile',row=0)
     async def profile(self,i,button):
         command = self.features.economy.bot.tree.get_command('perfil',guild=discord.Object(id=i.guild_id))
@@ -262,6 +268,7 @@ class CommunityFeatures:
         else:
             message=await channel.send(embed=embed,view=self.guide_view,allowed_mentions=discord.AllowedMentions.none())
         store.runtime_config('guide_message',message.id)
+        self.economy.bot.add_view(self.guide_view,message_id=message.id)
         self.guide_published = True
         log.info('Guía del bot lista: canal=%s mensaje=%s; retos y probador activos',channel.id,message.id)
 

@@ -63,3 +63,48 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(embed),6000)
         for text in ('/perfil','/probar','/retos','/streamer registrar','6:30'):
             self.assertIn(text,str(embed.to_dict()))
+
+class GuideDispatchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_all_six_buttons_acknowledge_before_work_after_restart(self):
+        import asyncio
+        from discord.ui.view import ViewStore
+        for binding in (None,77):
+            features=MagicMock()
+            view=GuideView(features)
+            view.on_error=AsyncMock()
+            interactions=[]
+            async def operation(i):
+                self.assertTrue(i.response.is_done())
+            features.economy.shop=AsyncMock(side_effect=operation)
+            features.economy.balance=AsyncMock(side_effect=operation)
+            features.show_picker=AsyncMock(side_effect=operation)
+            features.show_challenges=AsyncMock(side_effect=operation)
+            features.economy.bot.streamers.issue_code=AsyncMock(side_effect=operation)
+            profile=AsyncMock(side_effect=operation)
+            features.economy.bot.tree.get_command.return_value=SimpleNamespace(callback=profile)
+            # A fresh discord.py dispatcher reproduces a reconnect/restart registration.
+            store=ViewStore(MagicMock())
+            store.add_view(view,message_id=binding)
+            tasks=[]
+            store.add_task=tasks.append
+            for button in view.children:
+                i=MagicMock()
+                done=[False]
+                def mark_done(*args,_done=done,**kwargs):
+                    _done[0]=True
+                i.response.is_done.side_effect=lambda _done=done:_done[0]
+                i.response.defer=AsyncMock(side_effect=mark_done)
+                i.guild_id=23
+                i.message=SimpleNamespace(id=77)
+                i.data={'custom_id':button.custom_id,'component_type':2}
+                interactions.append(i)
+                store.dispatch_view(2,button.custom_id,i)
+            await asyncio.gather(*tasks)
+            self.assertEqual(len(tasks),6)
+            for i in interactions:
+                i.response.defer.assert_awaited_once_with(ephemeral=True,thinking=True)
+            for target in (profile,features.economy.shop,features.economy.balance,
+                           features.show_picker,features.show_challenges,features.economy.bot.streamers.issue_code):
+                target.assert_awaited_once()
+            view.on_error.assert_not_awaited()
+            view.stop()

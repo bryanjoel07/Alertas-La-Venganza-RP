@@ -504,7 +504,9 @@ class Economy:
             self.store.rows("UPDATE eco_audit SET sent=1 WHERE id=?", (row["id"],))
 
     async def shop(self, i):
-        rotation = self.store.rotation(user=i.user.id)
+        if not i.response.is_done():
+            await i.response.defer(ephemeral=True,thinking=True)
+        rotation = await asyncio.to_thread(self.store.rotation,user=i.user.id)
         now = time.time()
         available = [
             p
@@ -527,7 +529,9 @@ class Economy:
         )
 
     async def balance(self, i):
-        account = self.store.account(i.user.id)
+        if not i.response.is_done():
+            await i.response.defer(ephemeral=True,thinking=True)
+        account = await asyncio.to_thread(self.store.account,i.user.id)
         text = f"Saldo: **{account['balance']} 🪙**"
         if account["goal"]:
             g = account["goal"]

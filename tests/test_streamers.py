@@ -24,6 +24,7 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
         self.guild.me.guild_permissions = discord.Permissions(manage_roles=True)
         self.interaction = SimpleNamespace(guild=self.guild, guild_id=23, user=self.member,
                                            response=AsyncMock(), followup=AsyncMock())
+        self.interaction.response.is_done = MagicMock(return_value=False)
 
     async def invoke(self, name, *args):
         await self.system.get_command(name).callback(self.system, self.interaction, *args)
@@ -55,7 +56,7 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(panel.is_persistent())
         self.assertEqual([b.label for b in panel.children], ["Solicitar rol", "Ver mi estado"])
         await self.invoke("solicitar")
-        proof_buttons = self.interaction.response.send_message.await_args.kwargs["view"]
+        proof_buttons = self.interaction.followup.send.await_args.kwargs["view"]
         self.assertEqual([b.label for b in proof_buttons.children], ["Verificar requisitos"])
         link = "https://www.twitch.tv/example"
         await self.system.save_profile(self.interaction, link)

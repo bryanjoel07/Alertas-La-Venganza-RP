@@ -214,13 +214,15 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             ephemeral=True,allowed_mentions=discord.AllowedMentions.none())
 
     async def issue_code(self, interaction):
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True,thinking=True)
         guild, member = interaction.guild_id, interaction.user.id
         _, minimum = self.config(interaction.guild)
         async with self.lock:
             row = self.request(guild, member)
             now = int(time.time())
             if row and row["state"] in {"verificada", "entregada", "manual", "pendiente"}:
-                return await interaction.response.send_message(f"Tu solicitud está {row['state']}. Pulsa **Ver mi estado** para ver los detalles.", ephemeral=True, **self.approved_controls(row))
+                return await interaction.followup.send(f"Tu solicitud está {row['state']}. Pulsa **Ver mi estado** para ver los detalles.", ephemeral=True, **self.approved_controls(row))
             if not row or row["state"] == "rechazada" or now-row["issued"] >= 86400:
                 code = "LVRP-" + secrets.token_hex(5).upper()
                 with self.db() as db:
@@ -230,7 +232,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
                                (guild, member, now, code))
             else:
                 code = row["code"]
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Necesitas **{minimum} seguidores** (suscriptores en YouTube) en un canal. "
             f"Pon **La Venganza RP {code}** en el título de tu directo o repetición pública de la ciudad. "
             "Pulsa **Verificar requisitos** y pega el enlace al directo como prueba. Tu código dura 24 horas.",

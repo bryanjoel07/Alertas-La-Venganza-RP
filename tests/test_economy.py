@@ -200,6 +200,7 @@ class EconomyTests(unittest.TestCase):
             i.user = member
             i.response.is_done.return_value = False
             i.response.send_message = AsyncMock()
+            i.response.defer = AsyncMock()
             await system.shop(i)
             picker = i.response.send_message.call_args.kwargs["view"].children[0]
             choices = [opt.value for opt in picker.options]

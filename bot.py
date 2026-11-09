@@ -947,7 +947,8 @@ async def profile_access(interaction):
 @app_commands.describe(jugador="Opcional: selecciona un jugador; si lo omites se muestra tu perfil")
 async def perfil(interaction: discord.Interaction, jugador: discord.Member = None):
     private_card = interaction.type == discord.InteractionType.component
-    await interaction.response.defer(thinking=True, ephemeral=private_card)
+    if not interaction.response.is_done():
+        await interaction.response.defer(thinking=True, ephemeral=private_card)
     await profile_access(interaction)
     member = jugador or interaction.user
     view = PlayerCard(client, interaction.user.id, member, profile_access, client.economy.decorate)
@@ -1452,6 +1453,15 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
             await interaction.response.send_message(answer, ephemeral=True)
     except discord.HTTPException:
         log.exception("No se pudo responder")
+
+
+@client.event
+async def on_interaction(interaction):
+    data = interaction.data or {}
+    custom_id = data.get('custom_id', '')
+    if interaction.type == discord.InteractionType.component and custom_id.startswith('lvrp:guide:'):
+        log.info('Clic guía recibido por Discord: %s mensaje=%s', custom_id,
+                 interaction.message.id if interaction.message else None)
 
 
 @client.event
