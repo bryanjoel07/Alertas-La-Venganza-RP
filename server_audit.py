@@ -96,9 +96,9 @@ async def audit_server(bot, guild_id, path):
              role_overwrites=role_exceptions))
     for role in roles:
         elevated = [p for p in ('administrator','manage_guild','manage_roles','manage_channels','ban_members','kick_members','mention_everyone') if getattr(role.permissions,p)]
-        if elevated or role.managed:
-            emit(request,'role',dict(name=role.name,managed=role.managed,position=role.position,
-                                    above_bot=role>=me.top_role,permissions=elevated))
+        emit(request,'role',dict(id=str(role.id),name=role.name,managed=role.managed,position=role.position,
+                                above_bot=role>=me.top_role,permissions=elevated,
+                                permission_bits=role.permissions.value,color=role.colour.value,hoist=role.hoist))
     commands = await bot.tree.fetch_commands(guild=discord.Object(id=guild_id))
     emit(request,'commands',[dict(name=c.name,default_permissions=c.default_member_permissions.value if c.default_member_permissions else None) for c in commands])
     try:
