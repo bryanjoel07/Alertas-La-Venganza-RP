@@ -13,11 +13,11 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='minigames-12h-v1'
-SUMMARY='Limita los minijuegos a una respuesta cada 12 horas por jugador, hasta dos en 24 horas entre los tres modos. El intento cuenta al enviar una respuesta correcta o incorrecta; ver preguntas y pistas no lo consume. Guarda el tiempo junto al intento y muestra el próximo turno. Recupera la última respuesta real de la versión anterior y conserva premios, progreso y saldo.'
-RESTORE=('Para revertir el límite, desplegar ea246942c701fd723a944f77b68c498398c713d4 conservando la SQLite actual: esa versión permite responder cada ocho segundos. Mantener lv_game_turns y lv_game_attempts; al regresar a la versión con límite se recupera la última respuesta real, incluso durante la reversión. No restaurar una base antigua, retirar monedas ni borrar lv_game_* o movimientos minigame:*. Ver MINIJUEGOS.md. '
-         'Conservar reclutamiento, tickets, fotos, podios, archivos, votos, ajustes, compras, saldos y AutoMod. La administración sigue asignando el rol después de aceptar una solicitud de staff. '
-         'No reiniciar daily_server_up_slot ni duplicar anuncios o premios. Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
+RELEASE='server-up-banner-v2'
+SUMMARY='Sustituye el banner del anuncio SERVER UP por el diseño enviado por el propietario, conservando el JPG recibido sin editarlo. El archivo recibido tiene un solo fotograma de 400×225, por lo que no contiene animación. Se aplica a los próximos anuncios diarios y manuales; conserva horario, color rojo, texto y menciones existentes, sin reenviar avisos.'
+RESTORE=('Para revertir el banner, restaurar únicamente assets/banners/server-up.jpg desde 9129707a1b750039b97d1b05537c5a057c941bd6 y desplegar, o volver a ese commit conservando SQLite y /data. No restaurar una base antigua ni reiniciar daily_server_up_slot o manual_server_up_request; no duplicar anuncios. '
+         'Conservar los turnos de minijuegos cada 12 horas, premios, compras, saldos, fotos, votos, tickets, solicitudes de staff y ajustes. Este cambio no modifica mensajes ya publicados, canales ni permisos. '
+         'Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
 
 
 class Journal:
