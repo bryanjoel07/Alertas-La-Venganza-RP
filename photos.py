@@ -122,7 +122,14 @@ class PhotoSystem:
         return embed
 
     async def pin(self, message, value=True):
-        if message.author.id != self.bot.user.id or message.pinned == value:
+        if message.author.id != self.bot.user.id or message.channel.id != FOTOS_CHANNEL:
+            return
+        winner = await self.call('announced_winner', message.id)
+        if value and (not winner or winner['ends'] > int(time.time())):
+            raise ValueError('Solo se fija la foto ganadora después del cierre semanal.')
+        if not value and not winner and not any(e.title == PANEL_TITLE for e in message.embeds):
+            return
+        if message.pinned == value:
             return
         async def snapshot():
             current = await message.channel.fetch_message(message.id)
@@ -131,7 +138,7 @@ class PhotoSystem:
             if value:
                 await message.pin(reason='Foto de la semana solicitada por el propietario')
             else:
-                await message.unpin(reason='Dar paso a la nueva foto ganadora del bot')
+                await message.unpin(reason='Reservar los destacados para las fotos ganadoras al cerrar la semana')
         await self.bot.changes.tracked('PHOTO_PIN', 'Destacar publicación de Fotos', operation,
             request_id=f"{message.id}:{int(value)}", snapshot=snapshot)
 
@@ -157,10 +164,12 @@ class PhotoSystem:
             message = await channel.send(embed=self.panel_embed(week), allowed_mentions=discord.AllowedMentions.none())
         self.store.config('panel', message.id)
         self.store.config('panel_week', week['week'])
-        try:
-            await self.pin(message)
-        except discord.HTTPException:
-            log.warning('PHOTOS panel_pin_pending channel=%s message=%s', channel.id, message.id)
+        if message.pinned:
+            await self.pin(message, False)
+            confirmed = await channel.fetch_message(message.id)
+            if confirmed.pinned:
+                raise RuntimeError('Discord no confirmó que el panel quedó sin fijar.')
+            log.info('PHOTOS panel_unpinned channel=%s message=%s winner_only=True', channel.id, message.id)
 
     async def source(self, channel, row):
         try:
@@ -400,11 +409,14 @@ class PhotoSystem:
             # Recheck existing controls after offline deletions without touching original posts.
             week = await self.call('current')
             verified = 0
+            pinned_sources = []
             for row in await self.call('entries', week['week']):
                 if row['active']:
                     async with self.lock:
                         source, image = await self.source(channel, row)
                         if source and image:
+                            if source.pinned:
+                                pinned_sources.append(source.id)
                             message = await self.ensure_control(row, source)
                             confirmed = await channel.fetch_message(message.id)
                             ids = [getattr(c, 'custom_id', None) for r in confirmed.components for c in r.children]
@@ -416,6 +428,7 @@ class PhotoSystem:
             if not {'semana', 'premio'} <= {o['name'] for o in command.get('options', [])}:
                 raise RuntimeError('Discord no confirmó los comandos de Fotos.')
             self.prepared = True
+            log.info('PHOTOS pin_policy_verified winner_only_after_close=True panel_pinned=False current_week_pinned_sources=%s', pinned_sources)
             log.info('PHOTOS controls_verified channel=%s entries=%s buttons=vote,remove commands=semana,premio self_votes=False', channel.id, verified)
             log.info('PHOTOS ready channel=%s name=%s week=%s entries=%s closes=%s timezone=America/Puerto_Rico originals_preserved=True persistent_buttons=True',
                 channel.id, channel.name, week['week'], len(self.store.entries(week['week'])), week['ends'])

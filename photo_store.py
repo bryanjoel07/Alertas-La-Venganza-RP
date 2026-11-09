@@ -189,6 +189,11 @@ class PhotoStore:
             row = db.execute('SELECT * FROM lv_photo_weeks WHERE week=?', (week,)).fetchone()
             return dict(row) if row else None
 
+    def announced_winner(self, message):
+        with self.db() as db:
+            row = db.execute("SELECT * FROM lv_photo_weeks WHERE announcement=? AND state='published' AND winner IS NOT NULL", (message,)).fetchone()
+            return dict(row) if row else None
+
     def prize(self, week, sku, actor, now=None):
         now = int(time.time()) if now is None else now
         with self.db() as db:

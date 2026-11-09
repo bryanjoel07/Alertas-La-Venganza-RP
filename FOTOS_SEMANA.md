@@ -17,7 +17,7 @@ El bot elige la foto activa con más votos. En un empate, gana la publicada prim
 
 La publicación ganadora incluye la foto, el nombre de quien la subió, sus votos, la semana y un enlace al original. Cuando el tamaño permite subirla con la cuenta del bot, se conserva temporalmente una copia binaria en SQLite y se vuelve a subir al anunciarla; la copia temporal se libera tras confirmar el envío. Las imágenes mayores al límite de subida del bot se muestran mediante el adjunto original. La copia subida por el bot tiene su propio adjunto. Solo se menciona al ganador, sin @everyone.
 
-Se fija el destacado nuevo y se deja de fijar el destacado anterior del propio bot, conservando ambos mensajes. No se retiran fijados de jugadores ni de otros bots. Las operaciones de fijado guardan antes/después con `ChangeLog.tracked`. Un fallo al fijar no elimina la publicación ganadora.
+El panel de instrucciones se mantiene sin fijar; el fijado inicial de ese panel se retira automáticamente. Solo se fija una publicación registrada como ganadora tras el cierre semanal. Se deja de fijar el destacado anterior del propio bot, conservando ambos mensajes. No se retiran fijados de jugadores ni de otros bots. Las operaciones de fijado guardan antes/después con `ChangeLog.tracked`. Un fallo al fijar no elimina la publicación ganadora.
 
 Los registros de publicación y sus marcas permiten recuperar controles y anuncios enviados justo antes de un reinicio. Los cierres pendientes se retoman al volver a conectar. Los controles quedan desactivados al terminar su semana.
 
@@ -32,4 +32,4 @@ No hay premio de tienda hasta que un responsable lo elige. Al publicarse el gana
 
 Las tablas `lv_photo_config`, `lv_photo_weeks`, `lv_photo_entries`, `lv_photo_votes` y `lv_photo_actions` viven en el SQLite persistente existente. Los respaldos completos incluyen resultados, votos, premios y cualquier imagen que esté pendiente de publicación. No se promete que el respaldo contenga todas las fotos históricas del canal.
 
-`PHOTO_CONTEST_ENABLED=0` pausa el sistema conservando registros y mensajes. Para volver al código previo, desplegar `7394be7065f03292afa0e7b5b068d9968c6a16a4`, conservando `/data`. No restaurar una base antigua: se perderían votos y movimientos nuevos. No borrar mensajes de Fotos ni modificar roles protegidos para revertir la función.
+`PHOTO_CONTEST_ENABLED=0` pausa el sistema conservando registros y mensajes. Para revertir solo el cambio del panel sin fijar, desplegar `f75291817ac30d73bf66f3f7173924171921edf2`; esa versión vuelve a fijarlo. Para volver al código anterior a todo el concurso, desplegar `7394be7065f03292afa0e7b5b068d9968c6a16a4`. Conservar `/data`. No restaurar una base antigua: se perderían votos y movimientos nuevos. No borrar mensajes de Fotos ni modificar roles protegidos para revertir la función.

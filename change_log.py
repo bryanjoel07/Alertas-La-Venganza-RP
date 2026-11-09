@@ -13,10 +13,10 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v1'
-SUMMARY='Foto de la semana en Fotos: botones Votar y Quitar voto por imagen, un voto por persona y foto, cierre semanal en Puerto Rico, ganador con crédito y foto destacada. Se conservan originales y accesos. Votos y entregas de premios elegidos por administración se guardan en SQLite y sus respaldos; no hay cobros ni equipamiento automático.'
-RESTORE=('Para revertir esta versión: poner PHOTO_CONTEST_ENABLED=0 y desplegar el commit anterior 7394be7065f03292afa0e7b5b068d9968c6a16a4 en Railway. '
-         'Conservar /data y las tablas lv_photo_* con votos, ganadores y premios. El código anterior no las usa. Se detienen los botones y cierres automáticos de Fotos; las publicaciones originales, respuestas del bot y premios ya entregados se conservan. '
+RELEASE='weekly-photos-v1.1'
+SUMMARY='El panel de instrucciones de Fotos queda sin fijar y se retira su fijado inicial. El bot solo puede fijar una publicación de ganador registrada después del cierre de la semana. Votos, fotos originales y premios se conservan.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior f75291817ac30d73bf66f3f7173924171921edf2 en Railway, conservando /data y SQLite. Esa versión vuelve a fijar el panel al iniciar. '
+         'La reversión mantiene la votación semanal, los registros lv_photo_* y los premios entregados. No restaurar una base antigua ni retirar premios para revertir el fijado de un panel. '
          'Para revertir un destacado, consultar la operación PHOTO_PIN y restaurar solo el estado fijado del mensaje propio del bot por su ID; no tocar publicaciones de jugadores. No retirar un premio ni cambiar saldos como parte de una reversión de código. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '

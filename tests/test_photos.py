@@ -303,13 +303,27 @@ class PhotoServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.system.ready()
         self.assertTrue(self.system.prepared)
         panel=self.messages[int(self.system.store.config('panel'))]
-        self.assertTrue(panel.pinned)
+        self.assertFalse(panel.pinned)
         self.assertEqual(len(self.system.store.entries()),1)
         source.edit.assert_not_awaited();source.delete.assert_not_awaited()
         self.bot.edit_channel.assert_not_called();self.bot.create_text_channel.assert_not_called()
         count=source.reply.await_count
         await self.system.ready()
         self.assertEqual(source.reply.await_count,count)
+
+    async def test_initial_panel_pin_is_undone_once_without_pinning_a_photo_or_its_controls(self):
+        week=self.system.store.current(BASE)
+        panel=self.message(99);panel.embeds=[self.system.panel_embed(week)];panel.pinned=True
+        self.system.store.config('panel',panel.id)
+        await self.system.panel(self.channel)
+        self.assertFalse(panel.pinned);panel.unpin.assert_awaited_once();panel.pin.assert_not_awaited()
+        self.assertTrue(self.tracked[0]['pinned'])
+        await self.system.panel(self.channel)
+        panel.unpin.assert_awaited_once()
+        source=self.source();await self.system.observe(source)
+        row=self.system.store.entries()[0];control=self.messages[row['control']]
+        with self.assertRaisesRegex(ValueError,'cierre semanal'):await self.system.pin(control)
+        control.pin.assert_not_awaited();source.pin.assert_not_awaited()
 
     async def test_removed_image_buttons_are_disabled_without_deleting_its_post(self):
         source=self.source();await self.system.observe(source)
