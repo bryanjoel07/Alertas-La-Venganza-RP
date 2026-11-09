@@ -17,6 +17,10 @@ def dynamic_endpoint(value):
         return None
     if u.scheme not in ('http','https') or not address.is_global or u.username or u.password:
         return None
+    try:
+        u.port
+    except ValueError:
+        return None
     return f'{u.scheme}://{u.netloc}/dynamic.json'
 
 
@@ -31,6 +35,7 @@ class FiveMProbe:
         self.discovered = None
         self.next_discovery = 0
         self.last_result = None
+        self.detail = None
 
     async def check(self,configured,join):
         endpoints = list(dict.fromkeys(e for e in (configured,self.discovered) if e))
@@ -57,16 +62,21 @@ class FiveMProbe:
         try:
             async with http.get(endpoint,allow_redirects=False) as response:
                 if response.status != 200:
+                    self.detail = f'HTTP {response.status}'
                     return 'unreachable' if response.status in (502,503,504) else 'unknown'
-                return 'up' if healthy(await response.json(content_type=None)) else 'unknown'
-        except (aiohttp.ClientConnectorError,aiohttp.ServerDisconnectedError,asyncio.TimeoutError):
+                valid = healthy(await response.json(content_type=None))
+                self.detail = 'JSON de servidor válido' if valid else 'JSON sin identidad o estado del servidor'
+                return 'up' if valid else 'unknown'
+        except (aiohttp.ClientConnectorError,aiohttp.ServerDisconnectedError,asyncio.TimeoutError) as error:
+            self.detail = type(error).__name__
             return 'unreachable'
-        except (aiohttp.ClientError,ValueError):
+        except (aiohttp.ClientError,ValueError) as error:
+            self.detail = type(error).__name__
             return 'unknown'
 
     def record(self,result,endpoint):
         if (result,endpoint) != self.last_result:
             u = urlsplit(endpoint or '')
-            log.info('Lectura directa FiveM: %s host=%s puerto=%s',result,u.hostname,u.port)
+            log.info('Lectura directa FiveM: %s host=%s puerto=%s detalle=%s',result,u.hostname,u.port,self.detail)
             self.last_result = (result,endpoint)
         return result
