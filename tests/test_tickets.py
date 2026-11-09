@@ -359,3 +359,16 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   with self.assertRaisesRegex(ValueError,'cambió durante'):await self.system.delete_ticket(self.staff,self.rid)
   channel.delete.assert_not_awaited()
   self.assertIsNone(self.system.store.get(self.rid)['deleted_at'])
+
+ async def test_closed_visibility_includes_requested_ranks_but_not_reserved_reports(self):
+  from tickets import closed_staff_roles
+  roles=[FakeRole(rid) for rid in PROTECTED|NORMAL_STAFF]
+  head=FakeRole(123);head.name='🔱┊𝐉𝐞𝐟𝐞 𝐃𝐞 𝐀𝐝𝐦𝐢𝐧';roles.append(head)
+  guild=SimpleNamespace(default_role=FakeRole(10),me=FakeMember(99,admin=True),roles=roles)
+  row=self.system.store.get(self.rid);row['status']='cerrado'
+  permissions=channel_overwrites(guild,row,self.system.store,self.owner)
+  for role in closed_staff_roles(guild):
+   self.assertTrue(permissions[role].view_channel);self.assertTrue(permissions[role].read_message_history)
+  row['department']='staff'
+  reserved=channel_overwrites(guild,row,self.system.store,self.owner)
+  self.assertTrue(all(role not in reserved for role in closed_staff_roles(guild)))

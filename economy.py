@@ -553,6 +553,8 @@ class Economy:
         )
 
     async def audit(self, guild):
+        if getattr(self.bot,"_clearing_exclusive_log",False):
+            return
         ch = await self.channel(guild, True)
         for row in self.store.rows(
             "SELECT * FROM eco_audit WHERE sent=0 ORDER BY id LIMIT 20"

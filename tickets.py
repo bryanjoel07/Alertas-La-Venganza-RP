@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import re
 import time
+import unicodedata
+from access_layout import merged_raw
 
 import discord
 from discord import app_commands
@@ -25,6 +27,13 @@ STATE_LABELS={'creando':'Preparando','nuevo':'Nuevo','en_atencion':'En atención
  'resuelto':'Resuelto','cerrado':'Cerrado','fallido':'Creación fallida'}
 
 
+def is_staff_role(role):
+ name=''.join(c for c in unicodedata.normalize('NFKD',getattr(role,'name','')).casefold() if c.isalnum())
+ return role.id in ALL_STAFF or name in {'owner','programador','superadmin','admin','moderador','soporte','jefedeadmin','jefedeadmins','jefedeadministracion','jefeadmin','jefedestaff'}
+
+def closed_staff_roles(guild):
+ return [role for role in guild.roles if is_staff_role(role)]
+
 def route_roles(store,department):
  if department=='staff':return set()
  raw=store.config('route:'+department)
@@ -35,7 +44,7 @@ def can_staff(member,row,store):
  if row.get('excluded')==member.id and not member.guild_permissions.administrator:return False
  if member.guild_permissions.administrator:return True
  if row['department']=='staff':return False
- return bool({r.id for r in member.roles}&(ALL_STAFF|route_roles(store,row['department'])))
+ return bool({r.id for r in member.roles}&(ALL_STAFF|route_roles(store,row['department']))) or any(is_staff_role(r) for r in member.roles)
 
 
 def channel_overwrites(guild,row,store,owner,people=(),staff=()):
@@ -53,7 +62,10 @@ def channel_overwrites(guild,row,store,owner,people=(),staff=()):
  for member in people:access(member)
  for member in staff:access(member)
  for role in guild.roles:
-  # No overwrite is created or edited for Owner/Programador/Admin/Súper Admin.
+  # The owner explicitly authorized view/history grants to all these ranks on closed normal cases.
+  if closed and row['department']!='staff' and is_staff_role(role):
+   perms[role]=discord.PermissionOverwrite(view_channel=True,read_message_history=True)
+   continue
   if role.id in PROTECTED:continue
   if role.id in route_roles(store,row['department']):
    perms[role]=discord.PermissionOverwrite(view_channel=True,send_messages=not closed,read_message_history=True,
@@ -159,6 +171,7 @@ class TicketSystem:
     category=overflow[-1];self.store.config(key,category.id);return category
   suffix='' if not category else f" {len([c for c in channels if isinstance(c,discord.CategoryChannel) and c.name.startswith(name)])+1}"
   perms={guild.default_role:discord.PermissionOverwrite(view_channel=False),guild.me:discord.PermissionOverwrite(view_channel=True,manage_channels=True,manage_roles=True)}
+  if closed:perms.update({role:discord.PermissionOverwrite(view_channel=True,read_message_history=True) for role in closed_staff_roles(guild)})
   async def create_category():
    created=await guild.create_category(name+suffix,overwrites=perms,reason='Categoría de tickets solicitada por administración')
    anchor=next((c for c in channels if str(c.id)==self.store.config('active_category') and isinstance(c,discord.CategoryChannel)),None)
@@ -202,7 +215,12 @@ class TicketSystem:
    if isinstance(target,discord.Member) and target.id not in (row['owner'],self.bot.user.id):
     if can_staff(target,row,self.store):staff.append(target)
   permissions=channel_overwrites(guild,row,self.store,owner,people,staff)
-  permissions.update({target:overwrite for target,overwrite in channel.overwrites.items() if isinstance(target,discord.Role) and target.id in PROTECTED})
+  for target,overwrite in channel.overwrites.items():
+   if isinstance(target,discord.Role) and target.id in PROTECTED:
+    preserved=discord.PermissionOverwrite.from_pair(*overwrite.pair())
+    if row['status']=='cerrado' and row['department']!='staff' and is_staff_role(target):
+     preserved.view_channel=True;preserved.read_message_history=True
+    permissions[target]=preserved
   async def change():
    return await channel.edit(overwrites=permissions,reason='Aplicar privacidad del ticket sin modificar roles protegidos')
   await self.tracked(row,f"Accesos del ticket #{row['id']}",change)
@@ -258,12 +276,12 @@ class TicketSystem:
   mentions=' '.join(f'<@&{r.id}>' for r in roles)
   await channel.send(f"{mentions} Nuevo caso #{row['id']} pendiente de asignación.",allowed_mentions=discord.AllowedMentions(roles=roles,users=False,everyone=False))
  async def show_closed(self,i,page=1):
-  reviewer=i.user.guild_permissions.administrator or bool({r.id for r in i.user.roles}&ALL_STAFF) or any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
+  reviewer=i.user.guild_permissions.administrator or any(is_staff_role(r) for r in i.user.roles) or any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
   await self.show_list(i,own=not reviewer,page=page,closed_only=True)
  async def show_list(self,i,own=False,page=1,closed_only=False):
   if not i.response.is_done():await i.response.defer(ephemeral=True)
   coordinator=any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
-  if not own and not (i.user.guild_permissions.administrator or {r.id for r in i.user.roles}&ALL_STAFF or coordinator):raise ValueError('Panel reservado para el staff.')
+  if not own and not (i.user.guild_permissions.administrator or any(is_staff_role(r) for r in i.user.roles) or coordinator):raise ValueError('Panel reservado para el staff.')
   # Fetch beyond one department then filter BEFORE displaying anything, including statistics.
   all_rows=await self.call('list',owner=i.user.id if own else None,limit=10000)
   visible=[r for r in all_rows if (own or can_staff(i.user,r,self.store)) and (closed_only or not json.loads(r['form']).get('selftest')) and (not closed_only or r['status']=='cerrado')]
@@ -487,12 +505,38 @@ class TicketSystem:
    self.store.transfer(rid,department,i.user.id,reason,assignee.id if assignee else None)
    await self.apply_permissions(self.store.get(rid));await self.refresh(self.store.get(rid))
    await reply(i,'Transferencia registrada y accesos actualizados.')
+ async def grant_closed_visibility(self,channel):
+  roles=closed_staff_roles(channel.guild)
+  if not roles:raise ValueError('No se encontraron los roles de staff requeridos')
+  changes={role.id:dict(view_channel=True,read_message_history=True) for role in roles}
+  planned=merged_raw(channel,changes)
+  original={(o.type,o.id,o.allow,o.deny) for o in channel._overwrites}
+  expected={(o['type'],int(o['id']),int(o['allow']),int(o['deny'])) for o in planned}
+  async def snapshot():
+   current=await self.bot.fetch_channel(channel.id)
+   return dict(id=str(current.id),name=current.name,parent=str(current.category_id),overwrites=[dict(id=str(o.id),type=o.type,allow=str(o.allow),deny=str(o.deny)) for o in current._overwrites])
+  if original!=expected:
+   async def change():return await self.bot.http.edit_channel(channel.id,permission_overwrites=planned,reason='Acceso a cerrados solicitado expresamente para todos los rangos del staff')
+   await self.bot.changes.tracked('CLOSED_STAFF_VISIBILITY','Dar visibilidad a tickets cerrados',change,request_id=f'{channel.id}:{time.time_ns()}',snapshot=snapshot)
+  confirmed=await self.bot.fetch_channel(channel.id)
+  for role in roles:
+   if not confirmed.permissions_for(role).view_channel or not confirmed.permissions_for(role).read_message_history:
+    raise RuntimeError(f'Discord no confirmó acceso de {role.name} a {channel.id}')
+  log.info('TICKETS staff_visibility_verified channel=%s name=%s roles=%s',confirmed.id,confirmed.name,[(str(r.id),r.name) for r in roles])
+  return confirmed
  async def install(self):
   guild=self.bot.get_guild(self.guild_id)
   panel=await self.bot.fetch_channel(PANEL_CHANNEL)
   if not isinstance(panel,discord.TextChannel) or panel.guild.id!=self.guild_id:raise ValueError('El canal de entrada de tickets no coincide con La Venganza RP.')
   await self.ensure_category(guild)
   closed=await self.ensure_category(guild,True)
+  closed=await self.grant_closed_visibility(closed)
+  all_channels=await guild.fetch_channels()
+  ordered=sorted((c for c in all_channels if isinstance(c,discord.CategoryChannel)),key=lambda c:(c.position,c.id))
+  anchor=next((c for c in ordered if str(c.id)==self.store.config('active_category')),None)
+  if anchor and ordered.index(closed)!=ordered.index(anchor)+1:
+   async def place():return await closed.edit(position=anchor.position+1,reason='Situar Tickets Cerrados junto a Tickets para encontrarlo')
+   await self.bot.changes.tracked('CLOSED_CATEGORY_POSITION','Colocar categoría Tickets Cerrados',place,request_id=str(time.time_ns()))
   if closed.permissions_for(guild.default_role).view_channel:raise ValueError('La categoría de cerrados no es privada.')
   # Keep existing tickets and third-party controls operational. Record old panel IDs for migration.
   if not self.store.config('legacy_panels'):
@@ -532,6 +576,7 @@ class TicketSystem:
      if current['status']!='cerrado' or current.get('deleted_at'):continue
      try:
       case_channel=await self.channel(current)
+      if current['department']!='staff':case_channel=await self.grant_closed_visibility(case_channel)
       if case_channel.category_id!=closed.id:await self.move(current,closed,'Agrupar tickets ya cerrados')
       await self.refresh(current)
       async for notice in case_channel.history(limit=25):

@@ -1,6 +1,6 @@
 # Registro del bot
 
-El canal privado Registro-Exclusive recibe avisos de versiones y operaciones administrativas del bot. No se crea otro canal ni se modifican permisos.
+Por solicitud del propietario, los cambios del bot ya no se publican en Registro-Exclusive. Se conservan internamente para consulta privada y recuperación. `CHANGE_LOG_DISCORD_PUBLISH=0` mantiene desactivados los anuncios. La limpieza puntual del canal conserva una copia verificada de mensajes y adjuntos en las tablas `bot_channel_cleanup_*` del respaldo de SQLite.
 
 - `/cambios historial`: versiones, fecha y estado; permite elegir página.
 - `/cambios detalle registro:1`: explicación, instrucciones y descarga JSON del estado anterior y posterior. Solo administradores del servidor, respuesta privada.

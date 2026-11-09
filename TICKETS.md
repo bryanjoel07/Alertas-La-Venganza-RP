@@ -12,7 +12,7 @@ Se permite un caso activo por usuario y motivo, hasta tres abiertos y una apertu
 
 - Soporte, Moderador y Jefe de Staff atienden casos normales; donaciones sigue este mismo acceso, según la decisión del propietario.
 - Los reportes contra staff están reservados al autor y usuarios que tengan Administrador de Discord. Owner y Programador lo tienen. No se promete ocultar un canal a un administrador, porque Discord permite el acceso técnico.
-- Admin y Súper Admin conservan sus roles íntegros. Si no tienen otro rol con acceso al canal, usan Gestión Staff en el panel o `/ticket acceso numero:…` para abrirlo con un acceso individual autorizado, sin editar su rol.
+- La categoría Tickets Cerrados y sus casos normales conceden Ver canal y Leer historial a Owner, Programador, Jefe de Admin/Staff, Súper Admin, Admin, Moderador y Soporte, según la instrucción expresa del propietario. No se cambian sus permisos generales ni posiciones. Los reportes reservados mantienen su privacidad. En casos activos se puede usar Gestión Staff o `/ticket acceso numero:…` para el acceso individual autorizado.
 - Las notas se guardan aparte y solo se consultan en respuestas privadas del personal autorizado. No se incluyen en transcripciones de jugadores.
 - El reportado queda excluido del caso salvo que tenga Administrador, permiso que el bot no puede anular.
 - Transferir al área reservada retira el acceso de participantes y revisores no autorizados. No se permite transferir un reporte reservado hacia un departamento normal.

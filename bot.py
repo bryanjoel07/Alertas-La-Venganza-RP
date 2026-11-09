@@ -38,6 +38,7 @@ from faction_roles import ensure_vista_hermosa
 from access_layout import organize_access, repair_staff_command_access
 from change_log import ChangeLog
 from tickets import TicketSystem
+from channel_cleanup import clear_exclusive_log
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1580,6 +1581,11 @@ async def on_ready():
         await client.tickets.ready()
     except Exception:
         log.exception("No se pudo completar la instalación de tickets avanzados")
+    try:
+        await client.changes.tracked("CLEAR_EXCLUSIVE_LOG_REQUEST_ID", "Vaciar Registro Exclusive",
+            lambda: clear_exclusive_log(client, GUILD_ID, DB_PATH))
+    except Exception:
+        log.exception("No se pudo completar la limpieza autorizada de Registro Exclusive")
     try:
         await client.changes.ready()
     except Exception:

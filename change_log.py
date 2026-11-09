@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='advanced-tickets-v1.6'
-SUMMARY='Tickets cerrados agrupados y botón Eliminar ticket después del cierre: requiere confirmación del staff, archivo íntegro y respaldo verificado antes de borrar el canal. La transcripción y las pruebas siguen accesibles tras eliminarlo.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 00a6149a90db523e66876af7c10b6e3653a27072 en Railway. '
+RELEASE='advanced-tickets-v1.7'
+SUMMARY='Visibilidad explícita de Tickets Cerrados para todos los rangos de staff solicitados, sin cambiar permisos generales ni jerarquía. Se desactiva la publicación de cambios en Registro Exclusive y se vacía ese canal con copia privada verificada.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 74f985d3df852f1c9514760d3d13e7286639297e en Railway. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '
@@ -171,6 +171,8 @@ class ChangeLog:
             await self.publish(guild)
 
     async def publish(self,guild):
+        if os.getenv('CHANGE_LOG_DISCORD_PUBLISH','0')!='1':
+            return
         saved=self.bot.economy.store.config('audit_channel')
         if not saved:
             return

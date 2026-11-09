@@ -56,5 +56,13 @@ class TrackingTests(unittest.IsolatedAsyncioTestCase):
         channel.permissions_for.return_value.view_channel=True
         bot.fetch_channel=AsyncMock(return_value=channel)
         service=ChangeLog(bot,Path(temp.name)/'db.sqlite3',10)
-        with self.assertRaises(ValueError):await service.publish(MagicMock())
+        with patch.dict('os.environ',CHANGE_LOG_DISCORD_PUBLISH='1'):
+            with self.assertRaises(ValueError):await service.publish(MagicMock())
         channel.send.assert_not_called();channel.set_permissions.assert_not_called()
+
+
+    async def test_change_announcements_are_disabled_by_default(self):
+        bot=MagicMock();service=ChangeLog(bot,'unused.sqlite3',10)
+        with patch.dict('os.environ',CHANGE_LOG_DISCORD_PUBLISH='0'):
+            await service.publish(MagicMock())
+        bot.fetch_channel.assert_not_called()
