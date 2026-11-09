@@ -30,6 +30,7 @@ from server_health import OriginalPanel
 from obscenities import ObscenityFilter
 from daily_up import announce_daily_up
 from economy import Economy
+from profiles_hub import ProfileTree
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -207,7 +208,7 @@ class LaVenganzaBot(discord.Client):
         self.started_monotonic = time.monotonic()
         self.monitor_last_read = None
         self.monitor_last_error = None
-        self.tree = app_commands.CommandTree(self)
+        self.tree = ProfileTree(self)
         self.economy = Economy(self, DB_PATH, GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
@@ -945,13 +946,24 @@ async def event_history_access(interaction):
         raise app_commands.CheckFailure("No tienes acceso al canal de eventos")
 
 
-@client.tree.command(name="perfil", description="Tarjeta del jugador con avatar, eventos, podios y posición histórica", guild=GUILD)
+async def profile_access(interaction):
+    if interaction.guild_id != GUILD_ID or not isinstance(interaction.user, discord.Member):
+        raise app_commands.CheckFailure("Servidor no autorizado")
+    profiles_id = client.economy.store.config('profiles_channel')
+    if profiles_id and str(interaction.channel_id) == profiles_id:
+        if interaction.channel.permissions_for(interaction.user).view_channel:
+            return
+        raise app_commands.CheckFailure("No tienes acceso al canal de perfiles")
+    await event_history_access(interaction)
+
+
+@client.tree.command(name="perfil", description="Tu tarjeta con saldo, cosméticos, eventos y podios", guild=GUILD)
 @app_commands.describe(jugador="Opcional: selecciona un jugador; si lo omites se muestra tu perfil")
 async def perfil(interaction: discord.Interaction, jugador: discord.Member = None):
     await interaction.response.defer(thinking=True)
-    await event_history_access(interaction)
+    await profile_access(interaction)
     member = jugador or interaction.user
-    view = PlayerCard(client, interaction.user.id, member, event_history_access, client.economy.decorate)
+    view = PlayerCard(client, interaction.user.id, member, profile_access, client.economy.decorate)
     view.message = await interaction.followup.send(embed=await view.render(), view=view, wait=True, allowed_mentions=discord.AllowedMentions.none())
 
 

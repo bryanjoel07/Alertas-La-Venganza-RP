@@ -45,6 +45,15 @@ Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) 
 
 ## Comandos
 
+### Canal Perfiles
+
+El bot crea **👤┊𝐏𝐞𝐫𝐟𝐢𝐥𝐞𝐬** en la categoría de La Venganza configurada para la tienda.
+Los jugadores pueden consultar `/perfil` o `/perfil jugador:` y usar sus botones,
+pero no enviar mensajes normales ni crear hilos. Los demás comandos del bot se
+rechazan en este canal. La tarjeta muestra saldo Exclusive y meta de ahorro,
+además de cosméticos, eventos y podios; **Actualizar** consulta el saldo vigente.
+El canal y su guía se reutilizan después de reiniciar.
+
 | Comando | Función | Acceso |
 | --- | --- | --- |
 | `/testalert` | DOWN o RESTORED claramente identificado como simulación | Administrador Discord |

@@ -70,6 +70,9 @@ class PlayerCard(discord.ui.View):
         embed = profile_embed(self.member, data)
         if self.decorate:
             self.decorate(embed, self.member.id)
+        # Keep balance/cosmetics visible when a fully equipped card has many events.
+        while len(embed.fields) > 25:
+            embed.remove_field(6)
         return embed
 
     async def interaction_check(self, interaction):
@@ -118,7 +121,7 @@ class PlayerCard(discord.ui.View):
 
     async def on_error(self, interaction, error, item):
         log.error('Error en tarjeta del jugador', exc_info=(type(error), error, error.__traceback__))
-        message = '❌ Ya no tienes acceso al canal de eventos.' if isinstance(error, app_commands.CheckFailure) else '❌ No se pudo actualizar la tarjeta. Vuelve a consultar /perfil.'
+        message = '❌ Ya no tienes acceso a este perfil desde este canal.' if isinstance(error, app_commands.CheckFailure) else '❌ No se pudo actualizar la tarjeta. Vuelve a consultar /perfil.'
         if interaction.response.is_done():
             await interaction.followup.send(message, ephemeral=True)
         else:
