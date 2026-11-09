@@ -35,6 +35,7 @@ from server_audit import audit_server
 from fivem_probe import FiveMProbe
 from navigation import arrange_navigation
 from faction_roles import ensure_vista_hermosa
+from access_layout import organize_access
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1473,6 +1474,10 @@ async def on_raw_message_delete(payload):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    try:
+        await organize_access(client, GUILD_ID, DB_PATH)
+    except Exception:
+        log.exception("No se pudo completar la organización de accesos y roles")
     try:
         await arrange_navigation(client, GUILD_ID, DB_PATH)
     except Exception:
