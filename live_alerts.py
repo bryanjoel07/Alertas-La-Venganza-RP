@@ -16,7 +16,7 @@ CHANNEL = 1513653533340073994
 log = logging.getLogger(__name__)
 APPROVED = """SELECT r.id,r.member,p.owner,p.saved_url FROM streamer_requests r
 JOIN streamer_profiles p ON p.request_id=r.id AND p.owner=r.owner
-WHERE r.guild=? AND r.state IN ('verificada','entregada') AND p.saved_url=p.verified_url"""
+WHERE r.guild=? AND r.state IN ('verificada','entregada','manual') AND p.saved_url=p.verified_url"""
 
 
 def matches(profile, live):

@@ -54,6 +54,25 @@ rechazan en este canal. La tarjeta muestra saldo Exclusive y meta de ahorro,
 además de cosméticos, eventos y podios; **Actualizar** consulta el saldo vigente.
 El canal y su guía se reutilizan después de reiniciar.
 
+### Guía, retos y probador
+
+- **📖┊𝐆𝐮𝐢𝐚-𝐃𝐞𝐥-𝐁𝐨𝐭** se crea en La Venganza con botones persistentes y consultas privadas.
+- `/guia` abre el mismo panel; la tienda incluye **Probar cosméticos** y **Retos y monedas**.
+- `/probar articulo:… texto:…` muestra la tarjeta sin cobrar, equipar, cambiar roles ni reservar stock.
+  Los banners se adjuntan desde el proyecto. **Revisar compra** abre la confirmación normal.
+- `/retos` permite reclamar hasta **450 monedas por semana**: 150 por un evento con participación
+  confirmada por staff, 200 por un podio y 100 por asistencia confirmada a una reunión general.
+  Solo cuentan actividades desde la activación, finalizadas y correspondientes a la semana actual.
+  Reinicio semanal: lunes 00:00 de Puerto Rico. Los créditos son atómicos y únicos por usuario/reto/semana.
+  No se paga por mensajes, inscripciones, compras ni tiempo AFK.
+- `/streamer registrar jugador:… enlace:…` permite a un administrador vincular un creador aprobado.
+  Registra la aprobación manual y el revisor sin atribuir seguidores no comprobados; conserva la
+  comprobación del título **La Venganza RP** para avisar de directos. El registro requiere un miembro
+  real y el enlace principal de Twitch, YouTube, TikTok o Kick. La solicitud verificada existente sigue disponible.
+- FiveM usa `FIVEM_STATUS_URL` y puede descubrir `/dynamic.json` desde la cabecera oficial
+  `x-citizenfx-url` del enlace de conexión. Solo un JSON válido del servidor confirma la lectura directa;
+  la página de conexión no prueba disponibilidad. Connect continúa como respaldo.
+
 | Comando | Función | Acceso |
 | --- | --- | --- |
 | `/testalert` | DOWN o RESTORED claramente identificado como simulación | Administrador Discord |

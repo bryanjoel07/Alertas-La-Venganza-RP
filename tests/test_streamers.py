@@ -28,6 +28,25 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
     async def invoke(self, name, *args):
         await self.system.get_command(name).callback(self.system, self.interaction, *args)
 
+    async def test_admin_registration_preserves_profile_urls_and_does_not_fabricate_followers(self):
+        member = MagicMock(id=201,bot=False,add_roles=AsyncMock())
+        for url in ('https://www.twitch.tv/example','https://www.youtube.com/@example','https://www.tiktok.com/@example'):
+            await self.invoke('registrar',member,url)
+            row = self.system.request(23,201)
+            self.assertEqual(row['state'],'manual')
+            self.assertIsNone(row['followers'])
+            with self.system.db() as db:
+                profile = db.execute('SELECT * FROM streamer_profiles').fetchone()
+            self.assertFalse(profile['saved_url'].endswith('/live'))
+            self.assertIsNotNone(__import__('stream_proof').live_target(profile['saved_url']))
+            self.assertEqual(profile['saved_url'],profile['verified_url'])
+
+    async def test_admin_registration_rejects_non_platform_links(self):
+        member = MagicMock(id=201,bot=False,add_roles=AsyncMock())
+        await self.invoke('registrar',member,'https://example.com/profile')
+        member.add_roles.assert_not_awaited()
+        self.assertIsNone(self.system.request(23,201))
+
     def row(self):
         return self.system.request(23, self.interaction.user.id)
 

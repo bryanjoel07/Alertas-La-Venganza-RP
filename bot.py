@@ -32,6 +32,7 @@ from daily_up import announce_daily_up
 from economy import Economy
 from profiles_hub import ProfileTree
 from server_audit import audit_server
+from fivem_probe import FiveMProbe
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -261,6 +262,7 @@ class LaVenganzaBot(discord.Client):
 
 
 client = LaVenganzaBot()
+fivem_probe = FiveMProbe()
 
 
 async def post_webhook(embed):
@@ -389,24 +391,7 @@ async def read_connect_panel():
 
 
 async def probe_fivem():
-    url = os.getenv("FIVEM_STATUS_URL")
-    if not url:
-        return "unconfigured"
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=7)) as session:
-            async with session.get(url,allow_redirects=False) as response:
-                if response.status in (502,503,504):
-                    return "unreachable"
-                if response.status != 200:
-                    return "unknown"
-                payload = await response.json(content_type=None)
-    except (asyncio.TimeoutError,aiohttp.ClientConnectorError,aiohttp.ServerDisconnectedError):
-        return "unreachable"
-    except (ValueError,aiohttp.ClientError):
-        return "unknown"
-    if isinstance(payload,dict) and isinstance(payload.get("clients"),int) and "venganza" in clean(payload.get("hostname")):
-        return "up"
-    return "unknown"
+    return await fivem_probe.check(os.getenv("FIVEM_STATUS_URL"), CONNECT_URL)
 
 
 def resolve_server_state(direct, panel):
@@ -961,11 +946,13 @@ async def profile_access(interaction):
 @client.tree.command(name="perfil", description="Tu tarjeta con saldo, cosméticos, eventos y podios", guild=GUILD)
 @app_commands.describe(jugador="Opcional: selecciona un jugador; si lo omites se muestra tu perfil")
 async def perfil(interaction: discord.Interaction, jugador: discord.Member = None):
-    await interaction.response.defer(thinking=True)
+    private_card = interaction.type == discord.InteractionType.component
+    await interaction.response.defer(thinking=True, ephemeral=private_card)
     await profile_access(interaction)
     member = jugador or interaction.user
     view = PlayerCard(client, interaction.user.id, member, profile_access, client.economy.decorate)
-    view.message = await interaction.followup.send(embed=await view.render(), view=view, wait=True, allowed_mentions=discord.AllowedMentions.none())
+    view.message = await interaction.followup.send(embed=await view.render(), view=view, wait=True,
+        ephemeral=private_card, allowed_mentions=discord.AllowedMentions.none())
 
 
 @client.tree.command(name="estado-bot", description="Diagnóstico privado del monitor, tareas, SQLite y último respaldo registrado", guild=GUILD)

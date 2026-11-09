@@ -16,6 +16,7 @@ from economy_store import BANNERS, PR, EconomyStore, clean_label
 from meetings import ROLES
 from profiles_hub import ensure_profiles
 from server_fixes import fix_high_priorities
+from community_features import CommunityFeatures
 
 log = logging.getLogger("LaVenganzaRP.economia")
 SHOP = "🛍️┊𝐓𝐢𝐞𝐧𝐝𝐚-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞"
@@ -217,6 +218,14 @@ class Panel(discord.ui.View):
     async def balance(self, i, button):
         await self.system.balance(i)
 
+    @discord.ui.button(label="Probar cosméticos", emoji="👔", custom_id="lv:eco:try")
+    async def fitting(self, i, button):
+        await self.system.community.show_picker(i)
+
+    @discord.ui.button(label="Retos y monedas", emoji="🏆", custom_id="lv:eco:challenges")
+    async def challenges(self, i, button):
+        await self.system.community.show_challenges(i)
+
 
 class ShopPicker(discord.ui.Select):
     def __init__(self, system, products):
@@ -326,6 +335,7 @@ class Economy:
         self.last_error = ""
         self.signature = None
         self.player_commands = set()
+        self.community = CommunityFeatures(self)
         self.admin = app_commands.Group(
             name="economia",
             description="Administración de la economía",
@@ -335,6 +345,7 @@ class Economy:
 
     async def start(self):
         await asyncio.to_thread(self.store.initialize)
+        await self.community.start()
         self.ready = True
         self.bot.add_view(Panel(self))
         if self.task is None or self.task.done():
@@ -354,7 +365,7 @@ class Economy:
             guild = self.bot.get_guild(self.guild.id)
             if guild:
                 errors = []
-                for job in (self.panel, self.audit, self.profiles, self.high_priorities, self.delivery.recover):
+                for job in (self.panel, self.audit, self.profiles, self.high_priorities, self.community.ensure_guide, self.delivery.recover):
                     try:
                         await job(guild)
                     except Exception as exc:
@@ -613,6 +624,8 @@ class Economy:
 
         def admin(name, description):
             return self.admin.command(name=name, description=description)
+
+        self.community.register(player)
 
         @player("saldo", "Ver tu saldo y meta de ahorro")
         async def balance(i: discord.Interaction):

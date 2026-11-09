@@ -81,7 +81,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
 
     @staticmethod
     def is_approved(row):
-        return row is not None and row["state"] in {"verificada", "entregada"}
+        return row is not None and row["state"] in {"verificada", "entregada", "manual"}
 
     def profile(self, row):
         with self.db() as db:
@@ -170,13 +170,56 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
     async def solicitar(self, interaction: discord.Interaction):
         await self.issue_code(interaction)
 
+    @app_commands.command(description="Registrar un creador aprobado por administración y activar sus avisos")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def registrar(self, interaction: discord.Interaction, jugador: discord.Member, enlace: str):
+        if jugador.bot:
+            return await interaction.response.send_message("Selecciona un jugador, no un bot.", ephemeral=True)
+        try:
+            target = live_target(enlace)
+            if not target:
+                raise ValueError("Usa el perfil principal de Twitch, YouTube, TikTok o Kick.")
+            url = public_link(target[1])
+        except ValueError as error:
+            return await interaction.response.send_message(str(error), ephemeral=True)
+        path = url.path.rstrip('/')
+        if target[0] in ('YouTube','TikTok'):
+            path = path.removesuffix('/live')
+        canonical = f"https://{url.hostname.removeprefix('www.')}{path}"
+        owner = "perfil:" + url.hostname.removeprefix('www.') + path
+        role, _ = self.config(interaction.guild)
+        if not self.safe_role(role):
+            return await interaction.response.send_message("Configura primero un rol seguro con /streamer configurar.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        async with self.lock:
+            with self.db() as db:
+                existing = db.execute("SELECT member FROM streamer_requests WHERE guild=? AND owner=?",
+                                      (interaction.guild_id,owner)).fetchone()
+                if existing and existing['member'] != jugador.id:
+                    return await interaction.followup.send("Ese canal ya pertenece a otro jugador registrado.", ephemeral=True)
+            await jugador.add_roles(role,reason=f"Creador aprobado por administración: {interaction.user.id}")
+            with self.db() as db:
+                db.execute("""INSERT INTO streamer_requests(guild,member,code,issued,state,proof,owner,followers,reviewer,checked)
+                    VALUES (?,?,?,?,'manual',?,?,NULL,?,?) ON CONFLICT(guild,member) DO UPDATE SET
+                    state='manual',proof=excluded.proof,owner=excluded.owner,followers=NULL,
+                    reviewer=excluded.reviewer,checked=excluded.checked""",
+                    (interaction.guild_id,jugador.id,'ADMIN-'+secrets.token_hex(10),int(time.time()),
+                     canonical,owner,interaction.user.id,int(time.time())))
+                row = db.execute("SELECT id FROM streamer_requests WHERE guild=? AND member=?",
+                                 (interaction.guild_id,jugador.id)).fetchone()
+                db.execute("INSERT OR REPLACE INTO streamer_profiles VALUES (?,?,?,?)",
+                           (row['id'],owner,canonical,canonical))
+        await interaction.followup.send(f"✅ Creador registrado: {jugador.mention} · <{canonical}>.\n"
+            "Aprobación manual registrada, sin atribuir seguidores no comprobados. Los avisos requieren La Venganza RP en el título.",
+            ephemeral=True,allowed_mentions=discord.AllowedMentions.none())
+
     async def issue_code(self, interaction):
         guild, member = interaction.guild_id, interaction.user.id
         _, minimum = self.config(interaction.guild)
         async with self.lock:
             row = self.request(guild, member)
             now = int(time.time())
-            if row and row["state"] in {"verificada", "entregada", "pendiente"}:
+            if row and row["state"] in {"verificada", "entregada", "manual", "pendiente"}:
                 return await interaction.response.send_message(f"Tu solicitud está {row['state']}. Pulsa **Ver mi estado** para ver los detalles.", ephemeral=True, **self.approved_controls(row))
             if not row or row["state"] == "rechazada" or now-row["issued"] >= 86400:
                 code = "LVRP-" + secrets.token_hex(5).upper()
@@ -209,7 +252,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
             now = int(time.time())
             if not row or row["state"] == "rechazada":
                 return await interaction.followup.send("Pulsa **Solicitar rol** en el panel para empezar.", ephemeral=True)
-            if row["state"] in {"verificada", "entregada"}:
+            if row["state"] in {"verificada", "entregada", "manual"}:
                 result = await self.deliver(interaction.guild, row)
                 return await interaction.followup.send(result, ephemeral=True, **self.approved_controls(self.request(guild, member)))
             if now-row["issued"] >= 86400:
@@ -252,6 +295,8 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         await interaction.followup.send(msg, ephemeral=True, **self.approved_controls(self.request(guild, member)))
 
     async def deliver(self, guild, row):
+        if row["state"] == "manual":
+            return "Este creador ya fue aprobado por administración y tiene su canal registrado."
         if row["state"] == "entregada":
             return "Esta solicitud ya recibió el rol Streamer."
         role, minimum = self.config(guild)
