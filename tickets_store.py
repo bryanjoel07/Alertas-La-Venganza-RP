@@ -12,7 +12,7 @@ DEPARTMENTS={
  'tienda':('🛍️','Problema con tienda','Compra afectada y qué ocurrió'),
  'donacion':('💳','Donaciones','Concepto y referencia; nunca datos de tarjeta'),
  'apelacion':('⚖️','Apelar sanción','Sanción, fecha y motivo de apelación'),
- 'faccion':('🏴','Facciones y negocios','Organización y solicitud'),
+ 'faccion':('🥷','Gangas y negocios','Ganga o negocio y solicitud'),
  'staff':('🔒','Reportar al staff','Reporte reservado para administradores'),
 }
 PROTECTED={1245008186440683530,1300627506801541230,1300619682486947931,1245010156576833536}

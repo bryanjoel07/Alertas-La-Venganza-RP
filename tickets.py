@@ -451,7 +451,7 @@ class TicketSystem:
    log.info('TICKETS legacy_panels_preserved count=%s',len(legacy))
   embed=discord.Embed(title='🎫 CENTRO DE ATENCIÓN | LA VENGANZA RP',color=0xD60000,
    description='**Nuevas solicitudes: usa este panel oficial del bot de La Venganza.**\nElige el motivo y completa su formulario. Se abrirá un canal privado para tu caso.\n\n'
-    '🛠️ Soporte técnico · 🚨 Reportar jugador\n🛍️ Problemas con tienda · 💳 Donaciones\n⚖️ Apelar sanción · 🏴 Facciones y negocios\n🔒 Reportar al staff (solo administradores)\n\n'
+    '🛠️ Soporte técnico · 🚨 Reportar jugador\n🛍️ Problemas con tienda · 💳 Donaciones\n⚖️ Apelar sanción · 🥷 Gangas y negocios\n🔒 Reportar al staff (solo administradores)\n\n'
     f"Puedes adjuntar pruebas (hasta {self.store.config('max_file_mb')} MB por archivo), consultar tu responsable, valorar la atención y reabrir tu caso. Los enlaces externos se guardan como referencia; adjunta el archivo para respaldarlo. Evita duplicados: continúa en tu ticket existente.\n"
     '**Los tickets anteriores conservan sus canales y controles originales.**')
   embed.set_footer(text='Privacidad por caso · Sin @everyone · No envíes contraseñas ni datos completos de pago')
@@ -468,7 +468,12 @@ class TicketSystem:
    with suppress(discord.Forbidden):await message.pin(reason='Panel oficial del nuevo sistema de tickets')
   confirmed=await panel.fetch_message(message.id)
   ids=[getattr(c,'custom_id',None) for r in confirmed.components for c in r.children]
-  if 'lv:ticket:department' not in ids:raise ValueError('Discord no confirmó el panel de tickets.')
+  labels=[option.label for row in confirmed.components for component in row.children for option in getattr(component,'options',[])]
+  if 'lv:ticket:department' not in ids or DEPARTMENTS['faccion'][1] not in labels:raise ValueError('Discord no confirmó el panel de tickets actualizado.')
+  for ticket in self.store.list(limit=10000):
+   if ticket['department']=='faccion' and ticket['channel']:
+    await self.refresh(ticket)
+  log.info('TICKETS department_labels_verified labels=%s',labels)
   log.info('TICKETS panel_verified channel=%s message=%s closed_category=%s legacy_channels_untouched=True protected_roles_untouched=True',panel.id,message.id,closed.id)
  async def ready(self):
   if not self.enabled():return
