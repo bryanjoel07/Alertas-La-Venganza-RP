@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 import discord
 from access_layout import (access_changes,merged_raw,positions_for,ROLE_ORDER,STAFF,ADMINS,
-                           CATEGORY_ROLES,COMMANDS,GANGS,POLICE,CITIZENS)
+                           CATEGORY_ROLES,COMMANDS,GANGS,POLICE,CITIZENS,PROTECTED)
 
 class Role:
     def __init__(self,rid,position,managed=False):
@@ -27,8 +27,9 @@ class AccessLayoutTests(unittest.TestCase):
         for cat,own in CATEGORY_ROLES.items():
             for channel in (SimpleNamespace(id=cat,category_id=None),SimpleNamespace(id=999,category_id=cat)):
                 changes=access_changes(channel,111)
-                for rid in STAFF|own:
+                for rid in (STAFF-PROTECTED)|own:
                     self.assertTrue(changes[rid]['view_channel'])
+                self.assertTrue(PROTECTED.isdisjoint(changes))
                 # Existing read-only documentation and Citizen writing permissions are untouched.
                 self.assertNotIn('send_messages',changes[CITIZENS])
                 for rid in own:
@@ -38,13 +39,14 @@ class AccessLayoutTests(unittest.TestCase):
             for rid in (GANGS|POLICE)-CATEGORY_ROLES[cat]:
                 self.assertFalse(changes[rid]['view_channel'])
 
-    def test_commands_staff_read_and_admin_execution(self):
+    def test_commands_preserve_staff_permissions_and_protected_roles(self):
         for cid,(_,admin,_) in COMMANDS.items():
             changes=access_changes(SimpleNamespace(id=cid,category_id=1515887247227093084),111)
-            for rid in STAFF:
+            self.assertTrue(PROTECTED.isdisjoint(changes))
+            for rid in STAFF-PROTECTED:
                 self.assertTrue(changes[rid]['view_channel'])
-                self.assertEqual(changes[rid]['use_application_commands'],not admin or rid in ADMINS)
-                self.assertEqual(changes[rid]['send_messages'],not admin or rid in ADMINS)
+                self.assertNotIn('use_application_commands',changes[rid])
+                self.assertNotIn('send_messages',changes[rid])
         self.assertEqual(access_changes(SimpleNamespace(id=1513422142014754976,category_id=1513422023626326257),111),{})
 
     def test_role_order_reuses_slots_and_excludes_anchors(self):
@@ -58,3 +60,30 @@ class AccessLayoutTests(unittest.TestCase):
         roles[0].managed=True
         with self.assertRaises(ValueError):positions_for(roles,Role(777,40))
         with self.assertRaises(ValueError):positions_for(roles[1:],Role(777,40))
+
+class StaffRepairTests(unittest.TestCase):
+    def test_restores_only_introduced_staff_denials(self):
+        from access_layout import restore_command_restrictions,REPAIR_ROLES,PROTECTED
+        support=1300627732954349619
+        original_allow=discord.Permissions.none();original_allow.send_messages=True
+        original_deny=discord.Permissions.none();original_deny.create_private_threads=True
+        previous={'overwrites':[dict(id=str(support),type=0,allow=original_allow.value,deny=original_deny.value)]}
+        denied=discord.Permissions.none()
+        for field in ('send_messages','use_application_commands','send_messages_in_threads',
+                      'create_private_threads','create_public_threads'):
+            setattr(denied,field,True)
+        raw=[SimpleNamespace(type=0,id=support,allow=0,deny=denied.value)]
+        raw.extend(SimpleNamespace(type=0,id=rid,allow=8,deny=0) for rid in PROTECTED)
+        channel=SimpleNamespace(_overwrites=raw)
+        changes=restore_command_restrictions(channel,previous)
+        self.assertEqual(set(changes),{support})
+        self.assertTrue(changes[support]['send_messages'])
+        self.assertIsNone(changes[support]['use_application_commands'])
+        self.assertNotIn('create_private_threads',changes[support])
+        self.assertTrue(PROTECTED.isdisjoint(changes))
+        output=merged_raw(channel,changes)
+        for rid in PROTECTED:
+            self.assertIn(dict(id=str(rid),type=0,allow='8',deny='0'),output)
+        # Reconciliation is idempotent and retains an original denial.
+        channel._overwrites=[SimpleNamespace(type=o['type'],id=int(o['id']),allow=int(o['allow']),deny=int(o['deny'])) for o in output]
+        self.assertEqual(restore_command_restrictions(channel,previous),{})

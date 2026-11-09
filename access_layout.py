@@ -10,6 +10,7 @@ from navigation import key
 log = logging.getLogger('LaVenganzaRP.access')
 STAFF = {1245008186440683530,1245010156576833536,1300619682486947931,
          1300627506801541230,1300627732954349619,1300631163362218054,1567253212937846935}
+PROTECTED = {1245008186440683530,1300627506801541230,1300619682486947931,1245010156576833536}
 ADMINS = STAFF - {1300627732954349619,1300631163362218054}
 CITIZENS = 1245009164070158409
 GANGS = {1370507359935266967,1371545781768814793,1567016508805357778,1569198736889085962}
@@ -68,14 +69,9 @@ def access_changes(channel, guild_id):
     if cat not in CATEGORY_ROLES and channel.id not in COMMANDS:
         return {}
     changes={guild_id:dict(view_channel=False),CITIZENS:dict(view_channel=False)}
-    changes.update({r:dict(view_channel=True,read_message_history=True) for r in STAFF})
+    changes.update({r:dict(view_channel=True,read_message_history=True) for r in STAFF-PROTECTED})
     if channel.id in COMMANDS:
-        admin=COMMANDS[channel.id][1]
-        for r in STAFF:
-            permitted=not admin or r in ADMINS
-            changes[r].update(send_messages=permitted,use_application_commands=permitted,
-                              send_messages_in_threads=permitted,create_public_threads=permitted,
-                              create_private_threads=permitted)
+        pass  # Names clarify purpose; existing Staff command permissions are preserved.
     else:
         own=CATEGORY_ROLES[cat]
         changes.update({r:dict(view_channel=True,read_message_history=True) for r in own})
@@ -152,7 +148,7 @@ async def organize_access(bot,guild_id,path):
             actual=[dict(id=str(o.id),type=o.type,allow=o.allow,deny=o.deny) for o in c._overwrites]
             if raw_values(actual)!=raw_values(plans[c.id]):
                 raise RuntimeError(f'Permisos no confirmados en {c.id}')
-            for role_id in STAFF|CATEGORY_ROLES.get(c.id if c.id in CATEGORY_ROLES else c.category_id,set()):
+            for role_id in (STAFF-PROTECTED)|CATEGORY_ROLES.get(c.id if c.id in CATEGORY_ROLES else c.category_id,set()):
                 if not c.permissions_for(by_id[role_id]).view_channel:
                     raise RuntimeError(f'Acceso no confirmado para {role_id} en {c.id}')
             if c.id in COMMANDS and (c.name!=COMMANDS[c.id][0] or c.topic!=COMMANDS[c.id][2]):
@@ -172,3 +168,77 @@ async def organize_access(bot,guild_id,path):
     bot._access_layout_request=request
     log.info('ACCESS_LAYOUT %s complete channels=%s roles=%s staff_preserved=True bot_hierarchy_preserved=True photos_parent=%s',
         request,len(plans),len(positions),next(c.category_id for c in fresh_channels if c.id==1513422142014754976))
+
+
+COMMAND_PERMISSION_FIELDS=('send_messages','use_application_commands','send_messages_in_threads',
+                           'create_public_threads','create_private_threads')
+REPAIR_ROLES={1300627732954349619,1300631163362218054}
+
+
+def restore_command_restrictions(channel, original):
+    """Undo only newly introduced denials for Support/Moderator, never protected ranks."""
+    saved={(int(o['type']),int(o['id'])):o for o in original['overwrites']}
+    changes={}
+    for rid in REPAIR_ROLES:
+        previous=saved.get((0,rid),dict(allow=0,deny=0))
+        before=discord.PermissionOverwrite.from_pair(discord.Permissions(int(previous['allow'])),
+                                                    discord.Permissions(int(previous['deny'])))
+        current=next((o for o in channel._overwrites if o.type==0 and o.id==rid),None)
+        now=discord.PermissionOverwrite.from_pair(discord.Permissions(current.allow if current else 0),
+                                                 discord.Permissions(current.deny if current else 0))
+        fields={field:getattr(before,field) for field in COMMAND_PERMISSION_FIELDS
+                if getattr(now,field) is False and getattr(before,field) is not False}
+        if fields:
+            changes[rid]=fields
+    return changes
+
+
+async def repair_staff_command_access(bot,guild_id,path):
+    request=os.getenv('REPAIR_STAFF_ACCESS_REQUEST_ID','').strip()
+    if not request or getattr(bot,'_repair_staff_access',None)==request:
+        return
+    if not re.fullmatch('[A-Za-z0-9_-]{1,100}',request):
+        raise ValueError('Identificador inválido')
+    folder=Path(path).resolve().parent/'navigation'
+    original=json.loads((folder/'access-roles-20261109-access-layout-before.json').read_text())
+    originals={int(c['id']):c for c in original['channels']}
+    guild=bot.get_guild(guild_id)
+    channels=await guild.fetch_channels()
+    roles=await guild.fetch_roles()
+    previous_roles={int(r['id']):r for r in original['roles']}
+    # This comparison is read-only. No role permission, assignment, name or position is edited.
+    for r in roles:
+        if r.id in STAFF:
+            saved=previous_roles[r.id]
+            log.info('STAFF_REPAIR %s role=%s id=%s permissions_before=%s permissions_now=%s position_before=%s position_now=%s protected=%s',
+                request,r.name,r.id,saved['permissions'],r.permissions.value,saved['position'],r.position,r.id in PROTECTED)
+    backup=folder/f'{request}-before.json'
+    if not backup.exists():
+        backup.write_text(json.dumps([dict(id=str(c.id),overwrites=[dict(id=str(o.id),type=o.type,
+            allow=str(o.allow),deny=str(o.deny)) for o in c._overwrites]) for c in channels if c.id in COMMANDS],indent=2))
+    protected_before={c.id:{(o.type,o.id,o.allow,o.deny) for o in c._overwrites if o.id in PROTECTED and o.type==0}
+                      for c in channels}
+    repaired=0
+    for c in channels:
+        if c.id not in COMMANDS:
+            continue
+        changes=restore_command_restrictions(c,originals[c.id])
+        if changes:
+            await bot.http.edit_channel(c.id,permission_overwrites=merged_raw(c,changes),
+                                       reason='Restaurar permisos previos de Soporte y Moderadores; rangos protegidos intactos')
+            repaired+=1
+            log.info('STAFF_REPAIR %s restored channel=%s roles=%s',request,c.id,sorted(changes))
+    refreshed=await guild.fetch_channels()
+    by_role={r.id:r for r in roles}
+    for c in refreshed:
+        protected_now={(o.type,o.id,o.allow,o.deny) for o in c._overwrites if o.id in PROTECTED and o.type==0}
+        if protected_now!=protected_before[c.id]:
+            raise RuntimeError('Cambió un permiso protegido durante la revisión')
+        if c.id in COMMANDS and restore_command_restrictions(c,originals[c.id]):
+            raise RuntimeError('Discord no confirmó la restauración')
+    programmer=by_role[1300627506801541230]
+    full=all(c.permissions_for(programmer).administrator and c.permissions_for(programmer).view_channel
+             and c.permissions_for(programmer).send_messages for c in refreshed)
+    log.info('STAFF_REPAIR %s complete restored_channels=%s protected_overwrites_unchanged=True programmer_admin=%s programmer_full_access=%s channels_checked=%s',
+        request,repaired,programmer.permissions.administrator,full,len(refreshed))
+    bot._repair_staff_access=request
