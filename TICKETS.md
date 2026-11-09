@@ -20,7 +20,7 @@ Se permite un caso activo por usuario y motivo, hasta tres abiertos y una apertu
 
 ## Gestión
 
-Controles persistentes: Reclamar, Solicitar pruebas, Resolver, Cerrar, Reabrir, Transcripción, Nota interna, Transferir, Prioridad, Participantes, Valorar y Pruebas guardadas.
+Controles persistentes: Eliminar ticket (solo tras cerrar), Reclamar, Solicitar pruebas, Resolver, Cerrar, Reabrir, Transcripción, Nota interna, Transferir, Prioridad, Participantes, Valorar y Pruebas guardadas.
 
 Comandos principales:
 
@@ -39,7 +39,7 @@ Avisos: recordatorio tras 6 horas pendientes. Los casos esperando al jugador rec
 
 ## Archivo y recuperación
 
-Se crea `│・ 🔒┊ 𝐓𝐢𝐜𝐤𝐞𝐭𝐬 𝐂𝐞𝐫𝐫𝐚𝐝𝐨𝐬`, junto a Tickets. El bot mueve el mismo canal y conserva su historial, con escritura desactivada para participantes habituales. Si una categoría llega a su capacidad, crea otra privada con sufijo, sin mover tickets anteriores. No hay eliminación automática.
+Se crea `│・ 🔒┊ 𝐓𝐢𝐜𝐤𝐞𝐭𝐬 𝐂𝐞𝐫𝐫𝐚𝐝𝐨𝐬`, junto a Tickets. El bot mueve el mismo canal y conserva su historial, con escritura desactivada para participantes habituales. Si una categoría llega a su capacidad, crea otra privada con sufijo, sin mover tickets anteriores. No hay eliminación automática. Después del cierre aparece **Eliminar ticket**, solo para staff autorizado y con confirmación. Antes de borrar el canal se exige una transcripción completa, integridad de las pruebas y un respaldo verificado (Drive cuando está habilitado). Si falla, el canal se conserva. El registro y las pruebas permanecen accesibles con Tickets cerrados, aunque el canal ya no exista; no se puede reabrir un canal eliminado.
 
 Mensajes y sus ediciones/eliminaciones se conservan en tablas SQLite. Los adjuntos se guardan como datos binarios con SHA-256, por lo que los respaldos completos existentes (incluido Drive) contienen también las pruebas, no solo enlaces caducables. Límites iniciales: 25 MB por archivo, 100 MB por caso y 500 MB en total; se reserva espacio para respaldos. Si falla una copia o excede el límite, se avisa y el archivo figura como no respaldado. Los enlaces externos son referencias, no copias de archivos.
 

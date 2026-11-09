@@ -254,3 +254,108 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.assertIn(f'**#{other}**',body);self.assertNotIn(f'**#{reserved}**',body)
   panel=TicketPanel(self.system)
   self.assertIn('lv:ticket:closed',[item.custom_id for item in panel.children])
+
+ async def prepare_deletion(self):
+  self.system.store.transition(self.rid,'cerrado',5,'Resuelto')
+  self.system.store.update(self.rid,transcript='<html>CONVERSACION_GUARDADA</html>',archive_state='completo')
+  self.system.archive=AsyncMock(return_value='completo')
+  channel=MagicMock();channel.delete=AsyncMock()
+  self.system.channel=AsyncMock(return_value=channel)
+  self.bot.backups.enabled=True;self.bot.backups.execute=AsyncMock(return_value={'restore_state':'verified'})
+  async def tracked(row,title,operation):return await operation()
+  self.system.tracked=tracked
+  return channel
+
+ async def test_delete_only_after_close_staff_confirmation_and_verified_backup(self):
+  channel=await self.prepare_deletion()
+  self.system.store.file(self.rid,1,2,'proof.txt','https://cdn.discordapp.com/test',5)
+  self.system.store.save_blob(self.rid,2,b'proof')
+  order=[]
+  async def backup():order.append('backup');return {'restore_state':'verified'}
+  async def delete(**kwargs):order.append('delete')
+  self.bot.backups.execute.side_effect=backup;channel.delete.side_effect=delete
+  self.assertTrue(await self.system.delete_ticket(self.staff,self.rid))
+  self.assertEqual(order,['backup','delete'])
+  archived=self.system.store.get(self.rid)
+  self.assertTrue(archived['deleted_at']);self.assertEqual(archived['deletion_actor'],5)
+  self.assertIn('CONVERSACION_GUARDADA',archived['transcript'])
+  self.assertEqual(self.system.store.blob(self.rid,2),b'proof')
+  self.assertFalse(await self.system.delete_ticket(self.staff,self.rid))
+  channel.delete.assert_awaited_once()
+  self.i.user=self.owner
+  await self.system.export(self.i,archived)
+  self.assertIn('CONVERSACION_GUARDADA',self.i.response.send_message.call_args.kwargs['file'].fp.read().decode())
+  self.assertEqual(self.system.archive.await_count,2) # Export after deletion never fetches the vanished channel.
+  with self.assertRaisesRegex(ValueError,'eliminado'):self.system.store.transition(self.rid,'en_atencion',5,'Reabrir')
+
+ async def test_delete_blocks_open_unauthorized_and_incomplete_backup(self):
+  channel=await self.prepare_deletion()
+  with self.assertRaises(ValueError):await self.system.delete_ticket(self.owner,self.rid)
+  self.system.store.transition(self.rid,'en_atencion',5,'Reapertura: revisar')
+  with self.assertRaisesRegex(ValueError,'cerrados'):await self.system.delete_ticket(self.staff,self.rid)
+  self.system.store.transition(self.rid,'cerrado',5,'Resuelto de nuevo')
+  self.system.archive.return_value='parcial'
+  with self.assertRaisesRegex(ValueError,'No se elimina'):await self.system.delete_ticket(self.staff,self.rid)
+  self.system.archive.return_value='completo'
+  self.bot.backups.execute.return_value={'restore_state':'failed'}
+  with self.assertRaisesRegex(ValueError,'respaldo externo'):await self.system.delete_ticket(self.staff,self.rid)
+  channel.delete.assert_not_awaited();self.assertIsNone(self.system.store.get(self.rid)['deleted_at'])
+
+ async def test_delete_refuses_corrupted_or_missing_proof(self):
+  channel=await self.prepare_deletion()
+  self.system.store.file(self.rid,1,2,'proof.txt','https://cdn.discordapp.com/test',5,state='guardado',sha='invalid')
+  with self.assertRaisesRegex(ValueError,'íntegra'):await self.system.delete_ticket(self.staff,self.rid)
+  channel.delete.assert_not_awaited();self.bot.backups.execute.assert_not_awaited()
+
+ async def test_delete_button_only_on_closed_and_opening_confirmation_does_not_delete(self):
+  self.assertNotIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1).children])
+  self.assertIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1,True).children])
+  self.assertNotIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1,True,True).children])
+  await self.prepare_deletion();self.i.user=self.staff
+  self.system.delete_ticket=AsyncMock()
+  await self.system.action(self.i,self.rid,'delete')
+  confirmation=self.i.response.send_message.call_args.kwargs['view']
+  self.system.delete_ticket.assert_not_awaited()
+  self.i.response.edit_message=AsyncMock()
+  await confirmation.cancel.callback(self.i)
+  self.system.delete_ticket.assert_not_awaited()
+
+ async def test_delete_confirmation_rechecks_reopened_case(self):
+  channel=await self.prepare_deletion();self.i.user=self.staff
+  await self.system.action(self.i,self.rid,'delete')
+  confirm=self.i.response.send_message.call_args.kwargs['view']
+  self.system.store.transition(self.rid,'en_atencion',5,'Reapertura: todavía pendiente')
+  self.i.response.edit_message=AsyncMock()
+  await confirm.confirm.callback(self.i)
+  channel.delete.assert_not_awaited()
+
+ async def test_recovery_reconciles_confirmed_delete_without_repeating_delete_request(self):
+  await self.prepare_deletion()
+  self.system.store.update(self.rid,deletion_requested=123,deletion_actor=5)
+  guild=self.bot.get_guild.return_value;guild.fetch_channels=AsyncMock(return_value=[])
+  self.system.channel=AsyncMock(side_effect=discord.NotFound(SimpleNamespace(status=404,reason='Not Found'),'missing'))
+  await self.system.recover(self.rid)
+  self.assertTrue(self.system.store.get(self.rid)['deleted_at'])
+  self.assertIn('CONVERSACION_GUARDADA',self.system.store.get(self.rid)['transcript'])
+
+ async def test_deletion_columns_upgrade_existing_tickets_without_losing_history(self):
+  self.system.store.note(self.rid,5,'Nota conservada')
+  with self.system.store.db() as db:
+   for column in ('deleted_at','deletion_requested','deletion_actor'):
+    db.execute(f'ALTER TABLE lv_tickets DROP COLUMN {column}')
+  self.system.store.initialize()
+  row=self.system.store.get(self.rid)
+  self.assertEqual(row['owner'],1);self.assertIsNone(row['deleted_at'])
+  self.assertEqual(self.system.store.events(self.rid,notes=True)[0]['text'],'Nota conservada')
+
+
+ async def test_new_messages_during_backup_prevent_deletion_until_confirmed_again(self):
+  channel=await self.prepare_deletion()
+  async def archive(row):
+   if self.system.archive.await_count==2:
+    self.system.store.update(self.rid,transcript='<html>MENSAJE_NUEVO</html>')
+   return 'completo'
+  self.system.archive.side_effect=archive
+  with self.assertRaisesRegex(ValueError,'cambió durante'):await self.system.delete_ticket(self.staff,self.rid)
+  channel.delete.assert_not_awaited()
+  self.assertIsNone(self.system.store.get(self.rid)['deleted_at'])

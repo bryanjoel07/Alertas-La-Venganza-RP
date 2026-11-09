@@ -14,7 +14,7 @@ import time
 import discord
 from discord import app_commands
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
-from tickets_ui import TicketPanel,TicketAction,TicketControls,TextForm,ChoiceView,CasePicker,reply
+from tickets_ui import TicketPanel,TicketAction,TicketControls,TextForm,ChoiceView,CasePicker,DeleteConfirm,reply
 
 log=logging.getLogger('LaVenganzaRP.tickets')
 PANEL_CHANNEL=1513423707467415642
@@ -102,6 +102,7 @@ class TicketSystem:
  def admin(self,member):
   if member.guild.id!=self.guild_id or not member.guild_permissions.administrator:raise ValueError('Esta configuración requiere Administrador de Discord.')
  async def channel(self,row):
+  if row.get('deleted_at'):raise ValueError('El canal fue eliminado; su transcripción y pruebas siguen en Tickets cerrados.')
   if not row['channel']:raise ValueError('El canal de este ticket todavía está en preparación. El staff puede usar /ticket recuperar.')
   channel=await self.bot.fetch_channel(row['channel'])
   if channel.guild.id!=self.guild_id or not isinstance(channel,discord.TextChannel) or channel.topic!=f"lv-ticket:{row['id']}":raise ValueError('Ese canal no está identificado como un ticket gestionado por este bot.')
@@ -118,11 +119,13 @@ class TicketSystem:
   for key,value in json.loads(row['form']).items():
    if value:embed.add_field(name=key.capitalize(),value=discord.utils.escape_markdown(value)[:1024],inline=False)
   if row.get('purchase_id'):embed.add_field(name='Compra vinculada',value=f"`{row['purchase_id']}` · Staff puede consultar /ticket compra",inline=False)
+  if row.get('deleted_at'):embed.add_field(name='Archivo conservado',value=f"Canal eliminado <t:{row['deleted_at']}:F>. La transcripción y las pruebas siguen disponibles.",inline=False)
   if row.get('resolution'):embed.add_field(name='Resolución',value=discord.utils.escape_markdown(row['resolution'])[:1024],inline=False)
   if row['department']=='staff':embed.add_field(name='Privacidad',value='Caso reservado. Los usuarios con Administrador en Discord conservan acceso técnico.',inline=False)
   embed.set_footer(text=f"Autor ID {row['owner']} · Usa los controles del ticket · No compartas contraseñas ni datos de tarjeta")
   return embed
  async def refresh(self,row):
+  if row.get('deleted_at'):return
   channel=await self.channel(row)
   message=None
   if row['control_message']:
@@ -170,7 +173,7 @@ class TicketSystem:
  async def snapshot(self,row):
   current=self.store.get(row['id'])
   value=dict(ticket=current)
-  if current['channel']:
+  if current['channel'] and not current.get('deleted_at'):
    with suppress(discord.NotFound):
     c=await self.channel(current)
     value['channel']=dict(id=str(c.id),parent=str(c.category_id),overwrites=[dict(id=str(o.id),type=o.type,allow=str(o.allow),deny=str(o.deny)) for o in c._overwrites])
@@ -183,6 +186,7 @@ class TicketSystem:
   async def change():return await channel.edit(category=category,sync_permissions=False,reason=reason)
   return await self.tracked(row,f"Mover ticket #{row['id']}",change)
  async def apply_permissions(self,row):
+  if row.get('deleted_at'):return
   channel=await self.channel(row);guild=channel.guild
   owner=await self.member(guild,row['owner'])
   if not owner:owner=discord.Object(id=row['owner'],type=discord.Member)
@@ -205,6 +209,7 @@ class TicketSystem:
  async def access(self,member,row):
   row=self.store.get(row['id'])
   self.authorize(member,row,staff=True)
+  if row.get('deleted_at'):return
   if member.guild_permissions.administrator:return
   channel=await self.channel(row)
   overwrite=channel.overwrites_for(member)
@@ -264,7 +269,7 @@ class TicketSystem:
   visible=[r for r in all_rows if (own or can_staff(i.user,r,self.store)) and (closed_only or not json.loads(r['form']).get('selftest')) and (not closed_only or r['status']=='cerrado')]
   visible=sorted(visible,key=lambda r:(r['status']=='cerrado',-r['id']))
   rows=visible[(page-1)*25:page*25]
-  lines=[f"**#{r['id']}** · {DEPARTMENTS[r['department']][1]} · {STATE_LABELS.get(r['status'],r['status'])} · "+(f"<#{r['channel']}>" if r['channel'] else 'Preparando') for r in rows]
+  lines=[f"**#{r['id']}** · {DEPARTMENTS[r['department']][1]} · {STATE_LABELS.get(r['status'],r['status'])} · "+('Canal eliminado · archivo disponible' if r.get('deleted_at') else f"<#{r['channel']}>" if r['channel'] else 'Preparando') for r in rows]
   title=('🔒 Mis tickets cerrados' if own else '🔒 Tickets cerrados autorizados') if closed_only else ('📂 Mis tickets' if own else '🧰 Gestión de tickets')
   embed=discord.Embed(title=title,description='\n'.join(lines) or 'No hay casos en esta página.',color=0xD60000)
   if not own and not closed_only:
@@ -329,11 +334,50 @@ class TicketSystem:
   except Exception:
    self.store.update(row['id'],archive_state='pendiente')
    log.exception('TICKETS close_recovery_required id=%s',row['id']);raise
-  await channel.send(f"🔒 Ticket cerrado. Resolución: {discord.utils.escape_markdown(reason)[:1200]}\nTranscripción y pruebas: **{state}**. El autor puede valorar o solicitar reapertura desde los controles.",
+  await channel.send(f"🔒 Ticket cerrado. Resolución: {discord.utils.escape_markdown(reason)[:1200]}\nTranscripción y pruebas: **{state}**. El staff puede usar **🗑️ Eliminar ticket** con confirmación. El autor puede valorar o solicitar reapertura desde los controles.",
     view=TicketControls(row['id'],True),allowed_mentions=discord.AllowedMentions.none())
   owner=await self.member(channel.guild,row['owner'])
   if owner and not owner.bot:
    with suppress(discord.Forbidden):await owner.send(f"Tu ticket #{row['id']} de La Venganza RP fue cerrado.\nResolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes valorarlo o reabrirlo en <#{channel.id}>.",allowed_mentions=discord.AllowedMentions.none())
+ async def delete_ticket(self,member,rid):
+  async with self.lock:
+   row=self.store.get(rid)
+   if not row:raise ValueError('Ese ticket no existe.')
+   self.authorize(member,row,staff=True)
+   if row.get('deleted_at'):return False
+   if row['status']!='cerrado':raise ValueError('Solo se pueden eliminar canales de tickets cerrados.')
+   state=await self.archive(row)
+   row=self.store.get(rid)
+   if state!='completo' or not row['transcript']:raise ValueError('No se elimina: hay una transcripción o pruebas sin respaldar. Completa el archivo antes de volver a confirmar.')
+   for proof in self.store.files(rid):
+    data=await self.call('blob',rid,proof['attachment'])
+    if data is None or hashlib.sha256(data).hexdigest()!=proof['sha256']:
+     raise ValueError('No se elimina: una prueba no tiene una copia íntegra verificada.')
+   await self.call('update',rid,deletion_requested=int(time.time()),deletion_actor=member.id)
+   await self.record(rid,member.id,'solicitar_eliminacion','Confirmación del staff; verificar respaldo antes de borrar canal')
+   if self.bot.backups.enabled:
+    try:backup=await self.bot.backups.execute()
+    except Exception:
+     log.exception('TICKETS deletion_backup_failed id=%s; channel preserved',rid)
+     raise ValueError('No se elimina: el respaldo está ocupado o no pudo verificarse. El canal se conserva; inténtalo de nuevo cuando el respaldo esté disponible.') from None
+    if backup.get('restore_state')!='verified':raise ValueError('No se elimina: no se pudo verificar el respaldo externo.')
+   else:
+    from backup import snapshot
+    folder=self.store.path.resolve().parent/'backups';folder.mkdir(exist_ok=True)
+    await asyncio.to_thread(snapshot,self.store.path,folder/f'ticket-{rid}-antes-eliminar-{time.time_ns()}.sqlite3')
+   async def remove():
+    # Fetch again after backing up; never delete a foreign, renamed-topic or reopened case.
+    current=self.store.get(rid)
+    if current['status']!='cerrado':raise ValueError('El ticket fue reabierto; se canceló la eliminación.')
+    channel=await self.channel(current)
+    final_state=await self.archive(current)
+    if final_state!='completo' or self.store.get(rid)['transcript']!=row['transcript']:
+     raise ValueError('No se elimina: el caso cambió durante el respaldo. Revisa la conversación y vuelve a confirmar para respaldar los cambios.')
+    await channel.delete(reason=f'Eliminación confirmada del ticket cerrado #{rid}; actor {member.id}; archivo verificado')
+    await self.call('mark_deleted',rid,member.id)
+   await self.tracked(row,f'Eliminar canal de ticket cerrado #{rid}',remove)
+   log.info('TICKETS deleted channel=%s id=%s archive_preserved=True proofs_verified=True actor=%s',row['channel'],rid,member.id)
+   return True
  async def reopen(self,i,row,reason):
   self.authorize(i.user,row)
   if row['status']!='cerrado':raise ValueError('Ese ticket sigue abierto.')
@@ -361,7 +405,7 @@ class TicketSystem:
     await reply(i,('Archivo dividido; une las partes en orden para recuperar el original.' if chunks>1 else None),file=discord.File(io.BytesIO(data[index*limit:(index+1)*limit]),filename=Path(target['filename']).name[:100]+suffix))
    return
   # Live tickets are exported from the saved messages, including already deleted messages.
-  await self.archive(row)
+  if not row.get('deleted_at'):await self.archive(row)
   fresh=self.store.get(row['id'])
   data=fresh['transcript'].encode()
   await reply(i,f"Transcripción del ticket #{row['id']}. Respaldo de pruebas: {fresh['archive_state']}. Las notas internas están excluidas.",
@@ -370,7 +414,11 @@ class TicketSystem:
   row=await self.call('get',rid)
   if not row:raise ValueError('Ese ticket no existe.')
   if i.guild_id!=self.guild_id:raise ValueError('Usa los controles en La Venganza RP.')
-  self.authorize(i.user,row,staff=action in ('claim','wait','resolve','note','transfer','priority','people'))
+  self.authorize(i.user,row,staff=action in ('claim','wait','resolve','note','transfer','priority','people','delete'))
+  if action=='delete':
+   if row.get('deleted_at'):return await reply(i,'El canal ya fue eliminado. Su archivo se conserva en Tickets cerrados.')
+   if row['status']!='cerrado':raise ValueError('Primero cierra el ticket. Solo después aparecerá la opción de eliminarlo.')
+   return await reply(i,f"¿Eliminar el canal del ticket #{rid}? Esta acción borra el canal de Discord; su transcripción y pruebas se conservarán. Solo se eliminará si el respaldo queda completo y verificado.",view=DeleteConfirm(self,i.user.id,rid))
   if action=='close' and not(can_staff(i.user,row,self.store) or i.user.id==row['owner']):raise ValueError('Solo el autor o el staff pueden cerrar.')
   if action in ('close','resolve','wait','note','reopen'):
    async def submit(click,value):
@@ -475,9 +523,27 @@ class TicketSystem:
   ids=[getattr(c,'custom_id',None) for r in confirmed.components for c in r.children]
   labels=[option.label for row in confirmed.components for component in row.children for option in getattr(component,'options',[])]
   if 'lv:ticket:department' not in ids or 'lv:ticket:closed' not in ids or DEPARTMENTS['faccion'][1] not in labels:raise ValueError('Discord no confirmó el panel de tickets actualizado.')
+  upgraded=0
   for ticket in self.store.list(limit=10000):
-   if ticket['department']=='faccion' and ticket['channel']:
-    await self.refresh(ticket)
+   if ticket.get('deleted_at'):continue
+   if ticket['channel'] and ticket['status']=='cerrado':
+    async with self.lock:
+     current=self.store.get(ticket['id'])
+     if current['status']!='cerrado' or current.get('deleted_at'):continue
+     try:
+      case_channel=await self.channel(current)
+      if case_channel.category_id!=closed.id:await self.move(current,closed,'Agrupar tickets ya cerrados')
+      await self.refresh(current)
+      async for notice in case_channel.history(limit=25):
+       if notice.author.id==self.bot.user.id and notice.content.startswith('🔒 Ticket cerrado.'):
+        await notice.edit(view=TicketControls(current['id'],True));break
+      control=await case_channel.fetch_message(self.store.get(ticket['id'])['control_message'])
+      buttons=[getattr(component,'custom_id',None) for row in control.components for component in row.children]
+      if f"lv:ticket:case:{ticket['id']}:delete" not in buttons:raise ValueError('Discord no confirmó el botón de eliminación')
+      upgraded+=1
+     except discord.NotFound:log.warning('TICKETS missing_closed_channel id=%s',ticket['id'])
+   elif ticket['department']=='faccion' and ticket['channel']:await self.refresh(ticket)
+  log.info('TICKETS closed_delete_controls_verified upgraded=%s category=%s',upgraded,closed.id)
   log.info('TICKETS department_labels_verified labels=%s',labels)
   log.info('TICKETS closed_navigation_verified button=lv:ticket:closed category=%s states=%s',closed.id,self.store.stats()['states'])
   log.info('TICKETS panel_verified channel=%s message=%s closed_category=%s legacy_channels_untouched=True protected_roles_untouched=True',panel.id,message.id,closed.id)
@@ -494,6 +560,7 @@ class TicketSystem:
      if result.get('restore_state')!='verified':raise RuntimeError('No se verificó la restauración del respaldo con las pruebas')
      self.store.config('selftest-backup:'+request,'verified')
      log.info('TICKETS external_backup_verified proofs_in_sqlite=True restore_verified=True')
+    await self.bot.changes.tracked('TICKETS_DELETE_SELFTEST_REQUEST_ID','Verificar eliminación de ticket cerrado',self.delete_selftest)
     self.prepared=True
     log.info('TICKETS ready panel=%s active_category=%s closed_category=%s persistent_controls=True',PANEL_CHANNEL,self.store.config('active_category'),self.store.config('closed_category'))
  async def recover(self,rid=None):
@@ -502,6 +569,12 @@ class TicketSystem:
   rows=[self.store.get(rid)] if rid else self.store.list(limit=10000)
   for row in rows:
    if not row:continue
+   if row.get('deleted_at'):continue
+   if row.get('deletion_requested'):
+    try:await self.channel(row)
+    except discord.NotFound:
+     await self.call('mark_deleted',row['id'],row['deletion_actor'] or self.bot.user.id)
+     continue
    if row['status']=='creando' or (row['status']=='fallido' and row['channel']):
     matches=[c for c in channels if isinstance(c,discord.TextChannel) and c.topic==f"lv-ticket:{row['id']}"]
     if len(matches)==1:
@@ -553,6 +626,48 @@ class TicketSystem:
   row=self.store.get(rid,channel=i.channel_id) if rid is not None else self.store.get(channel=i.channel_id)
   if not row:raise ValueError('Usa este comando dentro de un ticket del nuevo bot o indica su número.')
   return row
+ async def delete_selftest(self):
+  request=os.getenv('TICKETS_DELETE_SELFTEST_REQUEST_ID','').strip()
+  if not request or self.store.config('delete-selftest-complete:'+request):return
+  if not re.fullmatch('[A-Za-z0-9_-]{1,80}',request):raise ValueError('Identificador de prueba inválido')
+  guild=self.bot.get_guild(self.guild_id)
+  key='delete-selftest-ticket:'+request
+  async with self.lock:
+   rid=self.store.config(key)
+   if rid:rid=int(rid)
+   else:
+    rid=self.store.create(self.bot.user.id,'soporte','PRUEBA DE ELIMINACIÓN · SIN JUGADOR',dict(selftest=request,detalles='Verificar archivo después de eliminar un canal cerrado.'))
+    self.store.config(key,rid)
+   row=self.store.get(rid)
+   if not row['channel']:
+    matches=[c for c in await guild.fetch_channels() if getattr(c,'topic',None)==f'lv-ticket:{rid}']
+    if len(matches)>1:raise RuntimeError('La prueba requiere revisar canales duplicados')
+    if matches:channel=matches[0]
+    else:
+     category=await self.ensure_category(guild)
+     channel=await guild.create_text_channel(f'🧪┊𝐞𝐥𝐢𝐦𝐢𝐧𝐚𝐫-{rid:04d}',category=category,topic=f'lv-ticket:{rid}',
+        overwrites=channel_overwrites(guild,row,self.store,guild.me),reason='Prueba autorizada del botón para eliminar tickets cerrados')
+    self.store.update(rid,channel=channel.id,status='nuevo');row=self.store.get(rid)
+   if not row.get('deleted_at'):
+    channel=await self.channel(row)
+    if not self.store.files(rid):
+     await channel.send('PRUEBA_GUARDADA_TRAS_ELIMINAR',file=discord.File(io.BytesIO(b'PRUEBA_GUARDADA_TRAS_ELIMINAR'),filename='prueba-eliminacion.txt'),allowed_mentions=discord.AllowedMentions.none())
+    if row['status']!='cerrado':await self.close(self.store.get(rid),self.bot.user.id,'Cerrar para verificar la eliminación con archivo conservado')
+    else:await self.refresh(self.store.get(rid))
+    control=await channel.fetch_message(self.store.get(rid)['control_message'])
+    buttons=[getattr(c,'custom_id',None) for r in control.components for c in r.children]
+    if f'lv:ticket:case:{rid}:delete' not in buttons:raise RuntimeError('No se confirmó el botón de eliminación')
+  await self.delete_ticket(guild.me,rid)
+  row=self.store.get(rid)
+  if not row.get('deleted_at') or 'PRUEBA_GUARDADA_TRAS_ELIMINAR' not in row['transcript']:raise RuntimeError('No se conservó la transcripción tras eliminar')
+  for proof in self.store.files(rid):
+   data=self.store.blob(rid,proof['attachment'])
+   if data is None or hashlib.sha256(data).hexdigest()!=proof['sha256']:raise RuntimeError('No se conservó una prueba tras eliminar')
+  try:await self.bot.fetch_channel(row['channel'])
+  except discord.NotFound:pass
+  else:raise RuntimeError('Discord no confirmó la eliminación del canal de prueba')
+  self.store.config('delete-selftest-complete:'+request,'verified')
+  log.info('TICKETS deletion_selftest_verified id=%s channel=%s deleted=True transcript_preserved=True proofs_preserved=True external_backup_verified=%s',rid,row['channel'],self.bot.backups.enabled)
  async def selftest(self):
   request=os.getenv('TICKETS_SELFTEST_REQUEST_ID','').strip()
   if not request or self.store.config('selftest-complete:'+request):return
@@ -632,7 +747,8 @@ class TicketSystem:
    await i.response.defer(ephemeral=True)
    row=self.current(i,numero)
    async with self.lock:await self.access(i.user,row)
-   await reply(i,f"Caso #{numero}: <#{row['channel']}>",embed=self.embed(row),view=TicketControls(numero,row['status']=='cerrado'))
+   location='Canal eliminado · archivo disponible' if row.get('deleted_at') else f"<#{row['channel']}>"
+   await reply(i,f"Caso #{numero}: {location}",embed=self.embed(row),view=TicketControls(numero,row['status']=='cerrado',bool(row.get('deleted_at'))))
   @self.group.command(name='nota',description='Guardar una nota interna que no verá el jugador')
   async def note(i:discord.Interaction,texto:app_commands.Range[str,1,1500],numero:int=None):
    row=self.current(i,numero);self.authorize(i.user,row,True)

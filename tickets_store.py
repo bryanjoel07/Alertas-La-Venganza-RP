@@ -55,6 +55,9 @@ class TicketStore:
     '''CREATE TABLE IF NOT EXISTS lv_ticket_message_versions(id INTEGER PRIMARY KEY,ticket INTEGER NOT NULL,message INTEGER NOT NULL,saved TEXT NOT NULL)''',
     'CREATE TABLE IF NOT EXISTS lv_ticket_config(key TEXT PRIMARY KEY,value TEXT NOT NULL)']:
     db.execute(sql)
+   columns={r[1] for r in db.execute('PRAGMA table_info(lv_tickets)')}
+   for column in ('deleted_at','deletion_requested','deletion_actor'):
+    if column not in columns:db.execute(f'ALTER TABLE lv_tickets ADD COLUMN {column} INTEGER')
    for key,value in DEFAULTS.items():db.execute('INSERT OR IGNORE INTO lv_ticket_config VALUES (?,?)',(key,str(value)))
  def config(self,key,value=None):
   with self.db() as db:
@@ -87,7 +90,7 @@ class TicketStore:
   if status is not None:clauses.append('status=?');args.append(status)
   with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_tickets'+(' WHERE '+' AND '.join(clauses) if clauses else '')+' ORDER BY id DESC LIMIT ? OFFSET ?',(*args,limit,offset))]
  def update(self,rid,**fields):
-  allowed={'channel','control_message','status','assignee','priority','resolution','warning_at','reminded_at','closed','transcript','archive_state','department'}
+  allowed={'channel','control_message','status','assignee','priority','resolution','warning_at','reminded_at','closed','transcript','archive_state','department','deletion_requested','deletion_actor'}
   if not fields or not set(fields)<=allowed:raise ValueError('Actualización no válida')
   with self.db() as db:db.execute('UPDATE lv_tickets SET '+','.join(k+'=?' for k in fields)+',updated=? WHERE id=?',(*fields.values(),int(time.time()),rid))
  def claim(self,rid,actor):
@@ -104,6 +107,7 @@ class TicketStore:
   with self.db() as db:
    r=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
    if not r:raise ValueError('Ticket no encontrado.')
+   if r['deleted_at']:raise ValueError('El canal fue eliminado. Su transcripción y pruebas siguen disponibles en Tickets cerrados.')
    if status=='cerrado' and r['status']=='cerrado':raise ValueError('El ticket ya está cerrado.')
    if r['status']=='cerrado' and status!='en_atencion':raise ValueError('Primero reabre el ticket.')
    if r['status'] in ('creando','fallido'):raise ValueError('La creación de este ticket no ha terminado.')
@@ -173,13 +177,13 @@ class TicketStore:
   import json
   with self.db() as db:
    previous=db.execute('SELECT * FROM lv_ticket_messages WHERE ticket=? AND message=?',(rid,message.id)).fetchone()
-   new_embeds=json.dumps([e.to_dict() for e in message.embeds],ensure_ascii=False)
+   new_embeds=json.dumps([e.to_dict() for e in message.embeds],ensure_ascii=False,sort_keys=True)
    if previous and (previous['content']!=message.content or previous['embeds']!=new_embeds):
     db.execute('INSERT INTO lv_ticket_message_versions(ticket,message,saved) VALUES (?,?,?)',(rid,message.id,json.dumps(dict(previous),ensure_ascii=False)))
    db.execute("""INSERT INTO lv_ticket_messages(ticket,message,author,name,content,embeds,created,edited) VALUES (?,?,?,?,?,?,?,?)
       ON CONFLICT(ticket,message) DO UPDATE SET content=excluded.content,embeds=excluded.embeds,edited=excluded.edited""",
       (rid,message.id,message.author.id,message.author.display_name,message.content,
-       json.dumps([e.to_dict() for e in message.embeds],ensure_ascii=False),message.created_at.isoformat(),
+       json.dumps([e.to_dict() for e in message.embeds],ensure_ascii=False,sort_keys=True),message.created_at.isoformat(),
        message.edited_at.isoformat() if message.edited_at else None))
  def deleted(self,channel,message):
   with self.db() as db:db.execute('UPDATE lv_ticket_messages SET deleted=1 WHERE message=? AND ticket IN (SELECT id FROM lv_tickets WHERE channel=?)',(message,channel))
@@ -210,3 +214,13 @@ class TicketStore:
   with self.db() as db:
    r=db.execute('SELECT data FROM lv_ticket_blobs WHERE ticket=? AND attachment=?',(rid,attachment)).fetchone()
    return r[0] if r else None
+
+ def mark_deleted(self,rid,actor):
+  stamp=int(time.time())
+  with self.db() as db:
+   row=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
+   if not row or row['status']!='cerrado':raise ValueError('Solo se pueden eliminar canales de tickets cerrados.')
+   if row['deleted_at']:return False
+   db.execute('UPDATE lv_tickets SET deleted_at=?,deletion_actor=?,deletion_requested=NULL,updated=? WHERE id=?',(stamp,actor,stamp,rid))
+   self.event(db,rid,actor,'eliminar_canal','Canal eliminado por confirmación; transcripción y pruebas conservadas')
+   return True

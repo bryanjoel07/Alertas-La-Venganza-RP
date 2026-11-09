@@ -1,5 +1,6 @@
 """Persistent ticket controls; every callback is authorized again by the service."""
 import re
+from contextlib import suppress
 import logging
 import discord
 from discord import app_commands
@@ -73,12 +74,12 @@ class TicketPanel(SafeView):
 ACTIONS={'claim':('Reclamar','🙋'),'wait':('Solicitar pruebas','📎'),'resolve':('Resolver','✅'),
  'close':('Cerrar','🔒'),'reopen':('Reabrir','🔓'),'transcript':('Transcripción','📄'),
  'note':('Nota interna','📝'),'transfer':('Transferir','🔀'),'priority':('Prioridad','🚩'),
- 'people':('Participantes','👥'),'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️')}
+ 'people':('Participantes','👥'),'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️')}
 class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticket:case:(?P<ticket>[0-9]+):(?P<action>[a-z]+)'):
  def __init__(self,rid,action):
   label,emoji=ACTIONS[action]
   super().__init__(discord.ui.Button(label=label,emoji=emoji,custom_id=f'lv:ticket:case:{rid}:{action}',
-   style=discord.ButtonStyle.danger if action=='close' else discord.ButtonStyle.secondary))
+   style=discord.ButtonStyle.danger if action in ('close','delete') else discord.ButtonStyle.secondary))
   self.rid,self.action=rid,action
  @classmethod
  async def from_custom_id(cls,i,item,match):return cls(int(match['ticket']),match['action'])
@@ -92,9 +93,10 @@ class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticke
    await reply(i,'El caso se conserva, pero esa acción necesita revisión. Inténtalo de nuevo o avisa a administración.')
 
 class TicketControls(discord.ui.View):
- def __init__(self,rid,closed=False):
+ def __init__(self,rid,closed=False,deleted=False):
   super().__init__(timeout=None)
-  for n,action in enumerate(ACTIONS):
+  actions=[action for action in ACTIONS if (action!='delete' or closed) and (not deleted or action in ('transcript','proof','rate'))]
+  for n,action in enumerate(actions):
    item=TicketAction(rid,action)
    item.item.row=n//4
    item.item.disabled=(closed and action in ('claim','wait','resolve','close','transfer','priority','people')) or (not closed and action in ('reopen','rate'))
@@ -126,7 +128,8 @@ class CasePicker(discord.ui.Select):
     async with self.system.lock:await self.system.access(i.user,row)
    else:self.system.authorize(i.user,row)
    row=self.system.store.get(row['id'])
-   await reply(i,f"Ticket #{row['id']} · <#{row['channel']}>",embed=self.system.embed(row),view=TicketControls(row['id'],row['status']=='cerrado'))
+   location='Canal eliminado · archivo disponible' if row.get('deleted_at') else f"<#{row['channel']}>"
+   await reply(i,f"Ticket #{row['id']} · {location}",embed=self.system.embed(row),view=TicketControls(row['id'],row['status']=='cerrado',bool(row.get('deleted_at'))))
   except (ValueError,discord.HTTPException) as error:await reply(i,str(error) if isinstance(error,ValueError) else 'No se pudo abrir el caso.')
 
 class ChoiceView(SafeView):
@@ -135,3 +138,24 @@ class ChoiceView(SafeView):
   select=discord.ui.Select(placeholder=placeholder,options=options)
   async def choose(i):await callback(i,select.values[0])
   select.callback=choose;self.add_item(select)
+
+
+class DeleteConfirm(SafeView):
+ def __init__(self,system,user,rid):
+  super().__init__(timeout=90);self.system,self.user,self.rid=system,user,rid
+ async def interaction_check(self,i):
+  if i.user.id==self.user:return True
+  await reply(i,'Solo quien solicitó la eliminación puede confirmarla.');return False
+ @discord.ui.button(label='Confirmar eliminación',emoji='🗑️',style=discord.ButtonStyle.danger)
+ async def confirm(self,i,button):
+  await i.response.edit_message(content='Verificando la transcripción, las pruebas y el respaldo antes de eliminar…',view=None)
+  self.stop()
+  try:
+   changed=await self.system.delete_ticket(i.user,self.rid)
+   with suppress(discord.NotFound):
+    await reply(i,'Canal eliminado. Su transcripción y pruebas siguen en Tickets cerrados.' if changed else 'El canal ya estaba eliminado; su archivo se conserva.')
+  except (ValueError,discord.HTTPException) as error:
+   await reply(i,str(error) if isinstance(error,ValueError) else 'Discord no confirmó la eliminación. El caso sigue registrado para revisión.')
+ @discord.ui.button(label='Cancelar',style=discord.ButtonStyle.secondary)
+ async def cancel(self,i,button):
+  self.stop();await i.response.edit_message(content='Eliminación cancelada. El canal se conserva.',view=None)
