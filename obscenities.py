@@ -1,11 +1,15 @@
 """Filtro nativo de Discord para lenguaje obsceno en La Venganza RP."""
 import logging
+import re
+import unicodedata
 
 import discord
 from discord.ext import tasks
 
 NAME = "La Venganza RP · Lenguaje obsceno"
 NOTICE = "Este mensaje contiene lenguaje bloqueado en La Venganza RP. Reformúlalo para enviarlo."
+ABBREVIATIONS='cbn cbns cbna cbnas cbnes cbrn cbrns cbrnes cbron cbrones'.split()
+OLD_ABBREVIATION_PATTERN=r"(?i)\b(?:c[._-]?b|h[._-]?p|h[._-]?d[._-]?p(?:[._-]?t)?|w[._-]?l[._-]?b|m[._-]?m[._-]?b)\b"
 # Palabras que ya constituyen un insulto, incluidas grafías regionales y evasiones.
 REGIONAL_INSULTS = """
 hijueperra hijueperras triplehijueputa triplehijueputas triplehp hpta hptas hdpta hdptas
@@ -125,11 +129,11 @@ singao singaos singada singadas singazón singazon pingazo pingazos pinga pingas
     "vete a la verga","vete al carajo","la concha de tu madre","la concha de tu hermana",
     "coño de tu madre","coño de la madre","coño de su madre","mama bicho","huele bicho",
     "mama el bicho","mama la verga","chupa la verga","chupa el pico",
-} | set(REGIONAL_INSULTS) | DIRECTED_PHRASES)
+} | set(REGIONAL_INSULTS) | DIRECTED_PHRASES | set(ABBREVIATIONS))
 
 # Compact patterns fit Discord's Rust regex limits and keep word boundaries.
 PATTERNS = [
-    r"(?i)\b(?:c[._-]?b|h[._-]?p|h[._-]?d[._-]?p(?:[._-]?t)?|w[._-]?l[._-]?b|m[._-]?m[._-]?b)\b",
+    r"(?i)\b(?:c[ ._*/-]*b(?:[ ._*/-]*r?[ ._*/-]*n(?:[ ._*/-]*[ae34@])?[ ._*/-]*s?)?|h[._-]?p|h[._-]?d[._-]?p(?:[._-]?t)?|w[._-]?l[._-]?b|m[._-]?m[._-]?b)\b",
     r"(?i)\bc+[ ._*/-]*[aá4@]+[ ._*/-]*b+[ ._*/-]*r+[ ._*/-]*[oó0]+[ ._*/-]*n+(?:[ae]s?|s)?\b",
     r"(?i)\bp+[ ._*/-]*[uú]+[ ._*/-]*[ñn]+[ ._*/-]*[eé3]+[ ._*/-]*t+[ ._*/-]*[aá4@]+s?\b",
     r"(?i)\b(?:m+[ ._*/-]*[aá4@]+[ ._*/-]*m+[ ._*/-]*[aá4@]+|(?:[hg]?[uü]|wu?)[eé3]+l+[eé3]+)[ ._*/-]*b+[ ._*/-]*[ií1!]+[ ._*/-]*c+[ ._*/-]*h+[ ._*/-]*[oó0]+s?\b",
@@ -147,11 +151,57 @@ class ObscenityFilter:
         self.client, self.guild_id = client, guild_id
         self.get_setting, self.set_setting = get_setting, set_setting
         self.last_status = None
+        self.report_checked=False
 
     def status(self, message):
         if self.last_status != message:
             logging.getLogger(__name__).info("AutoMod: %s", message)
             self.last_status = message
+
+    @staticmethod
+    def desired(rule):
+        keywords=sorted(set(WORDS)|set(rule.trigger.keyword_filter if rule else []))
+        patterns=list(rule.trigger.regex_patterns) if rule else []
+        patterns=[PATTERNS[0] if p==OLD_ABBREVIATION_PATTERN else p for p in patterns]
+        for pattern in PATTERNS:
+            if pattern not in patterns and len(patterns)<10:patterns.append(pattern)
+        if len(keywords)>1000 or any(len(w)>60 for w in keywords) or any(len(p)>260 for p in patterns):
+            raise ValueError('La lista supera los límites de AutoMod; se conserva la regla anterior.')
+        trigger=discord.AutoModTrigger(keyword_filter=keywords,regex_patterns=patterns,
+            allow_list=list(rule.trigger.allow_list) if rule else [])
+        actions=list(rule.actions) if rule else []
+        if not any(a.type==discord.AutoModRuleActionType.block_message for a in actions):
+            actions.append(discord.AutoModRuleAction(custom_message=NOTICE))
+        return trigger,actions
+
+    @staticmethod
+    def matches(rule,trigger,actions):
+        return (rule.enabled and rule.event_type==discord.AutoModRuleEventType.message_send
+            and rule.trigger.type==discord.AutoModRuleTriggerType.keyword
+            and set(rule.trigger.keyword_filter)==set(trigger.keyword_filter)
+            and set(rule.trigger.regex_patterns)==set(trigger.regex_patterns)
+            and set(rule.trigger.allow_list)==set(trigger.allow_list)
+            and [a.to_dict() for a in rule.actions]==[a.to_dict() for a in actions])
+
+    async def inspect_report(self,guild,rule):
+        if self.report_checked:return
+        self.report_checked=True
+        for channel in guild.text_channels:
+            name=''.join(c for c in unicodedata.normalize('NFKD',channel.name).casefold() if c.isalnum())
+            if name!='general':continue
+            try:
+                async for message in channel.history(limit=100):
+                    text=message.content.casefold()
+                    if not (re.search(r'\bcbnes\b',text) and 'en vc' in text):continue
+                    member=await guild.fetch_member(message.author.id)
+                    permissions=member.guild_permissions
+                    explicit_exempt=bool({r.id for r in member.roles}&rule.exempt_role_ids) or channel.id in rule.exempt_channel_ids
+                    logging.getLogger(__name__).info('OBSCENITY reported_message_checked message=%s channel=%s author=%s '
+                        'administrator=%s manage_guild=%s explicit_exemption=%s history_unchanged=True',message.id,channel.id,
+                        member.id,permissions.administrator,permissions.manage_guild,explicit_exempt)
+                    return
+            except discord.HTTPException as error:
+                logging.getLogger(__name__).warning('OBSCENITY report_check_unavailable status=%s',error.status)
 
     @tasks.loop(minutes=2)
     async def install(self):
@@ -162,25 +212,44 @@ class ObscenityFilter:
         try:
             existing = await guild.fetch_automod_rules()
             saved = self.get_setting("obscenity_rule_id")
-            if saved:
-                self.status("regla activa" if any(str(r.id)==saved and r.enabled for r in existing)
-                            else "regla retirada o desactivada en Discord")
-                self.install.stop()
-                return
-            rule = next((r for r in existing if r.name == NAME),None)
+            rule=next((r for r in existing if str(r.id)==saved),None) if saved else None
+            rule=rule or next((r for r in existing if r.name==NAME),None)
             if rule and rule.creator_id != self.client.user.id:
                 self.status("nombre ocupado por otra regla; se conserva")
                 return
-            if rule is None:
-                rule = await guild.create_automod_rule(name=NAME,event_type=discord.AutoModRuleEventType.message_send,
-                    trigger=discord.AutoModTrigger(keyword_filter=WORDS,regex_patterns=PATTERNS),
-                    actions=[discord.AutoModRuleAction(custom_message=NOTICE)],enabled=True,
-                    reason="Filtro acordado de palabras obscenas para La Venganza RP")
+            if rule and (rule.trigger.type!=discord.AutoModRuleTriggerType.keyword or rule.event_type!=discord.AutoModRuleEventType.message_send):
+                self.status('la regla guardada tiene otro tipo; se conserva');return
+            trigger,actions=self.desired(rule)
+            if rule is None or not self.matches(rule,trigger,actions):
+                target=rule.id if rule else None
+                async def snapshot():
+                    current=await guild.fetch_automod_rules()
+                    found=next((r for r in current if r.id==target),None) if target else next(
+                        (r for r in current if r.name==NAME and r.creator_id==self.client.user.id),None)
+                    return {'guild':guild.id,'rule':found.to_dict() if found else None}
+                async def update():
+                    if rule:
+                        result=await rule.edit(trigger=trigger,actions=actions,enabled=True,
+                            reason='Actualizar abreviaturas del filtro de palabras obscenas')
+                    else:
+                        result=await guild.create_automod_rule(name=NAME,event_type=discord.AutoModRuleEventType.message_send,
+                            trigger=trigger,actions=actions,enabled=True,
+                            reason='Filtro acordado de palabras obscenas para La Venganza RP')
+                    verified=await guild.fetch_automod_rule(result.id)
+                    if verified.creator_id!=self.client.user.id or not self.matches(verified,trigger,actions):
+                        raise ValueError('Discord no confirmó la actualización del filtro; se reintentará.')
+                    return verified
+                rule=await self.client.changes.tracked('OBSCENITY_FILTER','Actualizar el bloqueo de palabras obscenas',update,
+                    request_id=f'{self.guild_id}:abbreviations-v2',snapshot=snapshot)
             self.set_setting("obscenity_rule_id",str(rule.id))
-            self.status("regla activa" if rule.enabled else "regla desactivada en Discord")
+            self.status(f'regla verificada id={rule.id} palabras={len(rule.trigger.keyword_filter)} '
+                f'cbnes={"cbnes" in rule.trigger.keyword_filter} bloqueo=True exenciones_conservadas=True')
+            await self.inspect_report(guild,rule)
             self.install.stop()
         except discord.HTTPException as exc:
             self.status(f"Discord HTTP {exc.status}, código {exc.code}: {exc.text[:300]}")
+        except ValueError as exc:
+            self.status(str(exc))
 
     @install.before_loop
     async def before(self):

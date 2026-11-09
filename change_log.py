@@ -13,16 +13,12 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v3.2'
-SUMMARY='Reconoce los archivos propios que Discord oculta de attachments cuando están dentro del embed. Conserva attachment:// sin enviar listas vacías que puedan retirarlos, y valida votos y podios usando también esa imagen interna. Repara las tarjetas en el mismo mensaje y corrige el ID original del formulario cuando se guardó por error; solo recupera una foto vigente si sigue intacta y no hay una retirada registrada. Conserva textos, votos, saldos y premios.'
-RESTORE=('El commit anterior es ed6fcb6d0c10c62b7f1fb5458bf7c30c7baad955. Si se vuelve a él, mantener PHOTO_CONTEST_ENABLED=0: no comprende los archivos internos ocultos y puede retirarlos al enviar attachments vacío. Para volver al código estable anterior al ajuste visual, usar d479118c46efaceb3fe3fec58bf6d1b416724053 conservando /data y SQLite; puede volver a mostrar la imagen duplicada. '
-         'Conservar image_layout_v2: y las correcciones de attachment; no restaurar una base antigua ni retirar premios como parte de revertir código. '
-         'Para deshacer una reparación concreta, consultar PHOTO_IMAGE_LAYOUT y restaurar únicamente los campos necesarios del mismo mensaje/registro. Conservar su archivo, contenido y controles; no enviar attachments vacío ni borrar o volver a publicar la foto. No reactivar una retirada explícita ni recalcular una semana pagada. '
-         'Conservar lv_photo_podium, podium_closed, coins_since, eco_accounts y eco_ledger. Si se revierte a un código anterior al podio de monedas, completar antes los anuncios de semanas ya pagadas, o mantener PHOTO_CONTEST_ENABLED=0 hasta completarlos. '
-         'Los recibos photo-coins: y las acciones podio_monedas permiten consultar los premios; mantener saldos, compras posteriores, votos y respaldos actuales. '
-         'Para un fijado, consultar PHOTO_PIN y restaurar solo el estado anterior del mensaje propio del bot por ID. No retirar fijados ni fotos de jugadores. '
-         'Para otros cambios de Discord, descargar /cambios detalle, comparar antes/después y restaurar únicamente los campos autorizados por ID. '
-         'Nunca modificar Owner, Programador, Admin o Súper Admin. No borrar canales ni recrearlos: se perdería su historial.')
+RELEASE='obscenities-v2'
+SUMMARY='Añade cbnes y abreviaturas relacionadas al filtro obsceno. La regla propia de AutoMod se actualiza aunque su ID ya estuviera guardado y se confirma su bloqueo mediante lectura desde Discord. Conserva palabras y patrones personalizados, lista permitida, acciones existentes y exenciones de roles/canales. No modifica permisos, roles ni mensajes históricos; guarda antes/después de la regla en OBSCENITY_FILTER.'
+RESTORE=('Para revertir el código, desplegar 515006d53637b97d48c7e84405229b13ef4d6bb4 conservando /data y SQLite. La regla actualizada de AutoMod permanece en Discord; el código anterior solo comprobaba su existencia y no deshace su contenido. '
+         'Para deshacer la actualización de la regla, descargar el detalle de OBSCENITY_FILTER y restaurar únicamente su trigger_metadata, acciones y estado enabled anteriores en el mismo ID, preservando exenciones y cualquier modificación posterior ajena a esta operación. No borrar reglas de otras aplicaciones. '
+         'Conservar los registros actuales de Fotos, sus IDs de archivos corregidos, podios, votos, saldos y movimientos de monedas. No restaurar una base antigua ni retirar premios como parte de revertir código. '
+         'Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos. No borrar canales ni mensajes históricos para revertir esta versión.')
 
 
 class Journal:
