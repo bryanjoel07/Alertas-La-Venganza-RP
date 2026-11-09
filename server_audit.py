@@ -10,6 +10,7 @@ import sqlite3
 import discord
 from backup_meta import read_backup
 from diagnostics import read_database, task_state
+from navigation import key
 
 log = logging.getLogger('LaVenganzaRP.audit')
 
@@ -50,6 +51,29 @@ async def audit_server(bot, guild_id, path):
         raise ValueError('No encuentro el servidor solicitado')
     channels = await guild.fetch_channels()
     roles = await guild.fetch_roles()
+    citizens = next((r for r in roles if key(r.name)=='ciudadanos'),None)
+    if citizens:
+        essentials = {'bienvenidas','infoservidor','connect','guiadelbot','general','perfiles',
+                      'tiendaexclusive','ayuda','tickets','solicitarstreamer','eventos'}
+        for channel in channels:
+            if key(channel.name) in essentials and not isinstance(channel,discord.CategoryChannel):
+                permissions = channel.permissions_for(citizens)
+                emit(request,'new_player',dict(channel=channel.name,id=str(channel.id),
+                     category=getattr(channel.category,'name',None),position=channel.position,
+                     view=permissions.view_channel,history=permissions.read_message_history,
+                     write=permissions.send_messages,commands=permissions.use_application_commands))
+        guide_id = bot.economy.store.config('guide_channel')
+        guide_message = bot.economy.store.config('guide_message')
+        guide = next((c for c in channels if str(c.id)==guide_id),None)
+        if guide and guide_message:
+            message = await guide.fetch_message(int(guide_message))
+            for row in message.components:
+                for button in row.children:
+                    url = getattr(button,'url',None)
+                    target = next((c for c in channels if url and url.rstrip('/').endswith('/'+str(c.id))),None)
+                    emit(request,'new_player_link',dict(label=getattr(button,'label',None),url=url,
+                         target_exists=target is not None,
+                         target_visible=target.permissions_for(citizens).view_channel if target else False))
     me = await guild.fetch_member(bot.user.id)
     emit(request, 'guild', dict(name=guild.name, members=guild.member_count,
          cached_members=len(guild.members), verification=str(guild.verification_level),
