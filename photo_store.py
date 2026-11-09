@@ -112,6 +112,28 @@ class PhotoStore:
         with self.db() as db:
             db.execute('UPDATE lv_photo_entries SET url=? WHERE id=?', (url, entry))
 
+    def rebind_post_image(self,entry,message,attachment,url,now=None):
+        """Repair the upload-form ID mistakenly kept when Discord hid an inline file."""
+        now=int(time.time()) if now is None else now
+        with self.db() as db:
+            row=db.execute('''SELECT e.*,w.state,w.ends FROM lv_photo_entries e
+                JOIN lv_photo_weeks w ON w.week=e.week WHERE e.id=?''',(entry,)).fetchone()
+            if not row or row['post_mode']!='post' or not row['upload_key'] or row['source']!=message or row['control']!=message:
+                raise ValueError('La imagen no corresponde a una subida de este bot.')
+            if row['attachment']==attachment:return False
+            form_attachment=int(row['upload_key'].rsplit(':',1)[1])
+            if row['attachment']!=form_attachment:
+                raise ValueError('El archivo guardado no coincide con el fallo de subida conocido.')
+            restore=False
+            if not row['active'] and row['state']=='open' and row['ends']>now:
+                journal=db.execute("SELECT 1 FROM sqlite_master WHERE name='bot_changes'").fetchone()
+                if journal:
+                    withdrawals=db.execute("SELECT before_json FROM bot_changes WHERE change_key LIKE 'operation:PHOTO_WITHDRAW:%'")
+                    restore=not any(json.loads(r[0]).get('entry')==entry for r in withdrawals)
+            db.execute('''UPDATE lv_photo_entries SET attachment=?,url=?,active=CASE WHEN ? THEN 1 ELSE active END,
+                rendered_count=-1,rendered_closed=-1 WHERE id=?''',(attachment,url,restore,entry))
+            return restore
+
     def upload(self, key, attachment, author, filename, url, data, caption='', now=None, mentions=()):
         now = int(time.time()) if now is None else now
         upload_key = f'{key}:{attachment}'

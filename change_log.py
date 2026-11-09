@@ -13,11 +13,11 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v3.1'
-SUMMARY='Corrige la imagen duplicada de Fotos: las ediciones conservan el enlace attachment:// al archivo del propio mensaje en lugar de volver a enlazarlo como imagen externa. Conserva adjuntos al actualizar votos, cierre y premio extra. Repara una sola vez las tarjetas existentes del bot, incluidas las cerradas, con copias antes/después en PHOTO_IMAGE_LAYOUT, sin recrear mensajes ni cambiar textos, votos o saldos.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior d479118c46efaceb3fe3fec58bf6d1b416724053, conservando /data y SQLite. '
-         'El código anterior conserva el podio y las monedas, pero puede volver a mostrar el adjunto y la imagen de la tarjeta por separado al editar. Las marcas image_layout_v1: son aditivas y no afectan saldos, votos o publicaciones. No restaurar una base antigua ni retirar premios como parte de revertir código. '
-         'Para deshacer una reparación concreta, consultar PHOTO_IMAGE_LAYOUT y restaurar solo los embeds anteriores del mismo mensaje, conservando todos sus adjuntos, contenido y controles. No borrar ni volver a publicar la foto. '
+RELEASE='weekly-photos-v3.2'
+SUMMARY='Reconoce los archivos propios que Discord oculta de attachments cuando están dentro del embed. Conserva attachment:// sin enviar listas vacías que puedan retirarlos, y valida votos y podios usando también esa imagen interna. Repara las tarjetas en el mismo mensaje y corrige el ID original del formulario cuando se guardó por error; solo recupera una foto vigente si sigue intacta y no hay una retirada registrada. Conserva textos, votos, saldos y premios.'
+RESTORE=('El commit anterior es ed6fcb6d0c10c62b7f1fb5458bf7c30c7baad955. Si se vuelve a él, mantener PHOTO_CONTEST_ENABLED=0: no comprende los archivos internos ocultos y puede retirarlos al enviar attachments vacío. Para volver al código estable anterior al ajuste visual, usar d479118c46efaceb3fe3fec58bf6d1b416724053 conservando /data y SQLite; puede volver a mostrar la imagen duplicada. '
+         'Conservar image_layout_v2: y las correcciones de attachment; no restaurar una base antigua ni retirar premios como parte de revertir código. '
+         'Para deshacer una reparación concreta, consultar PHOTO_IMAGE_LAYOUT y restaurar únicamente los campos necesarios del mismo mensaje/registro. Conservar su archivo, contenido y controles; no enviar attachments vacío ni borrar o volver a publicar la foto. No reactivar una retirada explícita ni recalcular una semana pagada. '
          'Conservar lv_photo_podium, podium_closed, coins_since, eco_accounts y eco_ledger. Si se revierte a un código anterior al podio de monedas, completar antes los anuncios de semanas ya pagadas, o mantener PHOTO_CONTEST_ENABLED=0 hasta completarlos. '
          'Los recibos photo-coins: y las acciones podio_monedas permiten consultar los premios; mantener saldos, compras posteriores, votos y respaldos actuales. '
          'Para un fijado, consultar PHOTO_PIN y restaurar solo el estado anterior del mensaje propio del bot por ID. No retirar fijados ni fotos de jugadores. '

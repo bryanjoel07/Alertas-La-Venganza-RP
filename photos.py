@@ -4,9 +4,11 @@ from datetime import datetime, timezone
 import io
 import json
 import logging
+import mimetypes
 import os
 from pathlib import Path
 import time
+from urllib.parse import urlsplit,unquote
 
 import discord
 from discord import app_commands
@@ -28,12 +30,35 @@ def is_image(attachment):
         (attachment.content_type or '').startswith('image/') or (attachment.width and attachment.height))
 
 
-def images(message):
-    return [a for a in message.attachments if is_image(a)]
+def images(message,include_inline=False,filename=None,exclude=None):
+    result=[a for a in message.attachments if is_image(a)]
+    if not include_inline:return result
+    # Discord hides files used by attachment:// embeds from message.attachments.
+    # Recover only Discord CDN images in this channel; never fetch external embed URLs.
+    state=getattr(message,'_state',None)
+    if state is None:return result
+    known={a.id for a in result}
+    for embed in message.embeds:
+        image=embed.image
+        url=image.url
+        if not url:continue
+        parsed=urlsplit(url);parts=parsed.path.split('/')
+        if parsed.scheme!='https' or parsed.hostname not in ('cdn.discordapp.com','media.discordapp.net'):continue
+        if len(parts)!=5 or parts[1]!='attachments' or parts[2]!=str(FOTOS_CHANNEL) or not parts[3].isdigit():continue
+        uid=int(parts[3]);name=unquote(parts[4])
+        if uid in known or uid==exclude or (filename is not None and name!=filename) or Path(name).suffix.lower() not in IMAGE_TYPES:continue
+        proxy=image.proxy_url or url
+        proxy_parts=urlsplit(proxy)
+        if proxy_parts.scheme!='https' or proxy_parts.hostname not in ('cdn.discordapp.com','media.discordapp.net'):
+            proxy=url
+        attached=discord.Attachment(data=dict(id=str(uid),filename=name,size=0,url=url,proxy_url=proxy,
+            content_type=mimetypes.guess_type(name)[0],width=image.width,height=image.height),state=state)
+        result.append(attached);known.add(uid)
+    return result
 
 
-def image_reference(message,fallback):
-    attached=images(message) if message is not None else []
+def image_reference(message,fallback,filename=None,exclude=None):
+    attached=images(message,include_inline=True,filename=filename,exclude=exclude) if message is not None else []
     return 'attachment://'+attached[0].filename if attached else fallback
 
 
@@ -172,7 +197,8 @@ class PhotoSystem:
                 ('Votación cerrada.' if closed(row) else f"Cierra <t:{row['ends']}:F>.") +
                 (f"\n[Ver la foto]({self.source_link(row)})" if row.get('post_mode','reply')=='reply' else ''))
         if row.get('post_mode') in ('pending','post'):
-            embed.set_image(url=image_reference(message,row['url']))
+            embed.set_image(url=image_reference(message,row['url'],filename=f"foto-{row['id']}{Path(row['filename']).suffix.lower()}",
+                exclude=row['attachment'] if row['source']!=row.get('control') else None))
             if row.get('caption'):
                 embed.description=discord.utils.escape_markdown(row['caption'])+'\n\n'+embed.description
         else:
@@ -255,12 +281,12 @@ class PhotoSystem:
         except discord.NotFound:
             await self.call('deleted', row['source'])
             return None, None
-        attachments = images(message)
-        await self.call('sync_source', message.id, {a.id for a in attachments})
-        item = next((a for a in attachments if a.id == row['attachment']), None)
         own_post=row.get('post_mode')=='post' and row['source']==row['control'] and message.author.id==self.bot.user.id
         if message.author.id != row['author'] and not own_post:
             raise ValueError('La publicación de la foto no coincide con su autor.')
+        attachments = images(message,include_inline=own_post,filename=f"foto-{row['id']}{Path(row['filename']).suffix.lower()}" if own_post else None)
+        await self.call('sync_source', message.id, {a.id for a in attachments})
+        item = next((a for a in attachments if a.id == row['attachment']), None)
         if item:
             row['url'] = item.url
             await self.call('image_url', row['id'], item.url)
@@ -376,7 +402,9 @@ class PhotoSystem:
             confirmed=await channel.fetch_message(message.id)
             if confirmed.reference or not any(e.image.url for e in confirmed.embeds):
                 raise RuntimeError('Discord no confirmó la publicación de foto con votos.')
-            attached=confirmed.attachments[0] if confirmed.attachments else None
+            files=images(confirmed,include_inline=True,filename=f"foto-{row['id']}{Path(row['filename']).suffix.lower()}",
+                exclude=row['attachment'] if not row['upload_key'] else None)
+            attached=files[0] if files else None
             await self.call('posted',row['id'],confirmed.id,attached.id if attached else row['attachment'],attached.url if attached else row['url'])
             row=await self.call('entry',row['id'])
             message=confirmed
@@ -384,13 +412,13 @@ class PhotoSystem:
             raise ValueError('Esta publicación no pertenece al bot.')
         if message.attachments:
             row['url']=message.attachments[0].url
-        edit={'embed':self.control_embed(row,message),'attachments':message.attachments,'view':PhotoControls(row['id'],row['votes'],closed(row)),
+        edit={'embed':self.control_embed(row,message),'view':PhotoControls(row['id'],row['votes'],closed(row)),
             'allowed_mentions':discord.AllowedMentions.none()}
         content=' '.join(f'<@{uid}>' for uid in json.loads(row['mentions']))
         if (message.content or '')!=content:
             edit['content']=content or None
         await message.edit(**edit)
-        self.store.config(f'image_layout_v1:{message.id}','1')
+        self.store.config(f'image_layout_v2:{message.id}','1')
         await self.call('rendered',row['id'],row['votes'],closed(row))
         await self.cleanup_legacy(row,channel)
         return message
@@ -452,9 +480,9 @@ class PhotoSystem:
                             raise ValueError('Ese mensaje no pertenece al bot.')
                         if row['post_mode']=='post' and message.attachments:
                             row['url']=message.attachments[0].url
-                        await message.edit(embed=self.control_embed(row,message), attachments=message.attachments,
+                        await message.edit(embed=self.control_embed(row,message),
                             view=PhotoControls(row['id'], row['votes'], closed(row)), allowed_mentions=discord.AllowedMentions.none())
-                        self.store.config(f'image_layout_v1:{message.id}','1')
+                        self.store.config(f'image_layout_v2:{message.id}','1')
                         await self.call('rendered', row['id'], row['votes'], closed(row))
                     elif not closed(row):
                         source, image = await self.source(channel, row)
@@ -495,7 +523,7 @@ class PhotoSystem:
             embed = discord.Embed(title='🏆 FOTO DE LA SEMANA | LA VENGANZA RP', color=COLOR,
                 description=f"📸 Publicada por <@{row['author']}>\n❤️ **{week['winning_votes']} votos**\n[Ver la publicación original]({self.source_link(row)})")
             if week['image_url']:
-                embed.set_image(url=image_reference(message,week['image_url']))
+                embed.set_image(url=image_reference(message,week['image_url'],filename=week['filename'],exclude=row['attachment']))
             podium=self.store.ranking(week['week']) if week['podium_closed'] is not None else []
             if podium:
                 embed.add_field(name='🏅 Podio de la semana',value='\n\n'.join(
@@ -575,7 +603,8 @@ class PhotoSystem:
                     ' '.join(f'<@{uid}>' for uid in winners)+' 🎉') if podium else (f"🏆 <@{row['author']}>, ¡tu foto ganó esta semana!" if row else None)
                 message = await channel.send(content=content,
                     embed=embed, allowed_mentions=discord.AllowedMentions(users=[discord.Object(uid) for uid in winners], roles=False, everyone=False), **kwargs)
-            url = message.attachments[0].url if message.attachments else week['image_url']
+            files=images(message,include_inline=True)
+            url = files[0].url if files else week['image_url']
             await self.call('published', week['week'], message.id, url)
             log.info('PHOTOS winner_published week=%s winner=%s votes=%s message=%s', week['week'], week['winner'], week['winning_votes'], message.id)
         previous = self.store.config('winner_pin')
@@ -604,43 +633,54 @@ class PhotoSystem:
         if current['announcement']:
             message = await channel.fetch_message(current['announcement'])
             if message.author.id == self.bot.user.id:
-                await message.edit(embed=self.winner_embed(current,message), attachments=message.attachments,
+                await message.edit(embed=self.winner_embed(current,message),
                     allowed_mentions=discord.AllowedMentions.none())
 
     async def repair_image_layout(self,channel):
         repaired=0
         for row in await self.call('entries'):
             if row['post_mode']!='post' or not row['control']:continue
-            key=f"image_layout_v1:{row['control']}"
+            key=f"image_layout_v2:{row['control']}"
             if self.store.config(key):continue
             try:message=await channel.fetch_message(row['control'])
             except discord.NotFound:
                 self.store.config(key,'missing');continue
             if message.author.id!=self.bot.user.id or message.reference:continue
-            attached=images(message)
+            filename=f"foto-{row['id']}{Path(row['filename']).suffix.lower()}"
+            excluded=row['attachment'] if row['source']!=row['control'] else None
+            attached=images(message,include_inline=True,filename=filename,exclude=excluded)
             if len(attached)!=1:continue
             marker=f"La Venganza RP · Foto #{row['id']} · {row['week']}"
             if len(message.embeds)!=1 or message.embeds[0].footer.text!=marker:continue
             ids=[getattr(c,'custom_id',None) for r in message.components for c in r.children]
             if f"lv:photo:{row['id']}:vote" not in ids:continue
-            original_ids=[a.id for a in message.attachments]
+            original_ids=[a.id for a in attached]
             embed=discord.Embed.from_dict(message.embeds[0].to_dict())
-            embed.set_image(url=image_reference(message,row['url']))
+            embed.set_image(url=image_reference(message,row['url'],filename=filename,exclude=excluded))
             async def snapshot():
                 current=await channel.fetch_message(message.id)
-                return dict(message=current.id,content=current.content,embeds=[e.to_dict() for e in current.embeds],
-                    attachments=[dict(id=a.id,filename=a.filename,url=a.url) for a in current.attachments],
+                stored=self.store.entry(row['id'])
+                return dict(entry=row['id'],source=stored['source'],attachment=stored['attachment'],active=stored['active'],votes=stored['votes'],
+                    message=current.id,content=current.content,embeds=[e.to_dict() for e in current.embeds],
+                    attachments=[dict(id=a.id,filename=a.filename,url=a.url) for a in images(current,include_inline=True)],
                     components=[r.to_dict() for r in current.components])
             async def repair():
-                await message.edit(embed=embed,attachments=message.attachments,allowed_mentions=discord.AllowedMentions.none())
+                await message.edit(embed=embed,allowed_mentions=discord.AllowedMentions.none())
                 confirmed=await channel.fetch_message(message.id)
-                if [a.id for a in confirmed.attachments]!=original_ids or len(confirmed.embeds)!=1 or not confirmed.embeds[0].image.url:
+                if [a.id for a in images(confirmed,include_inline=True)]!=original_ids or len(confirmed.embeds)!=1 or not confirmed.embeds[0].image.url:
                     raise RuntimeError('Discord no confirmó la foto y su archivo después del ajuste.')
+                actual=attached[0]
+                filename=f"foto-{row['id']}{Path(row['filename']).suffix.lower()}"
+                if row['upload_key'] and row['source']==row['control'] and row['attachment']!=actual.id and actual.filename==filename:
+                    await self.call('rebind_post_image',row['id'],message.id,actual.id,actual.url)
             await self.bot.changes.tracked('PHOTO_IMAGE_LAYOUT','Mostrar la foto una sola vez dentro de su tarjeta',repair,
-                request_id=f'{message.id}:v1',snapshot=snapshot)
+                request_id=f'{message.id}:v2',snapshot=snapshot)
             self.store.config(key,'1');repaired+=1
+            current=self.store.entry(row['id'])
             log.info('PHOTOS image_layout_repaired entry=%s message=%s attachments=%s active=%s votes=%s '
-                'single_image_reference=True original_preserved=True',row['id'],message.id,len(attached),row['active'],row['votes'])
+                'inline_files=%s binding_repaired=%s reactivated=%s single_image_reference=True original_preserved=True',
+                row['id'],message.id,len(attached),current['active'],current['votes'],not bool(message.attachments),
+                row['attachment']!=current['attachment'],not row['active'] and bool(current['active']))
         log.info('PHOTOS image_layout_verified repaired=%s attachment_reference_on_updates=True files_preserved=True',repaired)
 
     async def ready(self):

@@ -156,6 +156,7 @@ class PhotoServiceFixtures:
     async def asyncSetUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.bot = MagicMock(); self.bot.user.id = 99
+        self.bot.http.get_from_cdn=AsyncMock(return_value=b'image bytes')
         self.system = PhotoSystem(self.bot, Path(temp.name)/'photos.db', GUILD)
         self.system.store.initialize(BASE)
         self.bot.economy.store=EconomyStore(self.system.store.path)
@@ -193,6 +194,7 @@ class PhotoServiceFixtures:
         self.serial += 1
         key = discord.utils.time_snowflake(datetime.fromtimestamp(created, timezone.utc)) + self.serial
         row = SimpleNamespace(id=key, author=SimpleNamespace(id=owner, bot=owner==99), guild=self.guild,
+            _state=SimpleNamespace(http=self.bot.http),
             channel=self.channel, created_at=datetime.fromtimestamp(created, timezone.utc), attachments=list(attachments),
             embeds=[], components=[], pinned=False, reference=None, content='',edit=AsyncMock(), delete=AsyncMock(), pin=AsyncMock(), unpin=AsyncMock())
         row.reply = AsyncMock(side_effect=self.send)
@@ -217,7 +219,7 @@ class PhotoServiceFixtures:
         row=self.message(99, created=int(time.time())); self.decorate(row, kwargs)
         if kwargs.get('file'):
             row.attachments=[SimpleNamespace(id=row.id+1000,filename=kwargs['file'].filename,content_type='image/png',width=100,height=100,size=10,
-                url=f'https://cdn.discordapp.com/copied/{row.id}.png',read=AsyncMock(return_value=b'image bytes'))]
+                url=f'https://cdn.discordapp.com/attachments/{FOTOS_CHANNEL}/{row.id+1000}/{kwargs["file"].filename}',read=AsyncMock(return_value=b'image bytes'))]
         return row
 
     def source(self, owner=1, created=BASE, count=1):
