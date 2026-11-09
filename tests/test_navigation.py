@@ -60,7 +60,7 @@ class NavigationTests(unittest.TestCase):
         before=protected_state(items)
         projected,moves=regroup(items)
         self.assertEqual(len(moves),7)
-        category_ids={'llegando':'1','logs':'2','staff':'3'}
+        category_ids={'llegando':'1','logs':'2','staff':'3','lavenganzarp':'4'}
         for item in projected:
             if item['id'] in REGROUP:
                 self.assertEqual(item['parent'],category_ids[REGROUP[item['id']]])
@@ -119,11 +119,11 @@ class FullOrganizationTests(unittest.TestCase):
         items=categories+[channel(id,'Canal',parent=4) for id in {**REGROUP,**MEDIA_CHANNELS}]
         items += [channel('1569151200673140897','Perfiles',parent=4),channel('1569084821983076512','Tienda',parent=4)]
         projected,moves=regroup(items,include_media=True)
-        self.assertEqual(len(moves),13)
+        self.assertEqual(len(moves),12)
         for item in projected:
             if item['id'] in MEDIA_CHANNELS:
                 self.assertEqual(item['parent'],'5')
-            if item['id'] in ('1569151200673140897','1569084821983076512'):
+            if item['id'] in ('1569151200673140897','1569084821983076512','1513422142014754976'):
                 self.assertEqual(item['parent'],'4')
             self.assertEqual(item['overwrites'],next(c['overwrites'] for c in items if c['id']==item['id']))
 

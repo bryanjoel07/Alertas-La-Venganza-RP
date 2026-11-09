@@ -34,6 +34,7 @@ from profiles_hub import ProfileTree
 from server_audit import audit_server
 from fivem_probe import FiveMProbe
 from navigation import arrange_navigation
+from faction_roles import ensure_vista_hermosa
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1476,6 +1477,10 @@ async def on_ready():
         await arrange_navigation(client, GUILD_ID, DB_PATH)
     except Exception:
         log.exception("No se pudo completar la ordenación de navegación")
+    try:
+        await ensure_vista_hermosa(client, GUILD_ID, DB_PATH)
+    except Exception:
+        log.exception("No se pudo completar el rol de Vista Hermosa")
     try:
         channel = daily_up_channel()
         log.info("Destino SERVER UP diario 18:30 Puerto Rico: %s (%s); alertas caída/recuperación: %s",

@@ -27,6 +27,7 @@ CHANNEL_ORDER = {
 
 # Keep Perfiles and Tienda in La Venganza RP as explicitly requested.
 REGROUP = {
+    '1513422142014754976': 'lavenganzarp',   # Fotos stays in the original community category
     '1569173002200027136': 'llegando',       # Guía del bot
     '1528925322362228787': 'llegando',       # Información para entrar
     '1513421828415164546': 'llegando',       # Conexión
@@ -36,7 +37,6 @@ REGROUP = {
     '1539416259307774002': 'staff',          # Sanciones (private)
 }
 MEDIA_CHANNELS = {
-    '1513422142014754976': 'multimedia',     # Fotos
     '1567382176121487421': 'multimedia',     # Clips
     '1568403146219454586': 'multimedia',     # Solicitar Streamer
     '1513653533340073994': 'multimedia',     # Streamers
@@ -96,7 +96,7 @@ async def prepare_full_organization(bot,guild,channels,request):
     if main is None or len(candidates)>1:
         raise ValueError('No encuentro un destino único para la organización')
     media = candidates[0] if candidates else await guild.create_category(
-        MEDIA_NAME,overwrites=main.overwrites,reason='Agrupar Fotos, Clips, Streamers y Música solicitado por administración')
+        MEDIA_NAME,overwrites=main.overwrites,reason='Agrupar Clips, Streamers y Música; Fotos conserva su categoría original')
     bot.economy.store.runtime_config('multimedia_category',media.id)
     log.info('ORGANIZATION %s multimedia_category=%s name=%s',request,media.id,media.name)
     for channel in channels:
