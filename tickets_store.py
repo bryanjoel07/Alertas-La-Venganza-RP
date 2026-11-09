@@ -159,7 +159,7 @@ class TicketStore:
   with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_ticket_files WHERE ticket=?',(rid,))]
  def file(self,rid,message,attachment,name,url,size,path=None,state='pendiente',sha=None):
   with self.db() as db:db.execute('''INSERT INTO lv_ticket_files VALUES (?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(ticket,attachment) DO UPDATE SET path=excluded.path,state=excluded.state,sha256=excluded.sha256''',
+    ON CONFLICT(ticket,attachment) DO UPDATE SET path=COALESCE(excluded.path,lv_ticket_files.path),state=CASE WHEN lv_ticket_files.state='guardado' THEN 'guardado' ELSE excluded.state END,sha256=COALESCE(excluded.sha256,lv_ticket_files.sha256)''',
     (rid,message,attachment,name,url,path,state,size,sha))
  def stats(self):
   with self.db() as db:

@@ -159,7 +159,9 @@ class TicketSystem:
   async def create_category():
    created=await guild.create_category(name+suffix,overwrites=perms,reason='Categoría de tickets solicitada por administración')
    anchor=next((c for c in channels if str(c.id)==self.store.config('active_category') and isinstance(c,discord.CategoryChannel)),None)
-   if closed and anchor:created=await created.edit(position=anchor.position+1,reason='Colocar cerrados junto a los tickets activos')
+   if closed and anchor:
+    await created.edit(position=anchor.position+1,reason='Colocar cerrados junto a los tickets activos')
+    created=await self.bot.fetch_channel(created.id)
    return created
   category=await self.bot.changes.tracked('TICKET_CATEGORY','Crear categoría de tickets',create_category,request_id=f'{key}:{time.time_ns()}')
   self.store.config(key,category.id)

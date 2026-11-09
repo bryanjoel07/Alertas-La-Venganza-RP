@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='advanced-tickets-v1'
-SUMMARY='Sistema de tickets avanzados: formularios, responsables, privacidad por caso, transferencias, notas internas, pruebas respaldadas, cierre y reapertura, valoraciones y seguimiento. Los tickets del sistema anterior se conservan.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior a85b9bdc5f9564abfcd57d5463fb94508d1768cc en Railway. '
+RELEASE='advanced-tickets-v1.1'
+SUMMARY='Verificación de tickets avanzados: corregida la recuperación de la categoría al posicionarla y protegida la copia de adjuntos ante lecturas simultáneas. Se mantienen los tickets y roles existentes.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 8d322b8402afbb459e7f3f4c03bb067f2a9f0bd6 en Railway. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin. No borrar canales ni recrearlos: se perdería su historial.')

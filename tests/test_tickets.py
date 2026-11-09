@@ -73,6 +73,10 @@ class TicketStoreTests(unittest.TestCase):
   fresh=TicketStore(self.store.path);fresh.initialize()
   self.assertEqual(fresh.blob(rid,200),b'proof')
   self.assertEqual(fresh.files(rid)[0]['state'],'guardado')
+  saved_hash=fresh.files(rid)[0]['sha256']
+  fresh.file(rid,100,200,'prueba.txt','https://cdn.discordapp.com/test',5,state='pendiente')
+  self.assertEqual(fresh.files(rid)[0]['state'],'guardado')
+  self.assertEqual(fresh.files(rid)[0]['sha256'],saved_hash)
   fresh.config('max_file_mb',0)
   fresh.save_blob(rid,200,b'proof') # already saved: no duplicate growth
   fresh.file(rid,101,201,'otro.txt','https://cdn.discordapp.com/other',5)
@@ -207,3 +211,17 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   archived=self.system.store.get(self.rid)['transcript']
   self.assertIn('PRUEBA_ORIGINAL',archived);self.assertIn('ELIMINADO',archived)
   self.assertNotIn('NOTA_QUE_NO_PUEDE_SALIR',archived)
+
+ async def test_category_position_only_edit_can_return_none_without_losing_created_id(self):
+  active=MagicMock(spec=discord.CategoryChannel);active.id=50;active.name='Tickets';active.position=5;active.category_id=None
+  created=MagicMock(spec=discord.CategoryChannel);created.id=51;created.name='Cerrados';created.position=99
+  created.edit=AsyncMock(return_value=None)
+  guild=MagicMock();guild.fetch_channels=AsyncMock(return_value=[active]);guild.create_category=AsyncMock(return_value=created)
+  self.system.store.config('active_category',50)
+  self.bot.fetch_channel=AsyncMock(return_value=created)
+  async def tracked(env,title,operation,**kwargs):return await operation()
+  self.bot.changes.tracked=tracked
+  result=await self.system.ensure_category(guild,True)
+  self.assertEqual(result.id,51)
+  self.assertEqual(self.system.store.config('closed_category'),'51')
+  created.edit.assert_awaited_once()
