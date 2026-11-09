@@ -40,3 +40,31 @@ class NavigationTests(unittest.TestCase):
         self.assertLess(result['4'],result['2'])
         self.assertLess(result['2'],result['3'])
         self.assertEqual(result['5'],0)
+
+    def test_opening_server_is_first_and_closing_logs_is_last_even_with_unknown_category(self):
+        categories=[channel(1,'│・✈️┊ 𝐋𝐥𝐞𝐠𝐚𝐧𝐝𝐨','category',position=0,bucket=4),
+                    channel(2,'╭・🗄️┊ SERVER','category',position=16,bucket=4),
+                    channel(3,'╰・📁 ┊ 𝐋𝐨𝐠𝐬','category',position=17,bucket=4),
+                    channel(4,'Otra categoría','category',position=18,bucket=4)]
+        ordered=sorted(plan(categories),key=lambda c:c['position'])
+        self.assertEqual(ordered[0]['id'],'2')
+        self.assertEqual(ordered[-1]['id'],'3')
+
+    def test_actual_regroup_preserves_channel_overwrites_and_required_main_channels(self):
+        from navigation import REGROUP,regroup
+        categories=[channel(1,'Llegando','category',bucket=4),channel(2,'Logs','category',bucket=4),
+                    channel(3,'Staff','category',bucket=4),channel(4,'La Venganza RP','category',bucket=4)]
+        items=categories+[channel(id,'Canal',parent=4) for id in REGROUP]
+        items += [channel('1569151200673140897','Perfiles',parent=4),
+                  channel('1569084821983076512','Tienda Exclusive',parent=4)]
+        before=protected_state(items)
+        projected,moves=regroup(items)
+        self.assertEqual(len(moves),7)
+        category_ids={'llegando':'1','logs':'2','staff':'3'}
+        for item in projected:
+            if item['id'] in REGROUP:
+                self.assertEqual(item['parent'],category_ids[REGROUP[item['id']]])
+            self.assertEqual(item['overwrites'],next(c['overwrites'] for c in items if c['id']==item['id']))
+        for id in ('1569151200673140897','1569084821983076512'):
+            self.assertEqual(next(c['parent'] for c in projected if c['id']==id),'4')
+        self.assertEqual(protected_state(items),before)

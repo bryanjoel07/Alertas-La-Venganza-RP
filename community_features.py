@@ -219,7 +219,10 @@ class CommunityFeatures:
         else:
             log.warning('Registro de creadores requiere configurar un rol seguro y asignable')
         store = self.economy.store
-        category = self.economy.delivery.category(guild)
+        category_id = store.config('guide_category')
+        category = guild.get_channel(int(category_id)) if category_id else self.economy.delivery.category(guild)
+        if not isinstance(category,discord.CategoryChannel):
+            raise ValueError('No encuentro la categoría configurada para la guía')
         saved = store.config('guide_channel')
         channel = guild.get_channel(int(saved)) if saved else None
         if channel is None:

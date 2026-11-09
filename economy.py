@@ -381,7 +381,10 @@ class Economy:
         await fix_high_priorities(self.bot, guild.id)
 
     async def channel(self, guild, audit=False):
-        category = self.delivery.category(guild)
+        category_id = self.store.config('audit_category') if audit else ''
+        category = guild.get_channel(int(category_id)) if category_id else self.delivery.category(guild)
+        if not isinstance(category,discord.CategoryChannel):
+            raise ValueError('No encuentro la categoría configurada para este canal')
         key = "audit_channel" if audit else "shop_channel"
         name = "registro-exclusive" if audit else SHOP
         saved = self.store.config(key)
