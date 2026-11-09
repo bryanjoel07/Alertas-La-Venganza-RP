@@ -245,10 +245,12 @@ class SettingsPanel:
 
     async def ready(self):
         commands=await self.bot.tree.fetch_commands(guild=discord.Object(self.guild_id))
-        command=next((c.to_dict() for c in commands if c.name=='ajustes'),{})
+        registered=next((c for c in commands if c.name=='ajustes'),None)
+        command=registered.to_dict() if registered else {}
         if not any(o.get('name')=='panel' for o in command.get('options',[])):
             raise RuntimeError('Discord no confirmó /ajustes panel.')
-        if not int(command.get('default_member_permissions') or 0)&discord.Permissions(administrator=True).value:
+        permissions=registered.default_member_permissions
+        if permissions is None or not permissions.administrator:
             raise RuntimeError('Discord no confirmó el acceso de administradores para /ajustes.')
         state=await self.call('snapshot')
         for kind,target in (('schedule',None),('text',None),('rewards',state['week'])):

@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='admin-settings-v1'
+RELEASE='admin-settings-v1.1'
 SUMMARY='Añade /ajustes panel, privado para administradores: premios de Fotos desde esta semana o la próxima, hora diaria del Server Up en Puerto Rico y su título/mensaje/pie. Cada formulario abre una vista previa y exige Guardar cambios; vuelve a comprobar permisos, rechaza paneles desactualizados y guarda recibos sin duplicar confirmaciones. Los premios se usan en el cierre real y se muestran en Fotos, tienda y guía; conserva podios pagados y el único aviso diario.'
-RESTORE=('Para revertir el código, desplegar bdc5114e9522d75e298ea5ab1561450b652cc45d conservando /data y SQLite. El código anterior no ofrece /ajustes y vuelve a usar premios fijos 500/300/150, horario 18:30 y textos originales: antes de revertir, revisar cambios programados y pausar PHOTO_CONTEST_ENABLED si deben conservarse esos premios para el próximo cierre. '
+RESTORE=('El commit anterior es c63c8df5b3dc5c7dc85c63158acfb19fa3d28a8c: conserva el panel y sus ajustes, pero su verificación de permisos lee un campo que el serializador omite y puede mostrar un error falso. Para volver al código anterior al panel, desplegar bdc5114e9522d75e298ea5ab1561450b652cc45d conservando /data y SQLite; usará premios fijos 500/300/150, hora 18:30 y textos originales. Antes, revisar premios programados y pausar PHOTO_CONTEST_ENABLED si deben conservarse para el próximo cierre. '
          'Conservar lv_photo_reward_rates, bot_setting_ops y las claves daily_server_up_* y admin_settings_revision. No borrar daily_server_up_slot ni reanunciar el aviso del mismo día. Los datos adicionales son compatibles y quedan disponibles al volver a esta versión. '
          'Para deshacer un ajuste, usar el panel con una confirmación nueva o consultar ADMIN_SETTINGS y su recibo antes/después; restaurar únicamente los valores de esa operación respetando cambios posteriores. No recalcular podios ya pagados ni retirar monedas como parte de revertir ajustes. '
          'Conservar fotos, archivos, votos, compras, saldos, movimientos y la regla vigente de AutoMod. No restaurar una base antigua. '

@@ -198,3 +198,14 @@ class SettingsUITests(SettingsFixtures,unittest.IsolatedAsyncioTestCase):
         self.guild.fetch_member.return_value=SimpleNamespace(id=1,guild_permissions=discord.Permissions.none())
         with self.assertRaises(ValueError):await command.callback(self.interaction())
         self.assertTrue(self.system.group.default_permissions.administrator)
+
+    async def test_registered_sdk_command_keeps_admin_permissions_outside_its_to_dict_payload(self):
+        tree=SimpleNamespace(allowed_contexts=discord.app_commands.AppCommandContext(),
+            allowed_installs=discord.app_commands.AppInstallationType())
+        data=self.system.group.to_dict(tree)
+        data.update(id='123',application_id='456',version='1',guild_id=str(GUILD))
+        command=discord.app_commands.AppCommand(data=data,state=SimpleNamespace())
+        self.assertTrue(command.default_member_permissions.administrator)
+        self.assertNotIn('default_member_permissions',command.to_dict())
+        self.bot.tree=SimpleNamespace(fetch_commands=AsyncMock(return_value=[command]))
+        await self.system.ready()
