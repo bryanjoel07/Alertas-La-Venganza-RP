@@ -15,6 +15,7 @@ from economy_delivery import LABELS, Delivery
 from economy_store import BANNERS, PR, EconomyStore, clean_label
 from meetings import ROLES
 from profiles_hub import ensure_profiles
+from server_fixes import fix_high_priorities
 
 log = logging.getLogger("LaVenganzaRP.economia")
 SHOP = "🛍️┊𝐓𝐢𝐞𝐧𝐝𝐚-𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞"
@@ -353,7 +354,7 @@ class Economy:
             guild = self.bot.get_guild(self.guild.id)
             if guild:
                 errors = []
-                for job in (self.panel, self.audit, self.profiles, self.delivery.recover):
+                for job in (self.panel, self.audit, self.profiles, self.high_priorities, self.delivery.recover):
                     try:
                         await job(guild)
                     except Exception as exc:
@@ -364,6 +365,9 @@ class Economy:
 
     async def profiles(self, guild):
         await ensure_profiles(self, guild)
+
+    async def high_priorities(self, guild):
+        await fix_high_priorities(self.bot, guild.id)
 
     async def channel(self, guild, audit=False):
         category = self.delivery.category(guild)

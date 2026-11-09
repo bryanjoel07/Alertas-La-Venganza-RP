@@ -24,7 +24,7 @@ async def fix_high_priorities(bot, guild_id):
     request = os.getenv('SERVER_FIX_REQUEST_ID', '').strip()
     if not request or getattr(bot, '_fixed_request', None) == request:
         return
-    bot._fixed_request = request
+    pending = False
     guild = bot.get_guild(guild_id)
     roles = await guild.fetch_roles()
     citizens = [r for r in roles if normalized(r.name).endswith('ciudadanos')]
@@ -53,6 +53,7 @@ async def fix_high_priorities(bot, guild_id):
                 view=actual.view_channel,commands=actual.use_application_commands,
                 everyone=actual.mention_everyone), ensure_ascii=False))
         except discord.Forbidden:
+            pending = True
             log.warning('SERVER_FIX %s %s', request, json.dumps(dict(channel=channel.name,
                 id=str(channel.id), status='blocked', reason='Missing channel Manage Permissions',
                 bot_manage_roles=channel.permissions_for(me).manage_roles), ensure_ascii=False))
@@ -63,4 +64,8 @@ async def fix_high_priorities(bot, guild_id):
     log.info('SERVER_FIX %s %s', request, json.dumps(dict(
         capability='manage_nicknames', ready=me.guild_permissions.manage_nicknames,
         reason='An administrator must grant guild permissions the bot does not hold'), ensure_ascii=False))
-    log.info('SERVER_FIX %s complete', request)
+    if me.top_role <= citizens or not me.guild_permissions.manage_nicknames:
+        pending = True
+    if not pending:
+        bot._fixed_request = request
+    log.info('SERVER_FIX %s %s', request, 'pending_admin_changes' if pending else 'complete')
