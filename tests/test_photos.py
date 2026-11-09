@@ -161,6 +161,7 @@ class PhotoServiceFixtures:
         self.clock = patch('photos.time.time', return_value=BASE); self.clock.start(); self.addCleanup(self.clock.stop)
         self.channel = MagicMock(spec=discord.TextChannel); self.channel.id = FOTOS_CHANNEL; self.channel.name = '📸┊𝐅𝐨𝐭𝐨𝐬'
         self.guild = SimpleNamespace(id=GUILD, me=SimpleNamespace(id=99), filesize_limit=100000)
+        self.system.member_directory.load=AsyncMock(return_value=[])
         self.channel.guild = self.guild
         self.channel.permissions_for = lambda user: discord.Permissions.all()
         self.messages = {}; self.serial = 0; self.tracked = []

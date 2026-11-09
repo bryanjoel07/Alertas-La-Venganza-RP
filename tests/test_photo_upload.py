@@ -46,15 +46,15 @@ class PhotoUploadTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
     async def test_open_upload_and_modal_file_payload_revalidate_channel_permissions(self):
         i=self.interaction(None,user=1)
         await self.system.open_upload(i)
-        form=i.response.send_modal.call_args.args[0]
+        picker=i.response.send_message.call_args.kwargs['view']
+        next_i=self.interaction(None,user=1)
+        await next(c for c in picker.children if getattr(c,'label','')=='Elegir foto').callback(next_i)
+        form=next_i.response.send_modal.call_args.args[0]
         payload=form.to_dict()['components']
         self.assertEqual(payload[0]['component']['type'],19)
         self.assertEqual(payload[0]['component']['max_values'],1)
         self.assertFalse(payload[1]['component']['required'])
-        self.assertEqual(payload[2]['component']['type'],5)
-        self.assertFalse(payload[2]['component']['required'])
-        self.assertEqual(payload[2]['component']['min_values'],0)
-        self.assertEqual(payload[2]['component']['max_values'],5)
+        self.assertEqual(len(payload),2)
         form.photo._values=[self.source().attachments[0]];form.caption._value='Desde la ciudad'
         i.channel_id=123
         await form.on_submit(i)
@@ -190,9 +190,12 @@ class PhotoUploadTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.system.store.current(BASE)['prize_actor'])
 
     def members(self):
-        users={uid:SimpleNamespace(id=uid) for uid in (2,3)}
+        users={uid:SimpleNamespace(id=uid,name=f'user{uid}',display_name=f'Persona {uid}',global_name=None) for uid in (2,3)}
         self.guild.get_member=lambda uid:users.get(uid)
-        self.guild.fetch_member=AsyncMock(side_effect=discord.NotFound(SimpleNamespace(status=404,reason='Missing'),'missing'))
+        async def fetch(uid):
+            if uid not in users:raise discord.NotFound(SimpleNamespace(status=404,reason='Missing'),'missing')
+            return users[uid]
+        self.guild.fetch_member=AsyncMock(side_effect=fetch)
         return users
 
     async def test_optional_people_are_mentioned_only_once_when_the_photo_is_published(self):

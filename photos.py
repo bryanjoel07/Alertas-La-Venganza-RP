@@ -13,6 +13,7 @@ from discord import app_commands
 
 from economy_store import SLOTS
 from photo_store import PhotoStore, week_bounds
+from photo_members import MemberDirectory,DirectoryUnavailable,MemberPicker,NativePickerFallback
 
 log = logging.getLogger('LaVenganzaRP.photos')
 FOTOS_CHANNEL = 1513422142014754976
@@ -83,22 +84,25 @@ class UploadButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:phot
 
 
 class UploadForm(discord.ui.Modal):
-    def __init__(self, system):
+    def __init__(self, system, selected_users=None):
         super().__init__(title='Subir tu foto',timeout=600)
         self.system=system
         self.photo=discord.ui.FileUpload(custom_id='photo',min_values=1,max_values=1)
         self.caption=discord.ui.TextInput(custom_id='caption',style=discord.TextStyle.paragraph,required=False,max_length=500,placeholder='Un título o lo que quieras contar de tu foto.')
-        self.mentions=discord.ui.UserSelect(custom_id='mentions',placeholder='Elige personas (opcional)',min_values=0,max_values=5,required=False)
+        self.selected_users=tuple(selected_users or ())
+        self.mentions=discord.ui.UserSelect(custom_id='mentions',placeholder='Busca por nombre (opcional)',min_values=0,max_values=5,required=False) if selected_users is None else None
         self.add_item(discord.ui.Label(text='Elige tu foto',component=self.photo))
-        self.add_item(discord.ui.Label(text='¿Quieres ponerle un texto?',component=self.caption))
-        self.add_item(discord.ui.Label(text='¿Quieres mencionar a alguien?',component=self.mentions))
+        summary=('Menciones: '+', '.join(m.display_name for m in self.selected_users))[:100] if self.selected_users else 'Sin menciones.'
+        self.add_item(discord.ui.Label(text='¿Quieres ponerle un texto?',description=summary if selected_users is not None else None,component=self.caption))
+        if self.mentions is not None:
+            self.add_item(discord.ui.Label(text='¿Quieres mencionar a alguien?',component=self.mentions))
 
     async def on_submit(self,i):
         await i.response.defer(ephemeral=True,thinking=True)
         try:
             if len(self.photo.values)!=1:
                 raise ValueError('Elige una foto para subirla, bro.')
-            await self.system.submit_upload(i,self.photo.values[0],self.caption.value,self.mentions.values)
+            await self.system.submit_upload(i,self.photo.values[0],self.caption.value,self.mentions.values if self.mentions is not None else self.selected_users)
         except ValueError as error:
             await answer(i,str(error))
         except discord.HTTPException:
@@ -126,6 +130,8 @@ class PhotoControls(discord.ui.View):
 class PhotoSystem:
     def __init__(self, bot, path, guild_id):
         self.bot, self.guild_id = bot, guild_id
+        self.photo_channel_id=FOTOS_CHANNEL
+        self.member_directory=MemberDirectory(bot,guild_id)
         self.store = PhotoStore(path)
         self.lock = asyncio.Lock()
         self.ready_lock = asyncio.Lock()
@@ -171,7 +177,7 @@ class PhotoSystem:
 
     def panel_embed(self, week):
         embed = discord.Embed(title=PANEL_TITLE, color=COLOR, description=
-            'Pulsa **📸 Subir foto**, elige la imagen y envíala. Tu foto aparecerá con tu nombre y los botones **❤️ Votar** y **↩️ Quitar voto** en la misma publicación.\n\n'
+            'Pulsa **📸 Subir foto**. Primero puedes elegir a quién mencionar en la lista o usar **Buscar**; después pulsa **Elegir foto** para subir la imagen y su texto. Tu foto aparecerá con tu nombre y los botones **❤️ Votar** y **↩️ Quitar voto** en la misma publicación.\n\n'
             'Puedes votar una vez por cada foto de los demás y cambiar de opinión quitando tu voto. '
             'Las fotos compiten de lunes a domingo, hora de Puerto Rico. '
             'Al terminar la semana destacamos la más votada con el nombre de quien la publicó. '
@@ -260,8 +266,20 @@ class PhotoSystem:
         return channel
 
     async def open_upload(self,i):
+        channel=await self.upload_channel(i)
+        await i.response.defer(ephemeral=True,thinking=True)
+        try:
+            members=await self.member_directory.load(channel.guild)
+        except DirectoryUnavailable as error:
+            log.warning('PHOTOS member_directory_unavailable reason=%s status=%s',error.reason,error.status)
+            return await answer(i,'No pudimos cargar la lista completa ahora. Puedes continuar con el selector de Discord mientras se revisa.',view=NativePickerFallback(self,i.user.id))
+        visible=[m for m in members if channel.permissions_for(m).view_channel]
+        picker=MemberPicker(self,i.user.id,visible)
+        await answer(i,picker.content(),view=picker)
+
+    async def show_upload_form(self,i,selected):
         await self.upload_channel(i)
-        await i.response.send_modal(UploadForm(self))
+        await i.response.send_modal(UploadForm(self,selected))
 
     async def submit_upload(self,i,attachment,caption='',mentions=()):
         channel=await self.upload_channel(i)
@@ -272,10 +290,8 @@ class PhotoSystem:
             uid=getattr(user,'id',None)
             if not isinstance(uid,int) or uid<=0:
                 raise ValueError('Elige a las personas desde el campo de menciones.')
-            member=user if isinstance(user,discord.Member) and user.guild.id==self.guild_id else channel.guild.get_member(uid)
-            if member is None:
-                try:member=await channel.guild.fetch_member(uid)
-                except discord.NotFound:raise ValueError('Esa persona ya no está en el servidor.') from None
+            try:member=await channel.guild.fetch_member(uid)
+            except discord.NotFound:raise ValueError('Esa persona ya no está en el servidor.') from None
             if not channel.permissions_for(member).view_channel:
                 raise ValueError('Esa persona no puede ver el canal de Fotos.')
             if uid not in selected:selected.append(uid)
@@ -594,6 +610,12 @@ class PhotoSystem:
             command = next((c.to_dict() for c in commands if c.name == 'foto'), {})
             if not {'semana', 'premio','subir','retirar'} <= {o['name'] for o in command.get('options', [])}:
                 raise RuntimeError('Discord no confirmó los comandos de Fotos.')
+            try:
+                members=await self.member_directory.load(channel.guild)
+                log.info('PHOTOS member_directory_verified total=%s visible_in_photos=%s source=%s pages_of=25 normalized_name_search=True offline_included=True',
+                    len(members),sum(channel.permissions_for(m).view_channel for m in members),self.member_directory.source)
+            except DirectoryUnavailable as error:
+                log.warning('PHOTOS member_directory_unavailable reason=%s status=%s',error.reason,error.status)
             log.info('PHOTOS pin_policy_verified winner_only_after_close=True panel_pinned=False current_week_pinned_sources=%s', pinned_sources)
             form=UploadForm(self).to_dict()
             if form['components'][0]['component']['type']!=19:
