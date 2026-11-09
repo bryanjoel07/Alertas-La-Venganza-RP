@@ -38,6 +38,7 @@ from faction_roles import ensure_vista_hermosa
 from access_layout import organize_access, repair_staff_command_access
 from change_log import ChangeLog
 from tickets import TicketSystem
+from photos import PhotoSystem
 from channel_cleanup import clear_exclusive_log
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
@@ -222,6 +223,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.changes.group, guild=GUILD)
         self.tickets = TicketSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.tickets.group, guild=GUILD)
+        self.photos = PhotoSystem(self, DB_PATH, GUILD_ID)
+        self.tree.add_command(self.photos.group, guild=GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -245,6 +248,7 @@ class LaVenganzaBot(discord.Client):
         await asyncio.to_thread(self.changes.journal.initialize)
         await self.economy.start()
         await self.tickets.start()
+        await self.photos.start()
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
         self.obscenity_filter.install.start()
@@ -266,7 +270,7 @@ class LaVenganzaBot(discord.Client):
         self.obscenity_filter.install.cancel()
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -1470,6 +1474,10 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 @client.event
 async def on_message(message):
     try:
+        await client.photos.observe(message)
+    except Exception:
+        log.exception('No se pudo registrar una foto para la votación semanal')
+    try:
         await client.tickets.observe(message)
     except Exception:
         log.exception("No se pudo respaldar un mensaje de ticket")
@@ -1479,6 +1487,10 @@ async def on_message(message):
 
 @client.event
 async def on_raw_message_delete(payload):
+    try:
+        await client.photos.deleted(payload.guild_id, payload.channel_id, [payload.message_id])
+    except Exception:
+        log.exception('No se pudo retirar una foto eliminada de la votación')
     if payload.guild_id == GUILD_ID and client.tickets.enabled():
         await client.tickets.call("deleted", payload.channel_id, payload.message_id)
     if client.economy.ready and str(payload.message_id) == client.economy.store.config("panel"):
@@ -1487,6 +1499,10 @@ async def on_raw_message_delete(payload):
 
 @client.event
 async def on_raw_message_edit(payload):
+    try:
+        await client.photos.edited(payload)
+    except Exception:
+        log.exception('No se pudo actualizar la votación de una foto editada')
     if payload.guild_id != GUILD_ID or not client.tickets.enabled():
         return
     row = await client.tickets.call('get', channel=payload.channel_id)
@@ -1503,6 +1519,10 @@ async def on_raw_message_edit(payload):
 
 @client.event
 async def on_raw_bulk_message_delete(payload):
+    try:
+        await client.photos.deleted(payload.guild_id, payload.channel_id, payload.message_ids)
+    except Exception:
+        log.exception('No se pudieron retirar las fotos eliminadas de la votación')
     if payload.guild_id == GUILD_ID and client.tickets.enabled():
         for message_id in payload.message_ids:
             await client.tickets.call('deleted', payload.channel_id, message_id)
@@ -1581,6 +1601,10 @@ async def on_ready():
         await client.tickets.ready()
     except Exception:
         log.exception("No se pudo completar la instalación de tickets avanzados")
+    try:
+        await client.photos.ready()
+    except Exception:
+        log.exception('No se pudo preparar la votación semanal de Fotos')
     try:
         await client.changes.tracked("CLEAR_EXCLUSIVE_LOG_REQUEST_ID", "Vaciar Registro Exclusive",
             lambda: clear_exclusive_log(client, GUILD_ID, DB_PATH))
