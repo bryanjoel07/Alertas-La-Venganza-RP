@@ -48,7 +48,8 @@ class ProfilesHubTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_create_channel_with_guide_and_save_ids(self):
         guild = self.guild()
-        category = SimpleNamespace(id=20, name='La Venganza', overwrites={})
+        category = SimpleNamespace(id=20, name='La Venganza', overwrites={},
+                                   permissions_for=lambda member: discord.Permissions.all())
         channel = MagicMock(spec=discord.TextChannel)
         channel.id = 21
         channel.category_id = 20

@@ -15,7 +15,10 @@ def normalized(name):
 
 
 def profile_overwrites(guild, inherited):
-    overwrites = {target: discord.PermissionOverwrite.from_pair(*value.pair())
+    # Only inherit visibility. Copying administrative/voice grants into a new
+    # text channel can ask Discord to grant permissions the bot does not own.
+    overwrites = {target: discord.PermissionOverwrite(view_channel=value.view_channel,
+                                                      read_message_history=value.read_message_history)
                   for target, value in inherited.items()}
     overwrites.setdefault(guild.default_role, discord.PermissionOverwrite())
     for target, value in overwrites.items():
@@ -39,6 +42,12 @@ async def ensure_profiles(economy, guild):
     saved = economy.store.config('profiles_channel')
     channel = guild.get_channel(int(saved)) if saved else None
     if channel is None:
+        permissions = category.permissions_for(guild.me)
+        log.info('Creando Perfiles en %s (%s): gestionar_canales=%s gestionar_permisos=%s '
+                 'enviar=%s embeds=%s adjuntar=%s comandos=%s; permisos_globales=%s',
+                 category.name, category.id, permissions.manage_channels, permissions.manage_roles,
+                 permissions.send_messages, permissions.embed_links, permissions.attach_files,
+                 permissions.use_application_commands, guild.me.guild_permissions.value)
         candidates = [c for c in await guild.fetch_channels()
                       if isinstance(c, discord.TextChannel) and c.category_id == category.id
                       and (c.topic == MARKER or normalized(c.name) == 'perfiles')]
