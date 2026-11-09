@@ -13,10 +13,10 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='cosmetic-role-hierarchy-v2'
-SUMMARY='Corregida la compra de títulos decorativos para jugadores con rango superior al bot: se valida el rol cosmético, sin modificar rangos protegidos. Se mantienen las comprobaciones de colores y apodos.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 212e42a1eed5a106889a49ac0279d63a1dfc38f1 en Railway. '
-         'Conservar el volumen /data y la base SQLite actual: volver al código anterior no requiere borrar compras ni saldos. '
+RELEASE='advanced-tickets-v1'
+SUMMARY='Sistema de tickets avanzados: formularios, responsables, privacidad por caso, transferencias, notas internas, pruebas respaldadas, cierre y reapertura, valoraciones y seguimiento. Los tickets del sistema anterior se conservan.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior a85b9bdc5f9564abfcd57d5463fb94508d1768cc en Railway. '
+         'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin. No borrar canales ni recrearlos: se perdería su historial.')
 
@@ -136,19 +136,21 @@ class ChangeLog:
                 sender=i.followup.send if i.response.is_done() else i.response.send_message
                 await sender('No se pudo consultar el registro. Inténtalo de nuevo.',ephemeral=True)
 
-    async def tracked(self,env,title,operation):
-        request=os.getenv(env,'').strip()
+    async def tracked(self,env,title,operation,request_id=None,snapshot=None):
+        request=request_id or os.getenv(env,'').strip()
         if not request:
             return await operation()
         guild=self.bot.get_guild(self.guild_id)
-        before=await server_snapshot(guild)
+        async def state():
+            return await snapshot() if snapshot else await server_snapshot(guild)
+        before=await state()
         rid=await asyncio.to_thread(self.journal.begin,f'operation:{env}:{request}',title,
             f'Operación administrativa del bot. Solicitud: {request}.',RESTORE,before)
         try:
             result=await operation()
-            after=await server_snapshot(guild)
+            after=await state()
         except Exception as error:
-            await asyncio.to_thread(self.journal.finish,rid,'fallido',dict(error_type=type(error).__name__,state=await server_snapshot(guild)))
+            await asyncio.to_thread(self.journal.finish,rid,'fallido',dict(error_type=type(error).__name__,state=await state()))
             raise
         await asyncio.to_thread(self.journal.finish,rid,'completado',after)
         return result

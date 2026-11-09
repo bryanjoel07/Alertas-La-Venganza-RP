@@ -37,6 +37,7 @@ from navigation import arrange_navigation
 from faction_roles import ensure_vista_hermosa
 from access_layout import organize_access, repair_staff_command_access
 from change_log import ChangeLog
+from tickets import TicketSystem
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -218,6 +219,8 @@ class LaVenganzaBot(discord.Client):
         self.economy = Economy(self, DB_PATH, GUILD)
         self.changes = ChangeLog(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.changes.group, guild=GUILD)
+        self.tickets = TicketSystem(self, DB_PATH, GUILD_ID)
+        self.tree.add_command(self.tickets.group, guild=GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -240,6 +243,7 @@ class LaVenganzaBot(discord.Client):
         await asyncio.to_thread(init_db)
         await asyncio.to_thread(self.changes.journal.initialize)
         await self.economy.start()
+        await self.tickets.start()
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
         self.obscenity_filter.install.start()
@@ -261,7 +265,7 @@ class LaVenganzaBot(discord.Client):
         self.obscenity_filter.install.cancel()
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -1464,14 +1468,43 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 
 @client.event
 async def on_message(message):
+    try:
+        await client.tickets.observe(message)
+    except Exception:
+        log.exception("No se pudo respaldar un mensaje de ticket")
     if client.link_spam:
         await client.link_spam.observe(message)
 
 
 @client.event
 async def on_raw_message_delete(payload):
+    if payload.guild_id == GUILD_ID and client.tickets.enabled():
+        await client.tickets.call("deleted", payload.channel_id, payload.message_id)
     if client.economy.ready and str(payload.message_id) == client.economy.store.config("panel"):
         client.economy.signature = None
+
+
+@client.event
+async def on_raw_message_edit(payload):
+    if payload.guild_id != GUILD_ID or not client.tickets.enabled():
+        return
+    row = await client.tickets.call('get', channel=payload.channel_id)
+    if row:
+        try:
+            channel = await client.fetch_channel(payload.channel_id)
+            message = await channel.fetch_message(payload.message_id)
+            await client.tickets.observe(message)
+        except discord.NotFound:
+            pass
+        except Exception:
+            log.exception('No se pudo respaldar una edición de ticket')
+
+
+@client.event
+async def on_raw_bulk_message_delete(payload):
+    if payload.guild_id == GUILD_ID and client.tickets.enabled():
+        for message_id in payload.message_ids:
+            await client.tickets.call('deleted', payload.channel_id, message_id)
 
 
 @client.event
@@ -1543,6 +1576,10 @@ async def on_ready():
         log.exception("No se pudo reanudar observación de reuniones Staff")
     if DATA_DIR == "/tmp":
         log.warning("SQLite está en /tmp. Antes de reiniciar o montar un volumen, exporta y verifica un respaldo externo; consulta DESPLIEGUE_IPHONE.md.")
+    try:
+        await client.tickets.ready()
+    except Exception:
+        log.exception("No se pudo completar la instalación de tickets avanzados")
     try:
         await client.changes.ready()
     except Exception:
