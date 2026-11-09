@@ -80,7 +80,7 @@ def product_text(p):
         if p["stock"] is None
         else f"{p['stock']} disponibles"
     )
-    duration = "7 días desde la entrega" if p["duration"] else "Permanente"
+    duration = f"{p['duration'] / 86400:g} días desde la entrega" if p["duration"] else "Permanente"
     returns = (
         "Disponible solo durante esta campaña"
         if p["campaign_end"]
@@ -94,48 +94,92 @@ def product_text(p):
         )
     if p["campaign_end"]:
         returns += f" · hasta <t:{p['campaign_end']}:d>"
-    return f"{DETAILS[p['kind']]} · {preview.strip(' ·')}\n**{p['price']} 🪙** · {duration} · {stock}\n{returns}"
+    benefit = DETAILS[p['kind']]
+    if preview.strip(' ·'):
+        benefit += ' · ' + preview.strip(' ·')
+    return f"{benefit}\n**{p['price']:,} 🪙** · {duration} · {stock}\n{returns}"
 
 
 def shop_embed(r):
-    embed = discord.Embed(
-        title=PANEL,
-        description=f"Próxima rotación <t:{r['ends']}:R> · lunes, 6:30 p. m. de Puerto Rico.\nLos recuerdos de tus eventos aparecen en **Comprar artículos** si tienes un podio o asistencia confirmada.",
-        color=0xBE2335,
-    )
-    for p in r["products"]:
-        if p["tier"] in ("profile", "event"):
-            continue
-        state = (
-            ""
-            if p["active"]
-            and (not p["campaign_start"] or p["campaign_start"] <= time.time())
-            and (not p["campaign_end"] or p["campaign_end"] > time.time())
-            else " · Inactivo"
-        )
-        embed.add_field(
-            name=f"{p['name']} · {TIERS[p['tier']]}{state}",
-            value=product_text(p) + f"\n`{p['sku']}`",
-            inline=False,
-        )
-    for tier, title in [
-        ("profile", "Colección de perfil"),
-        ("event", "Recuerdos de tus eventos"),
-    ]:
-        items = [p for p in r["products"] if p["tier"] == tier]
+    embed = discord.Embed(title=PANEL,color=0xBE2335,
+        description="Abre **Ver catálogo** para consultar precios y beneficios. Selecciona un artículo para ver su ficha, probarlo gratis y después revisar la compra.\n\n"
+                    f"Próxima rotación <t:{r['ends']}:R> · lunes, 6:30 p. m. de Puerto Rico.")
+    for tier,label in TIERS.items():
+        items=[p for p in r['products'] if p['tier']==tier]
         if items:
-            embed.add_field(
-                name=title,
-                value="\n".join(
-                    f"{discord.utils.escape_markdown(p['name'])[:90]} · **{p['price']} 🪙**"
-                    for p in items
-                ),
-                inline=False,
-            )
+            lines=[f"{discord.utils.escape_markdown(p['name'])[:75]} · **{p['price']:,} 🪙**" for p in items]
+            body='\n'.join(lines)
+            if len(body)>1000:
+                body=body[:950].rsplit('\n',1)[0]+'\nConsulta el catálogo para ver todos.'
+            embed.add_field(name=label,value=body,inline=False)
+    embed.add_field(name="Cómo funciona",value="**1.** Consulta la ficha y el precio.\n**2.** Pulsa **Vista previa gratis**.\n**3.** Usa **Revisar compra** y confirma.\nLo adquirido se gestiona en `/inventario`. Los recuerdos de eventos aparecen según tu participación confirmada.",inline=False)
+    embed.set_footer(text="Monedas de la comunidad · Beneficios dentro de Discord · La vista previa no cobra ni equipa")
     return embed
 
 
-async def private(i, text, **kwargs):
+def catalog_embed(products,page):
+    selected=products[page*6:(page+1)*6]
+    embed=discord.Embed(title="🛍️ Catálogo | La Venganza RP",color=0xBE2335,
+        description="Selecciona un artículo para consultar su ficha y probarlo antes de comprar.")
+    for p in selected:
+        embed.add_field(name=p['name'][:256],value=product_text(p)[:1024],inline=False)
+    embed.set_footer(text=f"Página {page+1}/{max(1,(len(products)+5)//6)} · Monedas de la comunidad")
+    return embed
+
+
+class CatalogView(discord.ui.View):
+    def __init__(self,system,user,products,page=0):
+        super().__init__(timeout=180)
+        self.system,self.user,self.products,self.page=system,user,products,page
+        selected=products[page*6:(page+1)*6]
+        if selected:
+            self.add_item(ShopPicker(system,selected))
+        self.previous.disabled=page==0
+        self.next_page.disabled=(page+1)*6>=len(products)
+
+    async def interaction_check(self,i):
+        if i.user.id==self.user:
+            return True
+        await private(i,"Abre tu catálogo con /tienda.")
+        return False
+
+    async def move(self,i,page):
+        await i.response.edit_message(embed=catalog_embed(self.products,page),
+            view=CatalogView(self.system,self.user,self.products,page))
+
+    @discord.ui.button(label="Anterior",emoji="◀️",row=1)
+    async def previous(self,i,button):
+        await self.move(i,self.page-1)
+
+    @discord.ui.button(label="Siguiente",emoji="▶️",row=1)
+    async def next_page(self,i,button):
+        await self.move(i,self.page+1)
+
+
+class ProductView(discord.ui.View):
+    def __init__(self,system,user,sku):
+        super().__init__(timeout=180)
+        self.system,self.user,self.sku=system,user,sku
+
+    async def interaction_check(self,i):
+        if i.user.id==self.user:
+            return True
+        await private(i,"Abre tu propia ficha con /tienda.")
+        return False
+
+    @discord.ui.button(label="Vista previa gratis",emoji="👔")
+    async def fitting(self,i,button):
+        await self.system.community.try_product(i,self.sku)
+
+    @discord.ui.button(label="Revisar compra",emoji="🛍️",style=discord.ButtonStyle.primary)
+    async def buy(self,i,button):
+        try:
+            await self.system.preview(i,self.sku,i.user)
+        except (ValueError,discord.HTTPException) as error:
+            await private(i,str(error))
+
+
+async def private(i, text=None, **kwargs):
     send = i.followup.send if i.response.is_done() else i.response.send_message
     await send(
         text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none(), **kwargs
@@ -207,7 +251,7 @@ class Panel(discord.ui.View):
         self.system = system
 
     @discord.ui.button(
-        label="Comprar artículos",
+        label="Ver catálogo",
         emoji="🛍️",
         custom_id="lv:eco:shop",
         style=discord.ButtonStyle.primary,
@@ -231,7 +275,7 @@ class Panel(discord.ui.View):
 class ShopPicker(discord.ui.Select):
     def __init__(self, system, products):
         super().__init__(
-            placeholder="Elige un artículo para comprar",
+            placeholder="Elige un artículo para ver sus beneficios",
             options=[
                 discord.SelectOption(
                     label=p["name"],
@@ -245,7 +289,7 @@ class ShopPicker(discord.ui.Select):
 
     async def callback(self, i):
         try:
-            await self.system.preview(i, self.values[0], i.user)
+            await self.system.product_details(i, self.values[0])
         except (ValueError, discord.HTTPException) as exc:
             await private(i, str(exc))
 
@@ -366,7 +410,7 @@ class Economy:
             guild = self.bot.get_guild(self.guild.id)
             if guild:
                 errors = []
-                for job in (self.panel, self.audit, self.profiles, self.high_priorities, self.community.ensure_guide, self.delivery.recover):
+                for job in (self.panel, self.audit, self.change_records, self.profiles, self.high_priorities, self.community.ensure_guide, self.delivery.recover):
                     try:
                         await job(guild)
                     except Exception as exc:
@@ -374,6 +418,10 @@ class Economy:
                         log.exception("Economía: %s", job.__name__)
                 self.last_error = " · ".join(errors)[:230]
             await asyncio.sleep(60)
+
+    async def change_records(self,guild):
+        if getattr(self.bot,"changes",None):
+            await self.bot.changes.ready()
 
     async def profiles(self, guild):
         await ensure_profiles(self, guild)
@@ -489,6 +537,11 @@ class Economy:
             await msg.edit(embed=embed, view=Panel(self))
         else:
             msg = await ch.send(embed=embed, view=Panel(self))
+        confirmed = await ch.fetch_message(msg.id)
+        labels = [getattr(button,'label',None) for row in confirmed.components for button in row.children]
+        if not confirmed.embeds or confirmed.embeds[0].description!=embed.description or 'Ver catálogo' not in labels:
+            raise RuntimeError('Discord no confirmó el catálogo actualizado')
+        log.info('CATALOG verified channel=%s message=%s pages_of_six=True details_before_purchase=True labels=%s',ch.id,msg.id,labels)
         self.store.runtime_config("panel", msg.id)
         self.signature = signature
         log.info(
@@ -523,17 +576,24 @@ class Economy:
             and (not p["campaign_start"] or p["campaign_start"] <= now)
             and (not p["campaign_end"] or now < p["campaign_end"])
         ]
-        view = discord.ui.View(timeout=180)
-        if available:
-            view.add_item(ShopPicker(self, available))
-        await private(
-            i,
-            "Elige un artículo para ver el precio y confirmar la compra."
-            if available
-            else "No quedan artículos disponibles en esta rotación.",
-            embed=shop_embed(rotation),
-            view=view if available else None,
-        )
+        await private(i,"Consulta los beneficios y prueba gratis antes de decidir."
+            if available else "No quedan artículos disponibles en esta rotación.",
+            embed=catalog_embed(available,0),view=CatalogView(self,i.user.id,available) if available else None)
+
+    async def product_details(self,i,sku):
+        if not i.response.is_done():
+            await i.response.defer(ephemeral=True,thinking=True)
+        rotation=await asyncio.to_thread(self.store.rotation,user=i.user.id)
+        p=next((p for p in rotation['products'] if p['sku']==sku),None)
+        if p is None:
+            return await private(i,"Ese artículo ya no está en tu catálogo. Abre /tienda para actualizarlo.")
+        embed=discord.Embed(title=p['name'],description=product_text(p),color=0xBE2335)
+        note="Se crea al confirmar y se elimina al vencer." if p['kind']=='voice' else "Al comprar se equipa; sustituye el cosmético activo del mismo tipo. Puedes gestionarlo en /inventario."
+        if p['kind'] in CUSTOM_FIELDS:
+            note+=" Podrás elegir tu texto o color antes de pagar."
+        embed.add_field(name="Entrega y uso",value=note,inline=False)
+        embed.add_field(name="Antes de comprar",value="La vista previa es gratuita. El saldo, la disponibilidad y el precio se verifican al revisar y confirmar la compra.",inline=False)
+        await private(i,embed=embed,view=ProductView(self,i.user.id,sku))
 
     async def balance(self, i):
         if not i.response.is_done():

@@ -79,3 +79,32 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         for text in ('/perfil','/probar','/retos','/streamer registrar','6:30'):
             self.assertIn(text,str(embed.to_dict()))
 
+
+    async def test_catalog_details_with_no_balance_never_create_quote_or_purchase(self):
+        self.economy.product_details=Economy.product_details.__get__(self.economy,Economy)
+        self.assertEqual(self.economy.store.account(7)['balance'],0)
+        await self.economy.product_details(self.i,'banner-garaje')
+        response=self.i.response.send_message.call_args.kwargs
+        self.assertTrue(response['ephemeral'])
+        self.assertIn('900',response['embed'].description)
+        self.assertIn('Ilustración',response['embed'].description)
+        self.assertFalse(self.economy.store.rows('SELECT * FROM eco_quotes'))
+        self.assertFalse(self.economy.store.inventory(7))
+        self.assertEqual(self.economy.store.account(7)['balance'],0)
+        self.economy.preview.assert_not_awaited()
+
+    async def test_all_catalog_pages_reachable_and_within_discord_limits(self):
+        import discord
+        from economy import CatalogView,catalog_embed
+        products=self.features.available(7)
+        products=[dict(products[0],sku=f'product-{n}',name=f'Producto {n}') for n in range(37)]
+        seen=[]
+        for page in range(7):
+            view=CatalogView(self.economy,7,products,page)
+            picker=next(c for c in view.children if isinstance(c,discord.ui.Select))
+            seen.extend(o.value for o in picker.options)
+            self.assertLessEqual(len(picker.options),25)
+            self.assertLess(len(catalog_embed(products,page)),6000)
+            self.assertEqual(view.previous.disabled,page==0)
+            self.assertEqual(view.next_page.disabled,page==6)
+        self.assertEqual(seen,[p['sku'] for p in products])

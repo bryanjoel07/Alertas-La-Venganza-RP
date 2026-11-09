@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -202,12 +203,15 @@ class EconomyTests(unittest.TestCase):
             i.response.send_message = AsyncMock()
             i.response.defer = AsyncMock()
             await system.shop(i)
-            picker = i.response.send_message.call_args.kwargs["view"].children[0]
+            picker = next(c for c in i.response.send_message.call_args.kwargs["view"].children if isinstance(c, discord.ui.Select))
             choices = [opt.value for opt in picker.options]
             self.assertIn("titulo-calle", choices)
             self.assertIn("banner-garaje", choices)
             picker._values = ["titulo-calle"]
             await picker.callback(i)
+            details = i.response.send_message.call_args.kwargs["view"]
+            self.assertFalse(self.store.rows("SELECT * FROM eco_quotes"))
+            await details.buy.callback(i)
             confirm = i.response.send_message.call_args.kwargs["view"]
             role = MagicMock(id=50)
             system.delivery.role = AsyncMock(return_value=role)
@@ -441,6 +445,8 @@ class EconomyTests(unittest.TestCase):
             guild.create_text_channel = AsyncMock(return_value=channel)
             message = MagicMock()
             message.id = 54321
+            message.embeds = [shop_embed(self.store.rotation())]
+            message.components = [SimpleNamespace(children=[SimpleNamespace(label="Ver catálogo")])]
             message.edit = AsyncMock()
             channel.send = AsyncMock(return_value=message)
             channel.fetch_message = AsyncMock(return_value=message)

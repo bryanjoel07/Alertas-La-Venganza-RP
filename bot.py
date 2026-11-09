@@ -36,6 +36,7 @@ from fivem_probe import FiveMProbe
 from navigation import arrange_navigation
 from faction_roles import ensure_vista_hermosa
 from access_layout import organize_access, repair_staff_command_access
+from change_log import ChangeLog
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -215,6 +216,8 @@ class LaVenganzaBot(discord.Client):
         self.monitor_last_error = None
         self.tree = ProfileTree(self)
         self.economy = Economy(self, DB_PATH, GUILD)
+        self.changes = ChangeLog(self, DB_PATH, GUILD_ID)
+        self.tree.add_command(self.changes.group, guild=GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -235,6 +238,7 @@ class LaVenganzaBot(discord.Client):
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
+        await asyncio.to_thread(self.changes.journal.initialize)
         await self.economy.start()
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
@@ -1475,19 +1479,23 @@ async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
     try:
-        await repair_staff_command_access(client, GUILD_ID, DB_PATH)
+        await client.changes.tracked("REPAIR_STAFF_ACCESS_REQUEST_ID", "Restaurar accesos de Staff",
+            lambda: repair_staff_command_access(client, GUILD_ID, DB_PATH))
     except Exception:
         log.exception("No se pudo completar la restauración de permisos del Staff")
     try:
-        await organize_access(client, GUILD_ID, DB_PATH)
+        await client.changes.tracked("ACCESS_LAYOUT_REQUEST_ID", "Organizar accesos y roles",
+            lambda: organize_access(client, GUILD_ID, DB_PATH))
     except Exception:
         log.exception("No se pudo completar la organización de accesos y roles")
     try:
-        await arrange_navigation(client, GUILD_ID, DB_PATH)
+        await client.changes.tracked("NAVIGATION_REQUEST_ID", "Organizar navegación",
+            lambda: arrange_navigation(client, GUILD_ID, DB_PATH))
     except Exception:
         log.exception("No se pudo completar la ordenación de navegación")
     try:
-        await ensure_vista_hermosa(client, GUILD_ID, DB_PATH)
+        await client.changes.tracked("VISTA_HERMOSA_REQUEST_ID", "Crear o revisar Vista Hermosa",
+            lambda: ensure_vista_hermosa(client, GUILD_ID, DB_PATH))
     except Exception:
         log.exception("No se pudo completar el rol de Vista Hermosa")
     try:
@@ -1535,6 +1543,10 @@ async def on_ready():
         log.exception("No se pudo reanudar observación de reuniones Staff")
     if DATA_DIR == "/tmp":
         log.warning("SQLite está en /tmp. Antes de reiniciar o montar un volumen, exporta y verifica un respaldo externo; consulta DESPLIEGUE_IPHONE.md.")
+    try:
+        await client.changes.ready()
+    except Exception:
+        log.exception("No se pudo publicar el registro de cambios")
     try:
         await audit_server(client, GUILD_ID, DB_PATH)
     except Exception:
