@@ -108,3 +108,39 @@ class DiscordMoveTests(unittest.IsolatedAsyncioTestCase):
             dict(id='3',position=2,parent_id='11',lock_permissions=False)])
         self.assertEqual(blocked,['2'])
         self.assertEqual(changed,['3'])
+
+
+class FullOrganizationTests(unittest.TestCase):
+    def test_multimedia_groups_six_channels_and_keeps_profiles_and_shop(self):
+        from navigation import REGROUP,MEDIA_CHANNELS,regroup
+        categories=[channel(1,'Llegando','category',bucket=4),channel(2,'Logs','category',bucket=4),
+                    channel(3,'Staff','category',bucket=4),channel(4,'La Venganza RP','category',bucket=4),
+                    channel(5,'│・ 🎬┊ 𝐌𝐮𝐥𝐭𝐢𝐦𝐞𝐝𝐢𝐚','category',bucket=4)]
+        items=categories+[channel(id,'Canal',parent=4) for id in {**REGROUP,**MEDIA_CHANNELS}]
+        items += [channel('1569151200673140897','Perfiles',parent=4),channel('1569084821983076512','Tienda',parent=4)]
+        projected,moves=regroup(items,include_media=True)
+        self.assertEqual(len(moves),13)
+        for item in projected:
+            if item['id'] in MEDIA_CHANNELS:
+                self.assertEqual(item['parent'],'5')
+            if item['id'] in ('1569151200673140897','1569084821983076512'):
+                self.assertEqual(item['parent'],'4')
+            self.assertEqual(item['overwrites'],next(c['overwrites'] for c in items if c['id']==item['id']))
+
+    def test_style_is_idempotent_and_preserves_open_ticket_names(self):
+        from types import SimpleNamespace
+        from navigation import styled_channel_name
+        for name in ('🛡️┊𝐒𝐚𝐧𝐜𝐢𝐨𝐧𝐞𝐬','🔊┊𝐏𝐮𝐛𝐥𝐢𝐜𝐨 𝟏','no-cerrar-donacion','incumplimiento-de-normativas'):
+            obj=SimpleNamespace(id=123,type='text',name=name)
+            self.assertEqual(styled_channel_name(obj),name)
+        category=SimpleNamespace(id=1,type='category',name='╭・ 🗄️┊ SERVER')
+        self.assertEqual(styled_channel_name(category),category.name)
+
+    def test_legacy_small_caps_get_same_bold_style_as_other_channels(self):
+        import unicodedata
+        from types import SimpleNamespace
+        from navigation import styled_channel_name
+        obj=SimpleNamespace(id=1425183472150118631,type='news',name='📢┊ᴜᴘᴅᴀᴛᴇs-ᴇꜰʟꜱ')
+        result=styled_channel_name(obj)
+        self.assertEqual(unicodedata.normalize('NFKC',result),'📢┊Updates-EFLS')
+        self.assertIn('𝐔',result)
