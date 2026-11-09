@@ -194,7 +194,7 @@ class CommunityFeatures:
         for title,body in (
             ('👤 Perfil y saldo',f"En <#{store.config('profiles_channel')}> usa `/perfil`: muestra saldo, cosméticos, eventos y podios. **Mi perfil** y **Mi saldo** te llevan a ese canal. Usa **Actualizar** después de comprar."),
             ('🪙 Retos y monedas',f"En <#{store.config('shop_channel')}> pulsa **Retos y monedas** en el panel de la tienda o usa `/retos`: hasta **450 🪙 semanales** por actividad confirmada. Una inscripción o estar AFK no cuenta."),
-            ('🛍️ Tienda y probador',f"En <#{store.config('shop_channel')}> usa **Comprar artículos** o **Probar cosméticos** en el panel. También puedes usar `/tienda` y `/probar`. `/comprar` exige confirmación; `/inventario` y `/equipar` gestionan lo que ya tienes."),
+            ('🛍️ Tienda y probador',f"En <#{store.config('shop_channel')}> usa **Ver catálogo** o **Probar cosméticos** en el panel. También puedes usar `/tienda` y `/probar`. `/comprar` exige confirmación; `/inventario` y `/equipar` gestionan lo que ya tienes."),
             ('🎁 Regalos y ahorro','`/regalar` solicita confirmación del destinatario. `/deseos` guarda artículos y `/saldo` muestra tu meta de ahorro.'),
             ('🏁 Eventos y reuniones','Inscríbete desde los anuncios. El staff confirma asistencia y resultados; los premios y retos usan esos registros.'),
             ('📺 Creadores','**Ser streamer** abre <#1568403146219454586>. Allí pulsa **Solicitar rol** o usa `/streamer solicitar`, verifica tu canal y guarda su enlace. Los avisos requieren **La Venganza RP** en el título. El staff puede usar `/streamer registrar`.'),
