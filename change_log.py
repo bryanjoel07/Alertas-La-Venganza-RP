@@ -13,9 +13,10 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='advanced-tickets-v2.1'
-SUMMARY='Tickets abiertos con cuatro botones: Reclamar, Resolver, Cerrar y Prioridad. Al cerrar aparecen Valorar (solo el jugador autor) y Eliminar para staff. Se limpian controles antiguos y se cambia Resolución por Solución en los textos del ticket.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 70d4bc1e4a4dfded0cf9558da45a1efaeb0245f8 en Railway. '
+RELEASE='advanced-tickets-v2.2'
+SUMMARY='Aviso privado al encargado después de 24 horas esperando respuesta, reportes contra staff solo a administradores; recepción de madrugada en hora de Puerto Rico; mensajes privados al reclamar y responder sin avisar por cada mensaje; valoración de 1 a 5 estrellas con comentario opcional. Los botones del ticket y los accesos existentes se conservan.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 27f0174b70838b75a928263535e83891e16e5c0c en Railway. '
+         'Conservar las columnas de seguimiento y la tabla lv_ticket_notices: son aditivas y el código anterior las ignora. La reversión desactiva los nuevos avisos y vuelve al formulario de valoración anterior sin perder opiniones ya guardadas. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '

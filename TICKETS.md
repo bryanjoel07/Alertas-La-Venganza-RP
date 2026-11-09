@@ -22,6 +22,8 @@ Se permite un caso activo por usuario y motivo, hasta tres abiertos y una apertu
 
 Botones del ticket abierto: Reclamar, Resolver, Cerrar y Prioridad. Tras cerrar: Valorar (solo para el autor) y Eliminar ticket (solo staff autorizado). Los mensajes antiguos se actualizan y se retiran sus botones sobrantes. El resto de herramientas del staff se usan por comandos.
 
+Valorar abre un formulario con una selección de 1 a 5 estrellas y un comentario opcional. No hace falta escribir una puntuación ni usar un formato especial. Solo el jugador que abrió el ticket puede enviar una opinión, una sola vez y mientras el ticket siga cerrado y no eliminado. La autorización se comprueba de nuevo al enviar el formulario.
+
 Comandos principales:
 
 - `/ticket mis`, `/ticket cerrados` y `/ticket gestion`: listas paginadas. La consulta de cerrados está únicamente en la categoría Tickets Cerrados y en `/ticket cerrados`. El panel de entrada no incluye ese botón. Las listas excluyen todos los casos de prueba y eliminados y comprueban que exista el canal; la lista de cerrados solo admite estado cerrado. Los datos reservados se filtran antes de calcular estadísticas.
@@ -36,6 +38,12 @@ Comandos principales:
 Estados: Nuevo → En atención → Esperando al jugador → Resuelto → Cerrado. Cada actuación conserva actor, fecha y motivo. Prioridades: normal, alta o urgente, con justificación.
 
 Avisos: recordatorio tras 6 horas pendientes. Los casos esperando al jugador reciben advertencia después de 72 horas y se archivan tras otras 24 horas sin respuesta. Responder cancela el cierre pendiente. Los resueltos no se cierran automáticamente sin aviso. No se usa @everyone; la apertura avisa a los roles encargados dentro del canal privado, y los recordatorios se limitan al autor o responsable.
+
+Después de **24 horas esperando una respuesta del staff**, el bot avisa al Jefe de Staff dentro del mismo ticket privado. Si ese rango no existe o no tiene acceso, avisa a roles con Administrador de Discord. En reportes contra staff solo se menciona a roles humanos que tengan Administrador; nunca a Soporte, Moderador ni al jefe por su nombre de rango. Reclamar sin responder y los mensajes de seguimiento del jugador no retrasan el aviso. Se envía una vez por período de espera; una respuesta del staff termina ese período. No se aplica a casos resueltos, cerrados, eliminados, de prueba o que esperan al jugador. Un canal ausente o un aviso fallido no interrumpen los demás casos.
+
+Si se abre entre **12:00 a. m. y 8:00 a. m., hora de Puerto Rico**, se confirma en el ticket y en la respuesta privada: «Recibimos tu ticket, bro. El equipo te responde cuando esté disponible». Es un aviso de recepción, no una promesa de horario ni de respuesta inmediata.
+
+El jugador recibe un privado al reclamar su ticket y otro cuando el staff le responde, con un enlace al canal o mensaje real del caso. Las respuestas se agrupan por turno del jugador y hay al menos 15 minutos entre avisos de respuesta y el aviso de reclamación. Si una respuesta llega durante ese intervalo, el mantenimiento puede avisar después si el jugador todavía no ha contestado. Las ediciones no generan avisos nuevos. Los intentos se conservan en SQLite para no duplicarlos tras reiniciar; un fallo temporal se puede reintentar después de 15 minutos y los privados bloqueados no detienen la atención. Los casos internos de prueba y los canales eliminados no generan estos privados.
 
 ## Archivo y recuperación
 

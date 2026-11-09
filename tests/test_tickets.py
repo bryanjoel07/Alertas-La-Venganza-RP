@@ -161,6 +161,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   with self.system.store.db() as db:db.execute('UPDATE lv_tickets SET updated=1,last_user=1,last_staff=1 WHERE id=?',(self.rid,))
   channel=MagicMock();channel.send=AsyncMock()
   self.system.channel=AsyncMock(return_value=channel);self.system.close=AsyncMock()
+  self.system.escalate=AsyncMock() # Escalation timing and privacy are covered in test_ticket_followup.
   with patch('tickets.time.time',return_value=500000):await self.system.maintenance()
   self.system.close.assert_not_awaited();self.assertEqual(self.system.store.get(self.rid)['warning_at'],500000)
   self.system.store.activity(self.rid,1,False,500100)
@@ -175,6 +176,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def test_authorized_claim_does_not_edit_any_role(self):
   self.i.user=self.staff
   self.system.access=AsyncMock();self.system.refresh=AsyncMock()
+  self.system.notify_player=AsyncMock()
   await self.system.action(self.i,self.rid,'claim')
   self.assertEqual(self.system.store.get(self.rid)['assignee'],5)
   self.system.access.assert_awaited_once()
@@ -425,7 +427,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.i.user=self.owner
   await self.system.action(self.i,self.rid,'rate')
   modal=self.i.response.send_modal.call_args.args[0]
-  modal.value._value='5: Me ayudaron rápido'
+  modal.stars._values=['5'];modal.comment._value='Me ayudaron rápido'
   await modal.on_submit(self.i)
   saved=self.system.store.get(self.rid)
   self.assertEqual(saved['rating'],5);self.assertEqual(saved['rating_comment'],'Me ayudaron rápido')

@@ -11,19 +11,26 @@ from pathlib import Path
 import re
 import time
 import unicodedata
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from access_layout import merged_raw
 
 import discord
 from discord import app_commands
 from ticket_forms import FORMS
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
-from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
+from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,RatingForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
 
 log=logging.getLogger('LaVenganzaRP.tickets')
 PANEL_CHANNEL=1513423707467415642
 OLD_CATEGORY=1567093946419777546
 CLOSED_NAME='│・ 🔒┊ 𝐓𝐢𝐜𝐤𝐞𝐭𝐬 𝐂𝐞𝐫𝐫𝐚𝐝𝐨𝐬'
 ACTIVE_NAME='│・ 🎫┊ 𝐓𝐢𝐜𝐤𝐞𝐭𝐬 𝐀𝐜𝐭𝐢𝐯𝐨𝐬'
+PR=ZoneInfo('America/Puerto_Rico')
+HEAD_STAFF=1567253212937846935
+ESCALATE_SECONDS=24*3600
+PLAYER_NOTICE_COOLDOWN=15*60
+NIGHT_NOTICE='🌙 Recibimos tu ticket, bro. El equipo te responde cuando esté disponible.'
 STATE_LABELS={'creando':'Preparando','nuevo':'Nuevo','en_atencion':'En atención','esperando_jugador':'Esperando al jugador',
  'resuelto':'Resuelto','cerrado':'Cerrado','fallido':'Creación fallida'}
 
@@ -34,6 +41,23 @@ def is_staff_role(role):
 
 def closed_staff_roles(guild):
  return [role for role in guild.roles if is_staff_role(role)]
+
+def overnight(stamp):
+ return datetime.fromtimestamp(stamp,PR).hour<8
+
+def escalation_roles(guild,row,channel):
+ admins=[r for r in guild.roles if r.id!=guild.id and not r.managed and r.permissions.administrator]
+ if row['department']=='staff':return admins
+ heads=[]
+ for role in guild.roles:
+  name=''.join(c for c in unicodedata.normalize('NFKD',role.name).casefold() if c.isalnum())
+  if (role.id==HEAD_STAFF or name in {'jefedeadmin','jefedeadmins','jefedeadministracion','jefeadmin','jefedestaff'}) and channel.permissions_for(role).view_channel:
+   heads.append(role)
+ return heads or admins
+
+def ticket_link(guild_id,row,message=None):
+ target=message or row['control_message']
+ return f"https://discord.com/channels/{guild_id}/{row['channel']}"+(f'/{target}' if target else '')
 
 def listed_ticket(row,channels,closed_only=False):
  if row.get('deleted_at') or json.loads(row['form']).get('selftest'):
@@ -294,7 +318,12 @@ class TicketSystem:
     raise ValueError(f'El ticket #{rid} quedó reservado. El staff puede revisar /ticket recuperar; no abras otro del mismo tema.') from None
   try:await self.notify_new(self.store.get(rid),channel)
   except discord.HTTPException:log.warning('TICKETS notification_pending id=%s',rid)
-  await reply(i,f'✅ Tu ticket está listo: <#{channel.id}>. Envía allí capturas o archivos. No menciones a todo el servidor.')
+  welcome=f'✅ Tu ticket está listo: <#{channel.id}>. Envía allí capturas o archivos. No menciones a todo el servidor.'
+  if overnight(self.store.get(rid)['created']):
+   welcome+='\n'+NIGHT_NOTICE
+   try:await channel.send(NIGHT_NOTICE,allowed_mentions=discord.AllowedMentions.none())
+   except discord.HTTPException:log.warning('TICKETS overnight_notice_pending id=%s',rid)
+  await reply(i,welcome)
   log.info('TICKETS opened id=%s department=%s channel=%s',rid,department,channel.id)
  async def notify_new(self,row,channel):
   if row['department']=='staff':
@@ -305,6 +334,61 @@ class TicketSystem:
   roles=[r for r in channel.guild.roles if r.id in ids]
   mentions=' '.join(f'<@&{r.id}>' for r in roles)
   await channel.send(f"{mentions} Nuevo caso #{row['id']} pendiente de asignación.",allowed_mentions=discord.AllowedMentions(roles=roles,users=False,everyone=False))
+ async def notify_player(self,rid,kind):
+  # One claim notice, then one reply notice per player turn, no more often than 15 minutes.
+  async with self.lock:
+   row=self.store.get(rid)
+   if not row or row.get('deleted_at') or row['status'] in ('creando','fallido','cerrado') or json.loads(row['form']).get('selftest'):return False
+   if kind=='claim':
+    if not row['assignee'] or row['assignee']==row['owner']:return False
+    episode='claimed';text=f"🙋 Ya están atendiendo tu ticket #{rid} de La Venganza RP."
+    message=row['control_message']
+   elif kind=='reply':
+    message=row.get('last_staff_message')
+    if not message or message<=(row.get('last_owner_message') or 0):return False
+    episode=str(row.get('last_owner_message') or row['created'])
+    text=f"💬 Te dejaron una respuesta en tu ticket #{rid} de La Venganza RP."
+   else:raise ValueError('Aviso de ticket no válido.')
+   # Fetch the real managed channel before generating a link; deleted channels are never advertised.
+   try:
+    channel=await self.channel(row)
+    owner=await self.member(channel.guild,row['owner'])
+   except (discord.HTTPException,ValueError):return False
+   if not owner or owner.bot:return False
+   if not self.store.reserve_notice(rid,kind,episode,cooldown=PLAYER_NOTICE_COOLDOWN):return False
+   url=ticket_link(self.guild_id,row,message)
+  try:
+   notice=await owner.send(f"{text}\n{url}",allowed_mentions=discord.AllowedMentions.none(),suppress_embeds=True)
+  except discord.HTTPException as error:
+   state='blocked' if isinstance(error,discord.Forbidden) else 'failed'
+   await self.call('finish_notice',rid,kind,episode,state)
+   log.info('TICKETS player_notice ticket=%s kind=%s state=%s status=%s',rid,kind,state,error.status)
+   return False
+  await self.call('finish_notice',rid,kind,episode,'sent',notice.id)
+  log.info('TICKETS player_notice ticket=%s kind=%s state=sent',rid,kind)
+  return True
+ async def escalate(self,rid,now):
+  async with self.lock:
+   row=self.store.get(rid)
+   if not row or row.get('deleted_at') or row['status'] not in ('nuevo','en_atencion') or json.loads(row['form']).get('selftest'):return False
+   since=row.get('staff_wait_since')
+   if since is None or now-since<ESCALATE_SECONDS:return False
+   channel=await self.channel(row)
+   if channel.permissions_for(channel.guild.default_role).view_channel:raise ValueError('El aviso requiere un ticket privado.')
+   roles=escalation_roles(channel.guild,row,channel)
+   if not roles:
+    log.warning('TICKETS escalation_no_recipient ticket=%s reserved=%s',rid,row['department']=='staff');return False
+   if not self.store.reserve_notice(rid,'escalation',since,now=now):return False
+   mentions=' '.join(f'<@&{r.id}>' for r in roles)
+   try:
+    notice=await channel.send(f"🚨 {mentions} este ticket lleva más de 24 horas esperando una respuesta. ¿Pueden revisarlo?",
+      allowed_mentions=discord.AllowedMentions(roles=roles,users=False,everyone=False))
+   except discord.HTTPException:
+    await self.call('finish_notice',rid,'escalation',since,'failed');raise
+   await self.call('finish_notice',rid,'escalation',since,'sent',notice.id)
+   await self.record(rid,self.bot.user.id,'avisar_encargado','24 horas esperando respuesta; aviso privado a responsables autorizados')
+   log.info('TICKETS escalated ticket=%s reserved=%s role_ids=%s',rid,row['department']=='staff',[r.id for r in roles])
+   return True
  async def show_closed(self,i,page=1):
   reviewer=i.user.guild_permissions.administrator or any(is_staff_role(r) for r in i.user.roles) or any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
   await self.show_list(i,own=not reviewer,page=page,closed_only=True)
@@ -370,9 +454,13 @@ class TicketSystem:
   if not self.enabled() or not message.guild or message.guild.id!=self.guild_id or message.author.bot:return
   row=await self.call('get',channel=message.channel.id)
   if not row:return
-  async with self.lock:
-   await self.call('activity',row['id'],message.author.id,can_staff(message.author,row,self.store))
+  staff=message.author.id!=row['owner'] and can_staff(message.author,row,self.store)
+  fresh_message=not message.edited_at and not await self.call('has_message',row['id'],message.id)
+  if fresh_message:
+   async with self.lock:
+    await self.call('activity',row['id'],message.author.id,staff,message_id=message.id)
   await self.capture(row,message)
+  if staff and fresh_message:await self.notify_player(row['id'],'reply')
   if row['status']=='cerrado':await self.call('update',row['id'],archive_state='pendiente_actualizacion')
  async def close(self,row,actor,reason):
   self.store.transition(row['id'],'cerrado',actor,reason)
@@ -392,7 +480,7 @@ class TicketSystem:
   await self.sync_control_messages(row,channel,self.store.get(row['id'])['control_message'])
   owner=await self.member(channel.guild,row['owner'])
   if owner and not owner.bot:
-   with suppress(discord.Forbidden):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes dejar tu opinión con el botón ⭐ Valorar dentro del ticket.",allowed_mentions=discord.AllowedMentions.none())
+   with suppress(discord.HTTPException):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes dejar tu opinión con el botón ⭐ Valorar dentro del ticket.\n{ticket_link(self.guild_id,row)}",allowed_mentions=discord.AllowedMentions.none(),suppress_embeds=True)
  async def delete_ticket(self,member,rid):
   async with self.lock:
    row=self.store.get(rid)
@@ -486,8 +574,10 @@ class TicketSystem:
      state='resuelto' if action=='resolve' else 'esperando_jugador'
      await self.call('transition',rid,state,click.user.id,value)
      channel=await self.channel(current)
-     await channel.send(('✅ Solución: ' if action=='resolve' else '📎 Información o pruebas solicitadas: ')+discord.utils.escape_markdown(value),allowed_mentions=discord.AllowedMentions.none())
+     response=await channel.send(('✅ Solución: ' if action=='resolve' else '📎 Información o pruebas solicitadas: ')+discord.utils.escape_markdown(value),allowed_mentions=discord.AllowedMentions.none())
+     await self.call('activity',rid,click.user.id,True,message_id=response.id)
      await self.refresh(self.store.get(rid));await reply(click,'Estado actualizado.')
+    await self.notify_player(rid,'reply')
    return await i.response.send_modal(TextForm({'close':'Cerrar ticket','resolve':'Resolver ticket','wait':'Solicitar información','note':'Nota interna privada','reopen':'Reabrir ticket'}[action],
       {'close':'¿Por qué cierras el ticket?','resolve':'¿Cuál fue la solución?','wait':'¿Qué necesitas que envíe el jugador?','note':'Nota (solo la ve el staff)','reopen':'¿Por qué quieres volver a abrirlo?'}[action],submit))
   if action=='transfer':
@@ -508,17 +598,14 @@ class TicketSystem:
    return await i.response.send_modal(TextForm('Cambiar prioridad','Ejemplo: alta: problema de acceso',change_priority))
   if action=='rate':
    if i.user.id!=row['owner'] or row['status']!='cerrado':raise ValueError('Solo el jugador que abrió el ticket puede dejar su opinión cuando esté cerrado.')
-   async def rate_form(click,value):
-    parts=value.split(':',1)
-    try:score=int(parts[0].strip())
-    except ValueError:raise ValueError('Escribe una puntuación de 1 a 5, seguida de dos puntos y tu comentario.')
-    await self.call('rate',rid,click.user.id,score,parts[1].strip() if len(parts)>1 else '')
-    await reply(click,'Gracias. Tu valoración quedó guardada de forma privada.')
-   return await i.response.send_modal(TextForm('Valorar atención','Ejemplo: 5: resolvieron mi problema',rate_form,1000))
+   if row.get('deleted_at'):raise ValueError('Ese ticket ya fue eliminado.')
+   if row['rating'] is not None:raise ValueError('Ya dejaste tu opinión en este ticket. Gracias, bro.')
+   return await i.response.send_modal(RatingForm(self,rid))
   await i.response.defer(ephemeral=True,thinking=True)
   if action=='claim':
    async with self.lock:
     self.store.claim(rid,i.user.id);await self.access(i.user,self.store.get(rid));await self.refresh(self.store.get(rid))
+   await self.notify_player(rid,'claim')
    return await reply(i,f"Ticket #{rid} asignado a ti: <#{row['channel']}>.")
   if action=='transcript':
    async with self.lock:return await self.export(i,row)
@@ -526,6 +613,14 @@ class TicketSystem:
    files=await self.call('files',rid)
    lines=[f"**{n+1}.** {discord.utils.escape_markdown(f['filename'])[:100]} · {f['state']} · ID `{f['attachment']}`" for n,f in enumerate(files)]
    return await reply(i,('\n'.join(lines)[:1700] or 'Todavía no hay archivos adjuntos.')+'\nDescarga una copia con `/ticket archivo` indicando el ID del archivo.')
+ async def submit_rating(self,i,rid,score,comment):
+  async with self.lock:
+   row=self.store.get(rid)
+   if not row:raise ValueError('Ese ticket ya no está disponible.')
+   if i.guild_id!=self.guild_id:raise ValueError('Deja tu opinión desde el ticket en La Venganza RP.')
+   self.authorize(i.user,row)
+   await self.call('rate',rid,i.user.id,score,comment.strip())
+  await reply(i,'Gracias, bro. Tu opinión quedó guardada de forma privada.')
  async def transfer(self,i,rid,department,reason,assignee=None):
   if not i.response.is_done():await i.response.defer(ephemeral=True)
   async with self.lock:
@@ -674,6 +769,12 @@ class TicketSystem:
      except discord.NotFound:log.warning('TICKETS missing_active_channel id=%s',current['id'])
   log.info('TICKETS controls_verified active_updated=%s closed_updated=%s category=%s',active_updated,upgraded,closed.id)
   log.info('TICKETS controls_layout_verified open=%s closed=%s rating_owner_only=True',[c.item.label for c in TicketControls(0).children],[c.item.label for c in TicketControls(0,True).children])
+  rating=RatingForm(self,0)
+  rating_payload=rating.to_dict()['components']
+  if len(rating_payload)!=2 or len(rating.stars.options)!=5 or rating.comment.required:raise RuntimeError('No se confirmó el formulario de estrellas')
+  log.info('TICKETS followup_ready escalation_hours=24 normal_role_ids=%s reserved_admin_role_ids=%s overnight=00:00-08:00 timezone=America/Puerto_Rico dm_cooldown_minutes=15 rating_stars=1-5 optional_comment=True',
+    [r.id for r in escalation_roles(guild,{'department':'soporte'},panel)],
+    [r.id for r in escalation_roles(guild,{'department':'staff'},panel)])
   for department,questions in FORMS.items():
    modal=OpenForm(self,department)
    payload=modal.to_dict()
@@ -727,7 +828,18 @@ class TicketSystem:
  async def maintenance(self):
   now=int(time.time())
   for row in await self.call('list',limit=10000):
-   if row['status'] in ('creando','fallido','cerrado'):continue
+   if row['status'] in ('creando','fallido','cerrado') or row.get('deleted_at') or json.loads(row['form']).get('selftest'):continue
+   try:
+    await self.escalate(row['id'],now)
+    # A reply arriving during the cooldown is delivered later if the player has not answered it.
+    await self.notify_player(row['id'],'reply')
+    await self.maintain_ticket(row['id'],now)
+   except discord.NotFound:log.warning('TICKETS missing_followup_channel ticket=%s',row['id'])
+   except Exception:log.exception('TICKETS followup_error ticket=%s; continuing other tickets',row['id'])
+ async def maintain_ticket(self,rid,now):
+  async with self.lock:
+   row=self.store.get(rid)
+   if not row or row['status'] in ('creando','fallido','cerrado') or row.get('deleted_at'):return
    if row['status']=='esperando_jugador':
     since=max(row['updated'],row['last_user'],row['last_staff'] or 0)
     if not row['warning_at'] and now-since>=int(self.store.config('inactive_hours'))*3600:
@@ -737,10 +849,7 @@ class TicketSystem:
      # Writing warning_at must not reset the waiting period; closing uses warning timestamp directly.
      await self.call('update',row['id'],warning_at=now)
     elif row['warning_at'] and now-row['warning_at']>=int(self.store.config('close_warning_hours'))*3600:
-     async with self.lock:
-      current=self.store.get(row['id'])
-      if current['status']=='esperando_jugador' and current['warning_at']==row['warning_at']:
-       await self.close(current,self.bot.user.id,'Archivado por falta de respuesta después del aviso previo. Puede reabrirse durante siete días.')
+     await self.close(row,self.bot.user.id,'Archivado por falta de respuesta después del aviso previo. Puede reabrirse durante siete días.')
    elif row['status'] in ('nuevo','en_atencion') and now-max(row['created'],row['last_staff'] or 0,row['last_user'])>=int(self.store.config('remind_hours'))*3600 and now-(row['reminded_at'] or 0)>=int(self.store.config('remind_hours'))*3600:
     channel=await self.channel(row)
     target=f"<@{row['assignee']}> " if row['assignee'] else ''

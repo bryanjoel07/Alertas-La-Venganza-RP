@@ -119,6 +119,29 @@ class TextForm(discord.ui.Modal):
   except ValueError as error:await reply(i,str(error))
   except discord.HTTPException:await reply(i,'Discord no completó la operación. El ticket y su historial siguen guardados.')
 
+class RatingForm(discord.ui.Modal):
+ def __init__(self,system,rid):
+  super().__init__(title='¿Cómo te atendieron?',timeout=600)
+  self.system,self.rid=system,rid
+  self.stars=discord.ui.Select(custom_id='stars',placeholder='Elige de 1 a 5 estrellas',options=[
+    discord.SelectOption(label='⭐'*score,value=str(score)) for score in range(1,6)])
+  self.comment=discord.ui.TextInput(custom_id='comment',style=discord.TextStyle.paragraph,
+    placeholder='Cuéntanos cómo te fue, si quieres.',required=False,max_length=1000)
+  self.add_item(discord.ui.Label(text='¿Cuántas estrellas le das?',component=self.stars))
+  self.add_item(discord.ui.Label(text='¿Quieres dejar un comentario?',component=self.comment))
+ async def on_submit(self,i):
+  await i.response.defer(ephemeral=True,thinking=True)
+  try:
+   value=self.stars.values[0] if self.stars.values else ''
+   if value not in ('1','2','3','4','5'):raise ValueError('Elige de 1 a 5 estrellas, bro.')
+   score=int(value)
+   await self.system.submit_rating(i,self.rid,score,self.comment.value)
+  except ValueError as error:await reply(i,str(error))
+  except discord.HTTPException:await reply(i,'No pudimos guardar tu opinión. Inténtalo otra vez.')
+ async def on_error(self,i,error):
+  logging.getLogger('LaVenganzaRP.tickets').error('Ticket rating failed',exc_info=error)
+  await reply(i,'No pudimos guardar tu opinión. Inténtalo otra vez.')
+
 class CasePicker(discord.ui.Select):
  def __init__(self,system,rows,staff,closed_only=False):
   super().__init__(placeholder='Abrir un caso',options=[discord.SelectOption(label=f"#{r['id']} · {r['subject']}"[:100],value=str(r['id']),description=f"{DEPARTMENTS[r['department']][1]} · {r['status']}"[:100]) for r in rows])

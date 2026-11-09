@@ -53,11 +53,20 @@ class TicketStore:
     '''CREATE TABLE IF NOT EXISTS lv_ticket_messages(ticket INTEGER NOT NULL,message INTEGER NOT NULL,author INTEGER NOT NULL,name TEXT NOT NULL,
        content TEXT NOT NULL,embeds TEXT NOT NULL,created TEXT NOT NULL,edited TEXT,deleted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(ticket,message))''',
     '''CREATE TABLE IF NOT EXISTS lv_ticket_message_versions(id INTEGER PRIMARY KEY,ticket INTEGER NOT NULL,message INTEGER NOT NULL,saved TEXT NOT NULL)''',
+    '''CREATE TABLE IF NOT EXISTS lv_ticket_notices(ticket INTEGER NOT NULL REFERENCES lv_tickets(id),kind TEXT NOT NULL,
+       episode TEXT NOT NULL,attempted INTEGER NOT NULL,state TEXT NOT NULL,message INTEGER,
+       PRIMARY KEY(ticket,kind))''',
     'CREATE TABLE IF NOT EXISTS lv_ticket_config(key TEXT PRIMARY KEY,value TEXT NOT NULL)']:
     db.execute(sql)
    columns={r[1] for r in db.execute('PRAGMA table_info(lv_tickets)')}
    for column in ('deleted_at','deletion_requested','deletion_actor'):
     if column not in columns:db.execute(f'ALTER TABLE lv_tickets ADD COLUMN {column} INTEGER')
+   for column in ('staff_wait_since','last_owner_message','last_staff_message'):
+    if column not in columns:
+     db.execute(f'ALTER TABLE lv_tickets ADD COLUMN {column} INTEGER')
+     if column=='staff_wait_since':
+      db.execute('''UPDATE lv_tickets SET staff_wait_since=CASE WHEN last_staff IS NULL THEN created
+         WHEN last_user>last_staff THEN last_user ELSE NULL END WHERE status IN ('nuevo','en_atencion','creando')''')
    for key,value in DEFAULTS.items():db.execute('INSERT OR IGNORE INTO lv_ticket_config VALUES (?,?)',(key,str(value)))
  def config(self,key,value=None):
   with self.db() as db:
@@ -76,8 +85,8 @@ class TicketStore:
    if db.execute("SELECT COUNT(*) FROM lv_tickets WHERE owner=? AND status NOT IN ('cerrado','fallido')",(user,)).fetchone()[0]>=limit:raise ValueError(f'Puedes tener hasta {limit} tickets abiertos.')
    recent=db.execute('SELECT MAX(created) FROM lv_tickets WHERE owner=?',(user,)).fetchone()[0]
    if recent and stamp-recent<60:raise ValueError('Espera un minuto antes de abrir otro ticket.')
-   rid=db.execute('INSERT INTO lv_tickets(owner,department,subject,form,created,updated,last_user,excluded,purchase_id) VALUES (?,?,?,?,?,?,?,?,?)',
-      (user,department,subject,json.dumps(form,ensure_ascii=False),stamp,stamp,stamp,excluded,purchase)).lastrowid
+   rid=db.execute('INSERT INTO lv_tickets(owner,department,subject,form,created,updated,last_user,excluded,purchase_id,staff_wait_since) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      (user,department,subject,json.dumps(form,ensure_ascii=False),stamp,stamp,stamp,excluded,purchase,stamp)).lastrowid
    self.event(db,rid,user,'crear',department)
    return rid
  def get(self,rid=None,channel=None):
@@ -102,7 +111,7 @@ class TicketStore:
    self.event(db,rid,actor,'reclamar')
  def transition(self,rid,status,actor,detail):
   if status not in STATES:raise ValueError('Estado no válido.')
-  if not detail.strip():raise ValueError('Indica un motivo o resolución.')
+  if not detail.strip():raise ValueError('Cuéntanos el motivo o la solución.')
   stamp=int(time.time())
   with self.db() as db:
    r=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
@@ -116,8 +125,9 @@ class TicketStore:
     if duplicate:raise ValueError(f"Ya hay otro ticket activo del mismo tema: #{duplicate['id']}.")
     limit=int(db.execute("SELECT value FROM lv_ticket_config WHERE key='max_open'").fetchone()[0])
     if db.execute("SELECT COUNT(*) FROM lv_tickets WHERE owner=? AND status NOT IN ('cerrado','fallido')",(r['owner'],)).fetchone()[0]>=limit:raise ValueError('El jugador ya alcanzó el límite de tickets abiertos.')
-   db.execute('UPDATE lv_tickets SET status=?,updated=?,closed=?,resolution=?,warning_at=NULL,reminded_at=NULL WHERE id=?',
-     (status,stamp,stamp if status=='cerrado' else None,detail if status in ('cerrado','resuelto') else r['resolution'],rid))
+   wait=(stamp if r['status'] not in ('nuevo','en_atencion') else r['staff_wait_since']) if status in ('nuevo','en_atencion') else None
+   db.execute('UPDATE lv_tickets SET status=?,updated=?,closed=?,resolution=?,warning_at=NULL,reminded_at=NULL,staff_wait_since=? WHERE id=?',
+     (status,stamp,stamp if status=='cerrado' else None,detail if status in ('cerrado','resuelto') else r['resolution'],wait,rid))
    self.event(db,rid,actor,status,detail)
  def transfer(self,rid,department,actor,reason,assignee=None):
   if department not in DEPARTMENTS:raise ValueError('Departamento no válido.')
@@ -129,15 +139,38 @@ class TicketStore:
    if duplicate:raise ValueError('El jugador ya tiene otro ticket en ese departamento.')
    db.execute("UPDATE lv_tickets SET department=?,assignee=?,status='en_atencion',updated=? WHERE id=?",(department,assignee,int(time.time()),rid))
    self.event(db,rid,actor,'transferir',json.dumps(dict(from_department=r['department'],to_department=department,reason=reason,assignee=assignee),ensure_ascii=False))
- def activity(self,rid,user,staff,now=None):
+ def activity(self,rid,user,staff,now=None,message_id=None):
   stamp=int(time.time()) if now is None else now
   with self.db() as db:
    r=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
    if not r or r['status'] in ('cerrado','creando','fallido'):return
    if staff:
-    db.execute('UPDATE lv_tickets SET last_staff=?,first_response=COALESCE(first_response,?),reminded_at=NULL WHERE id=?',(stamp,stamp,rid))
+    db.execute('UPDATE lv_tickets SET last_staff=?,first_response=COALESCE(first_response,?),reminded_at=NULL,staff_wait_since=NULL,last_staff_message=COALESCE(?,last_staff_message) WHERE id=?',(stamp,stamp,message_id,rid))
    else:
-    db.execute("UPDATE lv_tickets SET last_user=?,warning_at=NULL,reminded_at=NULL,status=CASE WHEN status='esperando_jugador' THEN 'en_atencion' ELSE status END WHERE id=?",(stamp,rid))
+    db.execute("""UPDATE lv_tickets SET last_user=?,warning_at=NULL,reminded_at=NULL,
+       staff_wait_since=CASE WHEN status IN ('nuevo','en_atencion','esperando_jugador') THEN COALESCE(staff_wait_since,?) ELSE NULL END,
+       last_owner_message=CASE WHEN owner=? THEN COALESCE(?,last_owner_message) ELSE last_owner_message END,
+       status=CASE WHEN status='esperando_jugador' THEN 'en_atencion' ELSE status END WHERE id=?""",(stamp,stamp,user,message_id,rid))
+ def reserve_notice(self,rid,kind,episode,now=None,cooldown=0):
+  stamp=int(time.time()) if now is None else int(now)
+  episode=str(episode)
+  with self.db() as db:
+   previous=db.execute('SELECT * FROM lv_ticket_notices WHERE ticket=? AND kind=?',(rid,kind)).fetchone()
+   if previous:
+    if previous['episode']==episode and previous['state'] in ('sent','blocked'):return False
+    if stamp-previous['attempted']<max(cooldown,900 if previous['state'] in ('sending','failed') else 0):return False
+   if kind=='reply':
+    last=db.execute("SELECT MAX(attempted) FROM lv_ticket_notices WHERE ticket=? AND kind IN ('claim','reply')",(rid,)).fetchone()[0]
+    if last is not None and stamp-last<cooldown:return False
+   db.execute('''INSERT INTO lv_ticket_notices(ticket,kind,episode,attempted,state) VALUES (?,?,?,?,'sending')
+      ON CONFLICT(ticket,kind) DO UPDATE SET episode=excluded.episode,attempted=excluded.attempted,state='sending',message=NULL''',
+      (rid,kind,episode,stamp))
+   return True
+ def finish_notice(self,rid,kind,episode,state,message=None):
+  with self.db() as db:db.execute('UPDATE lv_ticket_notices SET state=?,message=? WHERE ticket=? AND kind=? AND episode=?',
+      (state,message,rid,kind,str(episode)))
+ def has_message(self,rid,message):
+  with self.db() as db:return db.execute('SELECT 1 FROM lv_ticket_messages WHERE ticket=? AND message=?',(rid,message)).fetchone() is not None
  def people(self,rid):
   with self.db() as db:return [r[0] for r in db.execute('SELECT user FROM lv_ticket_people WHERE ticket=?',(rid,))]
  def participant(self,rid,user,actor,add=True):
@@ -155,7 +188,7 @@ class TicketStore:
   if score not in range(1,6):raise ValueError('Elige una valoración de 1 a 5.')
   with self.db() as db:
    r=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
-   if not r or r['owner']!=user or r['status']!='cerrado':raise ValueError('Solo el autor puede valorar un ticket cerrado.')
+   if not r or r['owner']!=user or r['status']!='cerrado' or r['deleted_at']:raise ValueError('Solo el jugador que abrió el ticket puede valorar su ticket cerrado.')
    if r['rating'] is not None:raise ValueError('Ya valoraste este ticket.')
    db.execute('UPDATE lv_tickets SET rating=?,rating_comment=? WHERE id=?',(score,comment[:1000],rid))
    self.event(db,rid,user,'valorar',str(score))
