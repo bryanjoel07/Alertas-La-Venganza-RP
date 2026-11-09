@@ -8,7 +8,9 @@ from discord.ext import tasks
 
 NAME = "La Venganza RP · Lenguaje obsceno"
 NOTICE = "Este mensaje contiene lenguaje bloqueado en La Venganza RP. Reformúlalo para enviarlo."
-ABBREVIATIONS='cbn cbns cbna cbnas cbnes cbrn cbrns cbrnes cbron cbrones'.split()
+ABBREVIATIONS={separator.join(word) for word in
+    'cbn cbns cbna cbnas cbnes cbn3s cbrn cbrns cbrnes cbron cbrones'.split()
+    for separator in ('','.',' ','_','-')}
 OLD_ABBREVIATION_PATTERN=r"(?i)\b(?:c[._-]?b|h[._-]?p|h[._-]?d[._-]?p(?:[._-]?t)?|w[._-]?l[._-]?b|m[._-]?m[._-]?b)\b"
 # Palabras que ya constituyen un insulto, incluidas grafías regionales y evasiones.
 REGIONAL_INSULTS = """
@@ -133,7 +135,7 @@ singao singaos singada singadas singazón singazon pingazo pingazos pinga pingas
 
 # Compact patterns fit Discord's Rust regex limits and keep word boundaries.
 PATTERNS = [
-    r"(?i)\b(?:c[ ._*/-]*b(?:[ ._*/-]*r?[ ._*/-]*n(?:[ ._*/-]*[ae34@])?[ ._*/-]*s?)?|h[._-]?p|h[._-]?d[._-]?p(?:[._-]?t)?|w[._-]?l[._-]?b|m[._-]?m[._-]?b)\b",
+    OLD_ABBREVIATION_PATTERN,
     r"(?i)\bc+[ ._*/-]*[aá4@]+[ ._*/-]*b+[ ._*/-]*r+[ ._*/-]*[oó0]+[ ._*/-]*n+(?:[ae]s?|s)?\b",
     r"(?i)\bp+[ ._*/-]*[uú]+[ ._*/-]*[ñn]+[ ._*/-]*[eé3]+[ ._*/-]*t+[ ._*/-]*[aá4@]+s?\b",
     r"(?i)\b(?:m+[ ._*/-]*[aá4@]+[ ._*/-]*m+[ ._*/-]*[aá4@]+|(?:[hg]?[uü]|wu?)[eé3]+l+[eé3]+)[ ._*/-]*b+[ ._*/-]*[ií1!]+[ ._*/-]*c+[ ._*/-]*h+[ ._*/-]*[oó0]+s?\b",
@@ -161,10 +163,9 @@ class ObscenityFilter:
     @staticmethod
     def desired(rule):
         keywords=sorted(set(WORDS)|set(rule.trigger.keyword_filter if rule else []))
-        patterns=list(rule.trigger.regex_patterns) if rule else []
-        patterns=[PATTERNS[0] if p==OLD_ABBREVIATION_PATTERN else p for p in patterns]
-        for pattern in PATTERNS:
-            if pattern not in patterns and len(patterns)<10:patterns.append(pattern)
+        # Keep the patterns already accepted by Discord. Abbreviation variants are
+        # native keywords, avoiding incompatible regex rewrites on an existing rule.
+        patterns=list(rule.trigger.regex_patterns) if rule else list(PATTERNS)
         if len(keywords)>1000 or any(len(w)>60 for w in keywords) or any(len(p)>260 for p in patterns):
             raise ValueError('La lista supera los límites de AutoMod; se conserva la regla anterior.')
         trigger=discord.AutoModTrigger(keyword_filter=keywords,regex_patterns=patterns,
@@ -240,7 +241,7 @@ class ObscenityFilter:
                         raise ValueError('Discord no confirmó la actualización del filtro; se reintentará.')
                     return verified
                 rule=await self.client.changes.tracked('OBSCENITY_FILTER','Actualizar el bloqueo de palabras obscenas',update,
-                    request_id=f'{self.guild_id}:abbreviations-v2',snapshot=snapshot)
+                    request_id=f'{self.guild_id}:abbreviations-v2.1',snapshot=snapshot)
             self.set_setting("obscenity_rule_id",str(rule.id))
             self.status(f'regla verificada id={rule.id} palabras={len(rule.trigger.keyword_filter)} '
                 f'cbnes={"cbnes" in rule.trigger.keyword_filter} bloqueo=True exenciones_conservadas=True')

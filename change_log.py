@@ -13,9 +13,9 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='obscenities-v2'
-SUMMARY='Añade cbnes y abreviaturas relacionadas al filtro obsceno. La regla propia de AutoMod se actualiza aunque su ID ya estuviera guardado y se confirma su bloqueo mediante lectura desde Discord. Conserva palabras y patrones personalizados, lista permitida, acciones existentes y exenciones de roles/canales. No modifica permisos, roles ni mensajes históricos; guarda antes/después de la regla en OBSCENITY_FILTER.'
-RESTORE=('Para revertir el código, desplegar 515006d53637b97d48c7e84405229b13ef4d6bb4 conservando /data y SQLite. La regla actualizada de AutoMod permanece en Discord; el código anterior solo comprobaba su existencia y no deshace su contenido. '
+RELEASE='obscenities-v2.1'
+SUMMARY='Añade cbnes y abreviaturas relacionadas como palabras nativas de AutoMod, incluidas variantes con puntos, espacios, guiones y números. Conserva exactamente los patrones regex que Discord ya acepta, evitando la expresión rechazada en la versión anterior. Actualiza la regla propia aunque su ID estuviera guardado y verifica el bloqueo desde Discord, conservando acciones, lista permitida y exenciones; no modifica permisos ni mensajes históricos.'
+RESTORE=('El commit anterior es aebdaaba8f062892b6b4ab8d6291a7e587cdeacc; puede volver a intentar una expresión rechazada por Discord. Para volver al instalador previo a estos ajustes, desplegar 515006d53637b97d48c7e84405229b13ef4d6bb4 conservando /data y SQLite. La regla actualizada de AutoMod permanece en Discord; revertir código no deshace su contenido. '
          'Para deshacer la actualización de la regla, descargar el detalle de OBSCENITY_FILTER y restaurar únicamente su trigger_metadata, acciones y estado enabled anteriores en el mismo ID, preservando exenciones y cualquier modificación posterior ajena a esta operación. No borrar reglas de otras aplicaciones. '
          'Conservar los registros actuales de Fotos, sus IDs de archivos corregidos, podios, votos, saldos y movimientos de monedas. No restaurar una base antigua ni retirar premios como parte de revertir código. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos. No borrar canales ni mensajes históricos para revertir esta versión.')

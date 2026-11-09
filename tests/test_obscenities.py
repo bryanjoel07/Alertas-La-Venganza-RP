@@ -81,7 +81,8 @@ class FilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('cbnes',snapshots[0]['rule']['trigger_metadata']['keyword_filter'])
         self.assertIn('cbnes',snapshots[1]['rule']['trigger_metadata']['keyword_filter'])
         self.assertEqual(rule.exempt_role_ids,{30});self.assertEqual(rule.exempt_channel_ids,{40})
-        self.assertIn(PATTERNS[0],rule.trigger.regex_patterns);self.assertNotIn(OLD_ABBREVIATION_PATTERN,rule.trigger.regex_patterns)
+        self.assertEqual(rule.trigger.regex_patterns,[OLD_ABBREVIATION_PATTERN,*PATTERNS[1:]])
+        self.assertIn('c.b.n.e.s',rule.trigger.keyword_filter);self.assertIn('c b n e s',rule.trigger.keyword_filter)
         await system.install();rule.edit.assert_awaited_once()
 
     async def test_manual_words_patterns_allow_list_exemptions_and_actions_are_preserved(self):
