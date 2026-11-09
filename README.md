@@ -56,7 +56,9 @@ El canal y su guía se reutilizan después de reiniciar.
 
 ### Guía, retos y probador
 
-- **📖┊𝐆𝐮𝐢𝐚-𝐃𝐞𝐥-𝐁𝐨𝐭** se crea en La Venganza con botones persistentes y consultas privadas.
+- **📖┊𝐆𝐮𝐢𝐚-𝐃𝐞𝐥-𝐁𝐨𝐭** se crea en La Venganza con botones de enlace que abren los canales.
+  Perfil y saldo llevan a Perfiles (`/perfil`); tienda, probador y retos llevan a Tienda Exclusive;
+  creadores lleva a Solicitar Streamer. Los botones de navegación funcionan sin esperar respuesta del bot.
 - `/guia` abre el mismo panel; la tienda incluye **Probar cosméticos** y **Retos y monedas**.
 - `/probar articulo:… texto:…` muestra la tarjeta sin cobrar, equipar, cambiar roles ni reservar stock.
   Los banners se adjuntan desde el proyecto. **Revisar compra** abre la confirmación normal.

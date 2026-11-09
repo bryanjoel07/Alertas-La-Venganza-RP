@@ -21,6 +21,9 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         store=EconomyStore(path);store.initialize()
         self.economy=object.__new__(Economy)
         self.economy.store=store;self.economy.ready=True
+        self.economy.guild=SimpleNamespace(id=1244988345327550565)
+        store.runtime_config("profiles_channel","1569151200673140897")
+        store.runtime_config("shop_channel","1569084821983076512")
         self.economy.bot=MagicMock()
         self.economy.preview=AsyncMock()
         self.economy.bot.event_features.call=AsyncMock(return_value=dict(
@@ -58,53 +61,21 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         view=GuideView(self.features)
         self.assertTrue(view.is_persistent())
         self.assertEqual(len(view.children),6)
-        self.assertEqual(len({b.custom_id for b in view.children}),6)
+        expected = {
+            'Mi perfil': '1569151200673140897',
+            'Mi saldo': '1569151200673140897',
+            'Tienda': '1569084821983076512',
+            'Probador': '1569084821983076512',
+            'Retos y monedas': '1569084821983076512',
+            'Ser streamer': '1568403146219454586',
+        }
+        import discord
+        for button in view.children:
+            self.assertEqual(button.style,discord.ButtonStyle.link)
+            self.assertIsNone(button.custom_id)
+            self.assertEqual(button.url,f'https://discord.com/channels/1244988345327550565/{expected[button.label]}')
         embed=self.features.guide_embed()
         self.assertLess(len(embed),6000)
         for text in ('/perfil','/probar','/retos','/streamer registrar','6:30'):
             self.assertIn(text,str(embed.to_dict()))
 
-class GuideDispatchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_all_six_buttons_acknowledge_before_work_after_restart(self):
-        import asyncio
-        from discord.ui.view import ViewStore
-        for binding in (None,77):
-            features=MagicMock()
-            view=GuideView(features)
-            view.on_error=AsyncMock()
-            interactions=[]
-            async def operation(i):
-                self.assertTrue(i.response.is_done())
-            features.economy.shop=AsyncMock(side_effect=operation)
-            features.economy.balance=AsyncMock(side_effect=operation)
-            features.show_picker=AsyncMock(side_effect=operation)
-            features.show_challenges=AsyncMock(side_effect=operation)
-            features.economy.bot.streamers.issue_code=AsyncMock(side_effect=operation)
-            profile=AsyncMock(side_effect=operation)
-            features.economy.bot.tree.get_command.return_value=SimpleNamespace(callback=profile)
-            # A fresh discord.py dispatcher reproduces a reconnect/restart registration.
-            store=ViewStore(MagicMock())
-            store.add_view(view,message_id=binding)
-            tasks=[]
-            store.add_task=tasks.append
-            for button in view.children:
-                i=MagicMock()
-                done=[False]
-                def mark_done(*args,_done=done,**kwargs):
-                    _done[0]=True
-                i.response.is_done.side_effect=lambda _done=done:_done[0]
-                i.response.defer=AsyncMock(side_effect=mark_done)
-                i.guild_id=23
-                i.message=SimpleNamespace(id=77)
-                i.data={'custom_id':button.custom_id,'component_type':2}
-                interactions.append(i)
-                store.dispatch_view(2,button.custom_id,i)
-            await asyncio.gather(*tasks)
-            self.assertEqual(len(tasks),6)
-            for i in interactions:
-                i.response.defer.assert_awaited_once_with(ephemeral=True,thinking=True)
-            for target in (profile,features.economy.shop,features.economy.balance,
-                           features.show_picker,features.show_challenges,features.economy.bot.streamers.issue_code):
-                target.assert_awaited_once()
-            view.on_error.assert_not_awaited()
-            view.stop()

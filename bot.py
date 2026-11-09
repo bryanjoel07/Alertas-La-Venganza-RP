@@ -1456,15 +1456,6 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 
 
 @client.event
-async def on_interaction(interaction):
-    data = interaction.data or {}
-    custom_id = data.get('custom_id', '')
-    if interaction.type == discord.InteractionType.component and custom_id.startswith('lvrp:guide:'):
-        log.info('Clic guía recibido por Discord: %s mensaje=%s', custom_id,
-                 interaction.message.id if interaction.message else None)
-
-
-@client.event
 async def on_message(message):
     if client.link_spam:
         await client.link_spam.observe(message)

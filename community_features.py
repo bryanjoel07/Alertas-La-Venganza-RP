@@ -73,54 +73,35 @@ class TryView(discord.ui.View):
 class GuideView(discord.ui.View):
     def __init__(self,features):
         super().__init__(timeout=None)
-        self.features = features
-
-    async def interaction_check(self,i):
-        log.info('Botón guía recibido: %s',i.data.get('custom_id','desconocido'))
-        if not i.response.is_done():
-            await i.response.defer(ephemeral=True,thinking=True)
-        return True
-
-    @discord.ui.button(label='Mi perfil',emoji='👤',custom_id='lvrp:guide:profile',row=0)
-    async def profile(self,i,button):
-        command = self.features.economy.bot.tree.get_command('perfil',guild=discord.Object(id=i.guild_id))
-        await command.callback(i)
-
-    @discord.ui.button(label='Tienda',emoji='🛍️',custom_id='lvrp:guide:shop',row=0)
-    async def shop(self,i,button):
-        await self.features.economy.shop(i)
-
-    @discord.ui.button(label='Probador',emoji='👔',custom_id='lvrp:guide:try',row=0)
-    async def fitting(self,i,button):
-        await self.features.show_picker(i)
-
-    @discord.ui.button(label='Retos y monedas',emoji='🏆',custom_id='lvrp:guide:challenges',row=1)
-    async def challenges(self,i,button):
-        await self.features.show_challenges(i)
-
-    @discord.ui.button(label='Ser streamer',emoji='📺',custom_id='lvrp:guide:streamer',row=1)
-    async def streamer(self,i,button):
-        await self.features.economy.bot.streamers.issue_code(i)
-
-    @discord.ui.button(label='Mi saldo',emoji='🪙',custom_id='lvrp:guide:balance',row=1)
-    async def balance(self,i,button):
-        await self.features.economy.balance(i)
-
-    async def on_error(self,i,error,item):
-        log.error('Error en guía del bot',exc_info=(type(error),error,error.__traceback__))
-        await respond(i,content='No se pudo abrir esta opción. Usa el comando correspondiente o inténtalo de nuevo.')
+        store = features.economy.store
+        guild_id = features.economy.guild.id
+        from streamer_panel import CHANNEL_ID
+        profiles = store.config('profiles_channel')
+        shop = store.config('shop_channel')
+        destinations = (
+            ('Mi perfil','👤',profiles,0),
+            ('Tienda','🛍️',shop,0),
+            ('Probador','👔',shop,0),
+            ('Retos y monedas','🏆',shop,1),
+            ('Ser streamer','📺',str(CHANNEL_ID),1),
+            ('Mi saldo','🪙',profiles,1),
+        )
+        for label,emoji,channel_id,row in destinations:
+            if channel_id:
+                self.add_item(discord.ui.Button(label=label,emoji=emoji,row=row,
+                    style=discord.ButtonStyle.link,
+                    url=f'https://discord.com/channels/{guild_id}/{channel_id}'))
 
 
 class CommunityFeatures:
     def __init__(self,economy):
         self.economy = economy
         self.weekly = WeeklyChallenges(economy.store)
-        self.guide_view = GuideView(self)
+        self.guide_view = None
         self.guide_published = False
 
     async def start(self):
         await asyncio.to_thread(self.weekly.initialize)
-        self.economy.bot.add_view(self.guide_view)
 
     async def challenge_embed(self,user):
         data = await asyncio.to_thread(self.weekly.progress,user)
@@ -209,18 +190,18 @@ class CommunityFeatures:
     def guide_embed(self):
         store = self.economy.store
         embed = discord.Embed(title='📖 GUÍA DEL BOT | LA VENGANZA RP',color=0xD60000,
-            description='Tu perfil, tus monedas y las actividades de la comunidad, en un solo lugar.\nUsa los botones: las consultas se abren en privado.')
+            description='Pulsa un botón para abrir el canal correspondiente.\nAllí encontrarás los comandos y paneles para usar cada función.')
         for title,body in (
-            ('👤 Tu perfil','`/perfil` muestra saldo, cosméticos, eventos y podios. Usa **Actualizar** después de comprar.'),
-            ('🪙 Cómo ganar monedas','`/retos`: hasta **450 🪙 semanales** por actividad confirmada. Los eventos también tienen premios configurados por staff. Una inscripción o estar AFK no cuenta.'),
-            ('🛍️ Tienda y probador',f"Tienda: <#{store.config('shop_channel')}>. Usa `/probar` antes de comprar; `/comprar` exige confirmación. `/inventario` y `/equipar` gestionan lo que ya tienes."),
+            ('👤 Perfil y saldo',f"En <#{store.config('profiles_channel')}> usa `/perfil`: muestra saldo, cosméticos, eventos y podios. **Mi perfil** y **Mi saldo** te llevan a ese canal. Usa **Actualizar** después de comprar."),
+            ('🪙 Retos y monedas',f"En <#{store.config('shop_channel')}> pulsa **Retos y monedas** en el panel de la tienda o usa `/retos`: hasta **450 🪙 semanales** por actividad confirmada. Una inscripción o estar AFK no cuenta."),
+            ('🛍️ Tienda y probador',f"En <#{store.config('shop_channel')}> usa **Comprar artículos** o **Probar cosméticos** en el panel. También puedes usar `/tienda` y `/probar`. `/comprar` exige confirmación; `/inventario` y `/equipar` gestionan lo que ya tienes."),
             ('🎁 Regalos y ahorro','`/regalar` solicita confirmación del destinatario. `/deseos` guarda artículos y `/saldo` muestra tu meta de ahorro.'),
             ('🏁 Eventos y reuniones','Inscríbete desde los anuncios. El staff confirma asistencia y resultados; los premios y retos usan esos registros.'),
-            ('📺 Creadores','Solicita el rol con el botón **Ser streamer**. Verifica tu canal y guarda su enlace. Los avisos requieren **La Venganza RP** en el título. El staff también puede usar `/streamer registrar`.'),
+            ('📺 Creadores','**Ser streamer** abre <#1568403146219454586>. Allí pulsa **Solicitar rol** o usa `/streamer solicitar`, verifica tu canal y guarda su enlace. Los avisos requieren **La Venganza RP** en el título. El staff puede usar `/streamer registrar`.'),
             ('📡 Estado del servidor','SERVER UP diario: **6:30 p. m. Puerto Rico**. Caídas, recuperaciones y mantenimiento se anuncian por separado.'),
         ):
             embed.add_field(name=title,value=body,inline=False)
-        embed.set_footer(text='LA VENGANZA RP · Consultas privadas · Monedas de la comunidad, no dinero de FiveM')
+        embed.set_footer(text='LA VENGANZA RP · Botones de acceso a canales · Monedas de la comunidad, no dinero de FiveM')
         return embed
 
     async def ensure_guide(self,guild):
@@ -263,12 +244,13 @@ class CommunityFeatures:
                     message=candidate
                     break
         embed = self.guide_embed()
+        self.guide_view = GuideView(self)
+        log.info('Guía navegación: %s', [(button.label,button.url) for button in self.guide_view.children])
         if message:
             await message.edit(embed=embed,view=self.guide_view,allowed_mentions=discord.AllowedMentions.none())
         else:
             message=await channel.send(embed=embed,view=self.guide_view,allowed_mentions=discord.AllowedMentions.none())
         store.runtime_config('guide_message',message.id)
-        self.economy.bot.add_view(self.guide_view,message_id=message.id)
         self.guide_published = True
         log.info('Guía del bot lista: canal=%s mensaje=%s; retos y probador activos',channel.id,message.id)
 
