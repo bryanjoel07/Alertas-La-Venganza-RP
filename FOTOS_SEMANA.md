@@ -19,11 +19,13 @@ Canal existente: `1513422142014754976`. El sistema no crea, mueve ni borra canal
 
 ## Podio semanal y monedas
 
-Desde la semana en que se activa esta versión, al terminar el domingo (lunes a las 00:00 de Puerto Rico) se eligen tres jugadores distintos y se entregan automáticamente:
+Al terminar el domingo (lunes a las 00:00 de Puerto Rico) se eligen tres jugadores distintos y se entregan automáticamente los premios vigentes. Sus valores iniciales son:
 
 - 🥇 Primer lugar: **500 monedas**.
 - 🥈 Segundo lugar: **300 monedas**.
 - 🥉 Tercer lugar: **150 monedas**.
+
+Administración puede cambiarlos desde `/ajustes panel` → **Premios de Fotos**, eligiendo esta semana o la próxima y confirmando la vista previa. El cambio empieza en el lunes indicado y se mantiene hasta el siguiente cambio programado. Los paneles de Fotos, la tienda y la guía muestran los premios de la semana actual. Las semanas cerradas y sus monedas ya entregadas se conservan; no se permite cambiar su premio desde el panel. Los importes programados se guardan en `lv_photo_reward_rates` y se usan en la misma transacción que paga el podio.
 
 Cuenta la foto activa más votada de cada persona, sin sumar los votos de sus otras fotos. Cada jugador ocupa como máximo un puesto. En un empate, gana la publicada primero; el ID del adjunto y el de inscripción resuelven imágenes del mismo instante. Se exige al menos un voto de otra persona. Con uno o dos clasificados solo se entregan esos puestos; si hubo fotos pero ninguna consiguió votos, se anuncia que no hubo ganadora y no se entregan monedas. Si no hubo fotos, no se publica un ganador vacío. Las semanas anteriores a la activación y las que ya se anunciaron no se pagan retroactivamente.
 

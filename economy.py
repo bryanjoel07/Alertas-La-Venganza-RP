@@ -116,7 +116,7 @@ def shop_embed(r):
     embed.add_field(name="Cómo funciona",value="**1.** Consulta la ficha y el precio.\n**2.** Pulsa **Vista previa gratis**.\n**3.** Usa **Revisar compra** y confirma.\nLo adquirido se gestiona en `/inventario`. Los recuerdos de eventos aparecen según tu participación confirmada.",inline=False)
     embed.add_field(name='📸 Gana monedas con tus fotos',value=
         'Participa en <#1513422142014754976>. Cada semana: '+
-        ' · '.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),COIN_REWARDS))+
+        ' · '.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),r.get('photo_rewards',COIN_REWARDS)))+
         '. Van directo a tu saldo para gastarlas aquí. Un puesto por jugador; usa `/foto semana` para ver cómo va.',inline=False)
     embed.set_footer(text="Monedas de la comunidad · Beneficios dentro de Discord · La vista previa no cobra ni equipa")
     return embed

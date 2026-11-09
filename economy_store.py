@@ -14,6 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from backup import snapshot
+from bot_settings import ensure_settings_schema,photo_rewards_in,photo_week
 
 PR = ZoneInfo("America/Puerto_Rico")
 CATEGORY_ID = 1513422023626326257
@@ -308,6 +309,7 @@ class EconomyStore:
             for statement in SCHEMA.split(";"):
                 if statement.strip():
                     db.execute(statement)
+            ensure_settings_schema(db)
             if not self.get(db, "installed"):
                 for p in catalog():
                     db.execute(
@@ -428,7 +430,9 @@ class EconomyStore:
 
     def rotation(self, now=None, *, user=None):
         with self.db() as db:
-            r = self.rotation_in(db, int(time.time()) if now is None else now)
+            stamp=int(time.time()) if now is None else now
+            r = self.rotation_in(db,stamp)
+            r['photo_rewards']=list(photo_rewards_in(db,photo_week(stamp)))
             r["products"] = [
                 dict(
                     db.execute(
@@ -449,6 +453,15 @@ class EconomyStore:
                     if souvenir["active"]:
                         r["products"].append(dict(souvenir))
             return r
+
+    def photo_rewards(self,now=None):
+        with self.db() as db:return photo_rewards_in(db,photo_week(now))
+
+    def daily_schedule(self):
+        with self.db() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='settings'").fetchone():return '18:30'
+            row=db.execute("SELECT value FROM settings WHERE key='daily_server_up_time'").fetchone()
+            return row[0] if row else '18:30'
 
     @staticmethod
     def eligible_events(db, user, event_id=None, limit=1):

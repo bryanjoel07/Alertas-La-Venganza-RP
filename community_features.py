@@ -14,7 +14,7 @@ from economy_store import outfit_for
 from player_cards import profile_embed
 from profiles_hub import normalized, profile_overwrites
 from weekly_challenges import WeeklyChallenges
-from photo_store import COIN_REWARDS
+from bot_settings import friendly_hour
 
 log = logging.getLogger('LaVenganzaRP.comunidad')
 GUIDE_NAME = '📖┊𝐆𝐮𝐢𝐚-𝐃𝐞𝐥-𝐁𝐨𝐭'
@@ -196,13 +196,13 @@ class CommunityFeatures:
             ('👤 Perfil y saldo',f"En <#{store.config('profiles_channel')}> usa `/perfil`: muestra saldo, cosméticos, eventos y podios. **Mi perfil** y **Mi saldo** te llevan a ese canal. Usa **Actualizar** después de comprar."),
             ('🪙 Retos y monedas',f"En <#{store.config('shop_channel')}> pulsa **Retos y monedas** en el panel de la tienda o usa `/retos`: hasta **450 🪙 semanales** por actividad confirmada. Una inscripción o estar AFK no cuenta."),
             ('📸 Fotos y premios','En <#1513422142014754976> pulsa **Subir foto** y deja que la comunidad vote. Cada semana: '+
-                ' · '.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),COIN_REWARDS))+
+                ' · '.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),store.photo_rewards()))+
                 '. Un puesto por jugador, con su foto más votada. Se entregan al cerrar el domingo, hora de Puerto Rico. Mira el podio con `/foto semana` y gástalas en la tienda.'),
             ('🛍️ Tienda y probador',f"En <#{store.config('shop_channel')}> usa **Ver catálogo** o **Probar cosméticos** en el panel. También puedes usar `/tienda` y `/probar`. `/comprar` exige confirmación; `/inventario` y `/equipar` gestionan lo que ya tienes."),
             ('🎁 Regalos y ahorro','`/regalar` solicita confirmación del destinatario. `/deseos` guarda artículos y `/saldo` muestra tu meta de ahorro.'),
             ('🏁 Eventos y reuniones','Inscríbete desde los anuncios. El staff confirma asistencia y resultados; los premios y retos usan esos registros.'),
             ('📺 Creadores','**Ser streamer** abre <#1568403146219454586>. Allí pulsa **Solicitar rol** o usa `/streamer solicitar`, verifica tu canal y guarda su enlace. Los avisos requieren **La Venganza RP** en el título. El staff puede usar `/streamer registrar`.'),
-            ('📡 Estado del servidor','SERVER UP diario: **6:30 p. m. Puerto Rico**. Caídas, recuperaciones y mantenimiento se anuncian por separado.'),
+            ('📡 Estado del servidor',f'SERVER UP diario: **{friendly_hour(store.daily_schedule())} Puerto Rico**. Caídas, recuperaciones y mantenimiento se anuncian por separado.'),
         ):
             embed.add_field(name=title,value=body,inline=False)
         embed.set_footer(text='LA VENGANZA RP · Botones de acceso a canales · Monedas de la comunidad, no dinero de FiveM')

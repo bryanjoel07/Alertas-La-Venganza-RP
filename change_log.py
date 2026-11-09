@@ -13,11 +13,12 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='obscenities-v2.1'
-SUMMARY='Añade cbnes y abreviaturas relacionadas como palabras nativas de AutoMod, incluidas variantes con puntos, espacios, guiones y números. Conserva exactamente los patrones regex que Discord ya acepta, evitando la expresión rechazada en la versión anterior. Actualiza la regla propia aunque su ID estuviera guardado y verifica el bloqueo desde Discord, conservando acciones, lista permitida y exenciones; no modifica permisos ni mensajes históricos.'
-RESTORE=('El commit anterior es aebdaaba8f062892b6b4ab8d6291a7e587cdeacc; puede volver a intentar una expresión rechazada por Discord. Para volver al instalador previo a estos ajustes, desplegar 515006d53637b97d48c7e84405229b13ef4d6bb4 conservando /data y SQLite. La regla actualizada de AutoMod permanece en Discord; revertir código no deshace su contenido. '
-         'Para deshacer la actualización de la regla, descargar el detalle de OBSCENITY_FILTER y restaurar únicamente su trigger_metadata, acciones y estado enabled anteriores en el mismo ID, preservando exenciones y cualquier modificación posterior ajena a esta operación. No borrar reglas de otras aplicaciones. '
-         'Conservar los registros actuales de Fotos, sus IDs de archivos corregidos, podios, votos, saldos y movimientos de monedas. No restaurar una base antigua ni retirar premios como parte de revertir código. '
+RELEASE='admin-settings-v1'
+SUMMARY='Añade /ajustes panel, privado para administradores: premios de Fotos desde esta semana o la próxima, hora diaria del Server Up en Puerto Rico y su título/mensaje/pie. Cada formulario abre una vista previa y exige Guardar cambios; vuelve a comprobar permisos, rechaza paneles desactualizados y guarda recibos sin duplicar confirmaciones. Los premios se usan en el cierre real y se muestran en Fotos, tienda y guía; conserva podios pagados y el único aviso diario.'
+RESTORE=('Para revertir el código, desplegar bdc5114e9522d75e298ea5ab1561450b652cc45d conservando /data y SQLite. El código anterior no ofrece /ajustes y vuelve a usar premios fijos 500/300/150, horario 18:30 y textos originales: antes de revertir, revisar cambios programados y pausar PHOTO_CONTEST_ENABLED si deben conservarse esos premios para el próximo cierre. '
+         'Conservar lv_photo_reward_rates, bot_setting_ops y las claves daily_server_up_* y admin_settings_revision. No borrar daily_server_up_slot ni reanunciar el aviso del mismo día. Los datos adicionales son compatibles y quedan disponibles al volver a esta versión. '
+         'Para deshacer un ajuste, usar el panel con una confirmación nueva o consultar ADMIN_SETTINGS y su recibo antes/después; restaurar únicamente los valores de esa operación respetando cambios posteriores. No recalcular podios ya pagados ni retirar monedas como parte de revertir ajustes. '
+         'Conservar fotos, archivos, votos, compras, saldos, movimientos y la regla vigente de AutoMod. No restaurar una base antigua. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos. No borrar canales ni mensajes históricos para revertir esta versión.')
 
 

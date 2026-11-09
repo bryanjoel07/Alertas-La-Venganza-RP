@@ -7,8 +7,9 @@ import time
 
 from economy_store import SLOTS, EconomyStore
 from weekly_challenges import week_bounds
+from bot_settings import DEFAULT_PHOTO_REWARDS,ensure_settings_schema,photo_rewards_in,photo_week
 
-COIN_REWARDS=(500,300,150)
+COIN_REWARDS=DEFAULT_PHOTO_REWARDS
 
 
 class PhotoStore:
@@ -61,6 +62,7 @@ class PhotoStore:
             ]
             for statement in statements:
                 db.execute(statement)
+            ensure_settings_schema(db)
             columns = {r[1] for r in db.execute('PRAGMA table_info(lv_photo_entries)')}
             additions = {'post_mode': "TEXT NOT NULL DEFAULT 'reply'", 'caption': "TEXT NOT NULL DEFAULT ''",
                 'media': 'BLOB', 'upload_key': 'TEXT', 'post_started': 'INTEGER', 'retired_control': 'INTEGER',
@@ -222,8 +224,12 @@ class PhotoStore:
             current=db.execute('SELECT * FROM lv_photo_weeks WHERE week=?',(week,)).fetchone()
             if not current:return []
             if current['podium_closed'] is not None:return self.podium_in(db,week)
-            return [dict(row,place=n,coins=COIN_REWARDS[n-1] if self.coin_week_in(db,current) else 0,ledger_op=None)
+            rates=photo_rewards_in(db,week)
+            return [dict(row,place=n,coins=rates[n-1] if self.coin_week_in(db,current) else 0,ledger_op=None)
                 for n,row in enumerate(self.leaders_in(db,week),1)]
+
+    def reward_rates(self,week):
+        with self.db() as db:return photo_rewards_in(db,week)
 
     def reward_podium(self,week,bot_id,expected=None,now=None,media=None):
         """Commit the final podium and all shop credits in one SQLite transaction."""
@@ -238,8 +244,9 @@ class PhotoStore:
             if expected is not None and actual!=expected:
                 raise ValueError('Las fotos cambiaron mientras cerraba la semana. Se revisarán otra vez.')
             receipts=[]
+            rates=photo_rewards_in(db,week)
             for place,row in enumerate(leaders,1):
-                coins=COIN_REWARDS[place-1];op=f"photo-coins:{week}:{row['author']}"
+                coins=rates[place-1];op=f"photo-coins:{week}:{row['author']}"
                 if not EconomyStore.credit(db,row['author'],coins,op,
                     f'Fotos de la semana · Puesto {place} · {week}',bot_id):
                     previous=db.execute('SELECT user_id,amount FROM eco_ledger WHERE op=?',(op,)).fetchone()
@@ -266,7 +273,7 @@ class PhotoStore:
             invalid=db.execute('''SELECT COUNT(*) FROM lv_photo_podium p LEFT JOIN eco_ledger l ON l.op=p.ledger_op
                 WHERE l.id IS NULL OR l.user_id!=p.author OR l.amount!=p.coins''').fetchone()[0]
             if invalid:raise RuntimeError('Hay premios de Fotos que no coinciden con sus movimientos de monedas.')
-            return dict(rewards=COIN_REWARDS,since=int(db.execute("SELECT value FROM lv_photo_config WHERE key='coins_since'").fetchone()[0]),
+            return dict(rewards=photo_rewards_in(db,photo_week()),since=int(db.execute("SELECT value FROM lv_photo_config WHERE key='coins_since'").fetchone()[0]),
                 paid_positions=db.execute('SELECT COUNT(*) FROM lv_photo_podium').fetchone()[0])
 
     def refresh_entries(self, now):

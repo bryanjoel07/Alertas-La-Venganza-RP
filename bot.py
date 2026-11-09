@@ -28,7 +28,8 @@ from live_alerts import LiveAlerts
 from streamer_panel import StreamerPanel
 from server_health import OriginalPanel
 from obscenities import ObscenityFilter
-from daily_up import announce_daily_up
+from settings_panel import SettingsPanel
+from daily_up import announce_daily_up,daily_up_embed
 from economy import Economy
 from profiles_hub import ProfileTree
 from server_audit import audit_server
@@ -225,6 +226,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.tickets.group, guild=GUILD)
         self.photos = PhotoSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.photos.group, guild=GUILD)
+        self.settings_panel=SettingsPanel(self,DB_PATH,GUILD_ID,CONNECT_URL)
+        self.tree.add_command(self.settings_panel.group,guild=GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -246,6 +249,7 @@ class LaVenganzaBot(discord.Client):
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
         await asyncio.to_thread(self.changes.journal.initialize)
+        await self.settings_panel.call('initialize')
         await self.economy.start()
         await self.tickets.start()
         await self.photos.start()
@@ -345,19 +349,7 @@ async def enable_alert_mentions(channel):
 
 
 async def send_daily_up():
-    embed = discord.Embed(
-        title="🔴 SERVER UP | LA VENGANZA RP 🔥",
-        description=(
-            "🌴 ¡Mi gente, la ciudad los espera!\n"
-            "🚗 Preparen sus máquinas, reúnan al corillo y "
-            "entren a disfrutar del mejor roleplay.\n\n"
-            f"🎮 **CONÉCTATE AQUÍ:**\n{CONNECT_URL}\n\n"
-            "🔴 **LA VENGANZA RP**\n"
-            "*La ciudad más real · El rol más duro*"
-        ),
-        color=0xE53935,
-    )
-    embed.set_footer(text="La Venganza RP | Aviso diario · 6:30 p. m. Puerto Rico")
+    embed=daily_up_embed(get_setting,CONNECT_URL)
     banner = Path(__file__).parent / "assets" / "banners" / "server-up.jpg"
     embed.set_image(url="attachment://server-up.jpg")
     channel = daily_up_channel()
@@ -459,7 +451,7 @@ async def monitor_server():
                     maintenance, get_setting, set_setting, send_daily_up,
                 )
                 if daily_result in ("sent", "skipped_unavailable"):
-                    log.info("Aviso diario SERVER UP 18:30 Puerto Rico: %s", daily_result)
+                    log.info("Aviso diario SERVER UP %s Puerto Rico: %s",get_setting('daily_server_up_time','18:30'),daily_result)
             if not maintenance and state == client.tracker.last and client.monitor_sources[1] == "stale":
                 try:
                     await client.original_panel.update(client.connect_message, state, PANEL_MAX_AGE)
@@ -1554,8 +1546,8 @@ async def on_ready():
         log.exception("No se pudo completar el rol de Vista Hermosa")
     try:
         channel = daily_up_channel()
-        log.info("Destino SERVER UP diario 18:30 Puerto Rico: %s (%s); alertas caída/recuperación: %s",
-                 channel.name, channel.id, ALERT_CHANNEL_ID)
+        log.info("Destino SERVER UP diario %s Puerto Rico: %s (%s); alertas caída/recuperación: %s",
+                 get_setting('daily_server_up_time','18:30'),channel.name, channel.id, ALERT_CHANNEL_ID)
         await enable_alert_mentions(channel)
         permissions = channel.permissions_for(channel.guild.me)
         log.info("Permisos SERVER UP: enviar=%s adjuntar=%s embeds=%s everyone=%s",
@@ -1605,6 +1597,10 @@ async def on_ready():
         await client.photos.ready()
     except Exception:
         log.exception('No se pudo preparar la votación semanal de Fotos')
+    try:
+        await client.settings_panel.ready()
+    except Exception:
+        log.exception('No se pudo comprobar el panel de ajustes')
     try:
         await client.changes.tracked("CLEAR_EXCLUSIVE_LOG_REQUEST_ID", "Vaciar Registro Exclusive",
             lambda: clear_exclusive_log(client, GUILD_ID, DB_PATH))

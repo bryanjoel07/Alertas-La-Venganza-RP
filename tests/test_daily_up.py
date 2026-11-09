@@ -61,6 +61,15 @@ class DailyUpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.tick(), "already_checked")
         self.send.assert_awaited_once()
 
+    async def test_new_hour_is_used_without_replaying_the_same_days_slot(self):
+        self.put('daily_server_up_time','19:10')
+        self.assertEqual(await self.tick(), 'outside_schedule')
+        self.assertEqual(await self.tick('2026-11-08T23:10:00+00:00'),'sent')
+        self.put('daily_server_up_time','20:00')
+        self.assertEqual(await self.tick('2026-11-09T00:00:00+00:00'),'already_checked')
+        self.assertEqual(await self.tick('2026-11-10T00:00:00+00:00'),'sent')
+        self.assertEqual(self.send.await_count,2)
+
     async def test_storage_failure_does_not_publish_without_reservation(self):
         def failed_write(*args):
             raise sqlite3.OperationalError("read only")

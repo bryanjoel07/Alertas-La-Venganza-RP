@@ -14,7 +14,7 @@ import discord
 from discord import app_commands
 
 from economy_store import SLOTS
-from photo_store import PhotoStore, week_bounds, COIN_REWARDS
+from photo_store import PhotoStore, week_bounds
 from photo_members import MemberDirectory,DirectoryUnavailable,MemberPicker,NativePickerFallback
 
 log = logging.getLogger('LaVenganzaRP.photos')
@@ -216,7 +216,7 @@ class PhotoSystem:
             f"**Cierre de esta semana:** <t:{week['ends']}:F>\n"
             'Usa `/foto semana` para ver cómo va la votación.')
         embed.add_field(name='🪙 Premios de la semana',value=
-            '\n'.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),COIN_REWARDS))+
+            '\n'.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),self.store.reward_rates(week['week'])))+
             '\nUn puesto por jugador: cuenta tu foto más votada, con al menos un voto. '
             'Al cerrar la semana, las monedas van directo a tu saldo para comprar cosas para tu perfil. '
             'Mira tus monedas con `/saldo`.',inline=False)
@@ -699,7 +699,7 @@ class PhotoSystem:
             await self.panel(channel)
             panel=await channel.fetch_message(int(self.store.config('panel')))
             prize_field=next((f.value for e in panel.embeds for f in e.fields if f.name=='🪙 Premios de la semana'),'')
-            if not all(f'{coins} monedas' in prize_field for coins in COIN_REWARDS):
+            if not all(f'{coins} monedas' in prize_field for coins in rewards['rewards']):
                 raise RuntimeError('Discord no confirmó los premios de Fotos en su panel.')
             log.info('PHOTOS economy_verified rewards=%s currency=eco_accounts ledger=eco_ledger same_database=True '
                 'distinct_players=True minimum_votes=1 ties=earliest_photo coins_since=%s paid_positions=%s panel_verified=True',
