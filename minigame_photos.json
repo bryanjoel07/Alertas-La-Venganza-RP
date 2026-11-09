@@ -1,0 +1,848 @@
+[
+  {
+    "id": "foto01",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Muelle de Del Perro",
+    "aliases": [
+      "Muelle de Del Perro",
+      "del perro pier",
+      "muelle de del perro",
+      "muelle del perro",
+      "muelle de santa monica"
+    ],
+    "explanation": "Es Muelle de Del Perro.",
+    "image": "lugar-01.png",
+    "scene": "The long amusement pier extending into the ocean, a large Ferris wheel and yellow roller coaster above wooden piles, viewed from the sandy beach at golden sunset.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto02",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Cartel de Vinewood",
+    "aliases": [
+      "Cartel de Vinewood",
+      "vinewood",
+      "letrero vinewood",
+      "cartel vinewood"
+    ],
+    "explanation": "Es Cartel de Vinewood.",
+    "image": "lugar-02.png",
+    "scene": "The iconic enormous white VINEWOOD letters on the dry green hillside above Los Santos, radio towers behind, winding hiking paths, viewed from the hillside road in sunny daylight. The in-world letters VINEWOOD must be visible.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto03",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Observatorio Galileo",
+    "aliases": [
+      "Observatorio Galileo",
+      "galileo",
+      "observatorio",
+      "galileo observatory"
+    ],
+    "explanation": "Es Observatorio Galileo.",
+    "image": "lugar-03.png",
+    "scene": "The white Art Deco Galileo Observatory atop the Vinewood Hills, central large dark dome and two smaller domes, broad terraces, Los Santos skyline far below, viewed front three-quarter at blue hour.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto04",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Maze Bank Tower",
+    "aliases": [
+      "Maze Bank Tower",
+      "maze bank",
+      "torre maze bank",
+      "banco maze",
+      "torre del maze bank"
+    ],
+    "explanation": "Es Maze Bank Tower.",
+    "image": "lugar-04.png",
+    "scene": "The tallest downtown Los Santos cylindrical skyscraper with its distinctive crown and red Maze Bank M logo, surrounded by lower skyscrapers, viewed upward from the downtown street.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto05",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Aeropuerto de Los Santos",
+    "aliases": [
+      "Aeropuerto de Los Santos",
+      "lsia",
+      "los santos international airport",
+      "aeropuerto",
+      "aeropuerto los santos"
+    ],
+    "explanation": "Es Aeropuerto de Los Santos.",
+    "image": "lugar-05.png",
+    "scene": "Los Santos International Airport arrivals and departure area with its iconic curving white space-age Theme Building arches and air traffic tower, palm trees and airport roads, no close-up planes.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto06",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Fort Zancudo",
+    "aliases": [
+      "Fort Zancudo",
+      "fuerte zancudo",
+      "base militar",
+      "zancudo"
+    ],
+    "explanation": "Es Fort Zancudo.",
+    "image": "lugar-06.png",
+    "scene": "The huge military base west of Mount Josiah: its distinctive tall air control tower, long runway, hangars and military aircraft parked in the distance, mountains and coastal marshland, from an elevated viewpoint.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto07",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Monte Chiliad",
+    "aliases": [
+      "Monte Chiliad",
+      "mount chiliad",
+      "chiliad",
+      "montana chiliad",
+      "monte chilliad"
+    ],
+    "explanation": "Es Monte Chiliad.",
+    "image": "lugar-07.png",
+    "scene": "Mount Chiliad summit with the recognizable wooden cable car station platform and yellow cable car above a vast San Andreas mountain panorama, clear afternoon.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto08",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Mar del Álamo",
+    "aliases": [
+      "Mar del Álamo",
+      "alamo sea",
+      "mar alamo",
+      "lago alamo",
+      "alamo"
+    ],
+    "explanation": "Es Mar del Álamo.",
+    "image": "lugar-08.png",
+    "scene": "The large inland saline Alamo Sea, arid Sandy Shores in the foreground and Mount Chiliad rising beyond the water, old fishing jetty and abandoned small boats by the dusty shore.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto09",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Aeródromo de Sandy Shores",
+    "aliases": [
+      "Aeródromo de Sandy Shores",
+      "sandy shores airfield",
+      "aeropuerto de sandy",
+      "aerodromo sandy",
+      "aeropuerto sandy shores"
+    ],
+    "explanation": "Es Aeródromo de Sandy Shores.",
+    "image": "lugar-09.png",
+    "scene": "The small abandoned desert airfield at Sandy Shores with its low rusted corrugated-metal aircraft hangar, cracked runway and distinctive red-white control structure, Mount Chiliad in the distance.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto10",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Casa de Trevor",
+    "aliases": [
+      "Casa de Trevor",
+      "trailer de trevor",
+      "caravana de trevor",
+      "remolque de trevor",
+      "trevors trailer"
+    ],
+    "explanation": "Es Casa de Trevor.",
+    "image": "lugar-10.png",
+    "scene": "Trevor Philips worn faded white trailer home in Sandy Shores, small wooden porch and mismatched railing, satellite dish, chain-link fence and scattered desert junk, recognizable original game layout.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto11",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Canales de Vespucci",
+    "aliases": [
+      "Canales de Vespucci",
+      "vespucci canals",
+      "canales vespucci",
+      "canales de venice",
+      "canales"
+    ],
+    "explanation": "Es Canales de Vespucci.",
+    "image": "lugar-11.png",
+    "scene": "The residential Vespucci canals, narrow still waterways between colorful houses, arched white pedestrian bridges and palms, sunny afternoon, unmistakable Venice-inspired game location.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto12",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Playa de Vespucci",
+    "aliases": [
+      "Playa de Vespucci",
+      "vespucci beach",
+      "playa vespucci",
+      "vespucci",
+      "venice beach"
+    ],
+    "explanation": "Es Playa de Vespucci.",
+    "image": "lugar-12.png",
+    "scene": "Vespucci beachfront boardwalk with the outdoor Muscle Sands exercise gym, palms, roller-skaters distant, colorful low beach shops and wide beach, no pier or Ferris wheel in this scene.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto13",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Vinewood Bowl",
+    "aliases": [
+      "Vinewood Bowl",
+      "anfiteatro vinewood",
+      "vinewood bowl",
+      "hollywood bowl"
+    ],
+    "explanation": "Es Vinewood Bowl.",
+    "image": "lugar-13.png",
+    "scene": "The Vinewood Bowl outdoor amphitheater, white concentric arch bandshell, curved rows of seats climbing a wooded hillside, Los Santos hills, daytime wide view.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto14",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Kortz Center",
+    "aliases": [
+      "Kortz Center",
+      "centro kortz",
+      "kortz",
+      "museo kortz"
+    ],
+    "explanation": "Es Kortz Center.",
+    "image": "lugar-14.png",
+    "scene": "The Kortz Center hilltop art museum complex, modern pale stone angular buildings, geometric sculpture courtyard, gardens and stairs, overlooking the west side of Los Santos.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto15",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Casino Diamond",
+    "aliases": [
+      "Casino Diamond",
+      "diamond casino",
+      "diamond casino resort",
+      "casino",
+      "the diamond casino"
+    ],
+    "explanation": "Es Casino Diamond.",
+    "image": "lugar-15.png",
+    "scene": "The Diamond Casino and Resort in East Vinewood, distinctive large white curving facade and tall hotel tower behind, curved entrance drive, palms and race track nearby, sunset.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto16",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Prisión de Bolingbroke",
+    "aliases": [
+      "Prisión de Bolingbroke",
+      "bolingbroke",
+      "penitenciaria bolingbroke",
+      "carcel",
+      "prision",
+      "bolingbroke penitentiary"
+    ],
+    "explanation": "Es Prisión de Bolingbroke.",
+    "image": "lugar-16.png",
+    "scene": "Bolingbroke Penitentiary surrounded by desert: secure octagonal prison compound, guard towers, multiple fences, large concrete cell blocks, viewed from a nearby roadside hill, no violence.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto17",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Laboratorios Humane",
+    "aliases": [
+      "Laboratorios Humane",
+      "humane labs",
+      "humane labs and research",
+      "humane",
+      "laboratorio humane"
+    ],
+    "explanation": "Es Laboratorios Humane.",
+    "image": "lugar-17.png",
+    "scene": "Humane Labs and Research on the isolated eastern San Andreas coast: vast industrial research facility with pale blocky buildings, large pipes and tanks, rocky sea cliffs and fenced service roads.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto18",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Antenas de Sandy Shores",
+    "aliases": [
+      "Antenas de Sandy Shores",
+      "antenas",
+      "antenas del desierto",
+      "antenas de satelite",
+      "satellite relay station",
+      "antenas de senora"
+    ],
+    "explanation": "Es Antenas de Sandy Shores.",
+    "image": "lugar-18.png",
+    "scene": "The recognizable huge white satellite radio telescope dishes at the satellite relay station in Grand Senora Desert, several parabolic dishes tilted at the sky among dusty roads and low desert hills.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto19",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Davis Mega Mall",
+    "aliases": [
+      "Davis Mega Mall",
+      "mega mall",
+      "megamall",
+      "davis mega mall",
+      "centro comercial davis"
+    ],
+    "explanation": "Es Davis Mega Mall.",
+    "image": "lugar-19.png",
+    "scene": "The Davis Mega Mall in south Los Santos: a large low-rise white shopping building, bold red MEGA MALL signage, giant parking lot, urban palms and power lines, recognizable GTA V exterior.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto20",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Grove Street",
+    "aliases": [
+      "Grove Street",
+      "grove",
+      "calle grove",
+      "groove street"
+    ],
+    "explanation": "Es Grove Street.",
+    "image": "lugar-20.png",
+    "scene": "The unmistakable Grove Street cul-de-sac in Davis as it appears in GTA V: round end of road, modest single-story houses, small lawns, chain-link fences, tall palms and distant power pylons, no named text overlay.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto21",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Legion Square",
+    "aliases": [
+      "Legion Square",
+      "plaza legion",
+      "plaza de legion",
+      "legion",
+      "plaza de los cubos",
+      "plaza cubos"
+    ],
+    "explanation": "Es Legion Square.",
+    "image": "lugar-21.png",
+    "scene": "Legion Square downtown Los Santos, the distinctive large red tilted cube sculpture and other geometric red forms above terraced concrete plaza steps, city streets and skyscrapers behind.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto22",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Comisaría de Mission Row",
+    "aliases": [
+      "Comisaría de Mission Row",
+      "mission row",
+      "comisaria mission row",
+      "policia mission row",
+      "lspd",
+      "comisaria central"
+    ],
+    "explanation": "Es Comisaría de Mission Row.",
+    "image": "lugar-22.png",
+    "scene": "The main Los Santos Police Department station in Mission Row: broad tan-gray institutional building, twin front staircase and metal railings, LSPD emblem above the entrance, urban intersection and palms.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto23",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Hospital Pillbox Hill",
+    "aliases": [
+      "Hospital Pillbox Hill",
+      "pillbox",
+      "pillbox hill",
+      "pillbox hospital",
+      "hospital pillbox",
+      "hospital central"
+    ],
+    "explanation": "Es Hospital Pillbox Hill.",
+    "image": "lugar-23.png",
+    "scene": "Pillbox Hill Medical Center in downtown Los Santos, the distinctive red-and-white modern hospital complex with tall vertical concrete facade panels, emergency entrance on a sloped street and medical signs.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto24",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Los Santos Customs",
+    "aliases": [
+      "Los Santos Customs",
+      "lsc",
+      "los santos custom",
+      "taller los santos customs"
+    ],
+    "explanation": "Es Los Santos Customs.",
+    "image": "lugar-24.png",
+    "scene": "The iconic Los Santos Customs auto shop in Burton: low industrial blue-and-yellow facade, roll-up garage doors, large circular Los Santos Customs wall logo, driveway off a city street, faithful game exterior.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto25",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Benny’s Original Motor Works",
+    "aliases": [
+      "Benny’s Original Motor Works",
+      "bennys",
+      "benny",
+      "bennys original motor works",
+      "taller bennys"
+    ],
+    "explanation": "Es Benny’s Original Motor Works.",
+    "image": "lugar-25.png",
+    "scene": "Benny’s Original Motor Works in Strawberry, the distinctive red brick industrial garage facade with graffiti and the painted Bennys Original Motor Works wall sign, metal roll-up garage door and railroad industrial surroundings.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto26",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Concesionario de Simeon",
+    "aliases": [
+      "Concesionario de Simeon",
+      "simeon",
+      "premium deluxe motorsport",
+      "concesionario simeon",
+      "premium deluxe"
+    ],
+    "explanation": "Es Concesionario de Simeon.",
+    "image": "lugar-26.png",
+    "scene": "Premium Deluxe Motorsport car dealership owned by Simeon on Power Street, large modern glass showroom corner, blue and red signage, a few cars inside, palm-lined Los Santos street.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto27",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Viñedos de Marlowe",
+    "aliases": [
+      "Viñedos de Marlowe",
+      "marlowe vineyards",
+      "marlowe",
+      "vinedos",
+      "vinedo marlowe",
+      "tongva hills vineyard"
+    ],
+    "explanation": "Es Viñedos de Marlowe.",
+    "image": "lugar-27.png",
+    "scene": "The Marlowe Vineyards in Tongva Hills: precise rows of grape vines rolling over sunny hills, the large rustic Tuscan-style winery villa with terracotta roof, cypress trees and dirt paths.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto28",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Cañón de Raton",
+    "aliases": [
+      "Cañón de Raton",
+      "raton canyon",
+      "raton",
+      "canon raton"
+    ],
+    "explanation": "Es Cañón de Raton.",
+    "image": "lugar-28.png",
+    "scene": "Raton Canyon, the deep rugged valley with a winding blue-green river between steep golden-gray rocky mountain walls, scattered pines, dirt hiking trails and dramatic height, inland San Andreas.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto29",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Puente de Cassidy Creek",
+    "aliases": [
+      "Puente de Cassidy Creek",
+      "cassidy creek bridge",
+      "puente cassidy",
+      "cassidy creek",
+      "calafia bridge"
+    ],
+    "explanation": "Es Puente de Cassidy Creek.",
+    "image": "lugar-29.png",
+    "scene": "The dramatic high concrete arch bridge carrying Great Ocean Highway over Cassidy Creek near the west coast, deep canyon and creek flowing out to the Pacific, viewed sideways from a nearby hillside.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto30",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Presa Land Act",
+    "aliases": [
+      "Presa Land Act",
+      "land act dam",
+      "presa",
+      "presa de land act",
+      "land act"
+    ],
+    "explanation": "Es Presa Land Act.",
+    "image": "lugar-30.png",
+    "scene": "The huge curved concrete Land Act Dam on the east side of Los Santos, tall dam face, spillway and power station structures, reservoir behind and brown mountains, a clear elevated view.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto31",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Central Palmer-Taylor",
+    "aliases": [
+      "Central Palmer-Taylor",
+      "palmer taylor",
+      "palmer taylor power station",
+      "central electrica",
+      "planta electrica"
+    ],
+    "explanation": "Es Central Palmer-Taylor.",
+    "image": "lugar-31.png",
+    "scene": "Palmer-Taylor Power Station on the eastern San Andreas coast, the unmistakable tall red-white smokestacks and three large green turbine structures, electrical pylons, fenced industrial grounds and ocean beyond.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto32",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Puerto de Los Santos",
+    "aliases": [
+      "Puerto de Los Santos",
+      "port of los santos",
+      "puerto",
+      "puerto los santos",
+      "terminal portuaria"
+    ],
+    "explanation": "Es Puerto de Los Santos.",
+    "image": "lugar-32.png",
+    "scene": "The Port of Los Santos on Terminal island, huge blue container gantry cranes, neatly stacked multicolored shipping containers, an ocean cargo ship alongside the dock, industrial Los Santos skyline in the distance.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto33",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Maze Bank Arena",
+    "aliases": [
+      "Maze Bank Arena",
+      "arena",
+      "estadio",
+      "estadio maze bank",
+      "maze bank arena"
+    ],
+    "explanation": "Es Maze Bank Arena.",
+    "image": "lugar-33.png",
+    "scene": "The Maze Bank Arena in La Puerta, the large oval stadium with its distinctive pale ribbed roof and curved outer facade, wide roads and a parking area, urban freeway ramps nearby, daytime aerial three-quarter view.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto34",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Pacific Standard Bank",
+    "aliases": [
+      "Pacific Standard Bank",
+      "pacific standard",
+      "banco pacific",
+      "banco pacific standard",
+      "pacific bank"
+    ],
+    "explanation": "Es Pacific Standard Bank.",
+    "image": "lugar-34.png",
+    "scene": "The Pacific Standard Public Deposit Bank on Vinewood Boulevard: imposing cream stone Beaux-Arts facade, tall arched window columns and front stairs, ornate bronze doors, faithful GTA Online bank exterior.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto35",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Tequi-la-la",
+    "aliases": [
+      "Tequi-la-la",
+      "tequilala",
+      "tequi la la",
+      "tequi lala"
+    ],
+    "explanation": "Es Tequi-la-la.",
+    "image": "lugar-35.png",
+    "scene": "The Tequi-la-la rock bar in West Vinewood, its recognizable modest white frontage with dark steep roof, large neon TEQUI-LA-LA sign above the small door, narrow sidewalk and hillside neighborhood.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto36",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Vanilla Unicorn",
+    "aliases": [
+      "Vanilla Unicorn",
+      "vanilla",
+      "unicorn",
+      "club vanilla unicorn"
+    ],
+    "explanation": "Es Vanilla Unicorn.",
+    "image": "lugar-36.png",
+    "scene": "The exterior of the Vanilla Unicorn nightclub in Strawberry: low pale building with pink neon unicorn sign, windowless pink-trimmed facade and small parking lot, no people close-up, no nudity or sexual content, exterior architecture only.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto37",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Lago de Mirror Park",
+    "aliases": [
+      "Lago de Mirror Park",
+      "mirror park",
+      "mirror park lake",
+      "lago mirror park"
+    ],
+    "explanation": "Es Lago de Mirror Park.",
+    "image": "lugar-37.png",
+    "scene": "Mirror Park in East Vinewood: the calm central park lake with small circular central island and trees, curving walking paths, grass, benches and surrounding suburban homes, downtown skyline in the distance.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto38",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Club de golf de Los Santos",
+    "aliases": [
+      "Club de golf de Los Santos",
+      "los santos golf club",
+      "golf",
+      "campo de golf",
+      "club de golf",
+      "richman golf club"
+    ],
+    "explanation": "Es Club de golf de Los Santos.",
+    "image": "lugar-38.png",
+    "scene": "Los Santos Golf Club in Richman, manicured emerald fairways and sand bunkers, elegant large white clubhouse with terracotta roofing, mature palms and luxury homes in the surrounding hills.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto39",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Casa de Michael",
+    "aliases": [
+      "Casa de Michael",
+      "michael",
+      "casa michael",
+      "casa de michael de santa",
+      "michael house"
+    ],
+    "explanation": "Es Casa de Michael.",
+    "image": "lugar-39.png",
+    "scene": "Michael De Santa’s recognizable Rockford Hills mansion, Mediterranean white stucco walls, red tile roofs, black wrought-iron driveway gates, broad front steps, palm trees, iconic original GTA V story mode house.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto40",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Casa de Franklin en Vinewood",
+    "aliases": [
+      "Casa de Franklin en Vinewood",
+      "casa de franklin",
+      "franklin",
+      "franklin house",
+      "casa franklin vinewood"
+    ],
+    "explanation": "Es Casa de Franklin en Vinewood.",
+    "image": "lugar-40.png",
+    "scene": "Franklin Clinton’s modern hillside mansion at 3671 Whispymound Drive in Vinewood Hills, angular white-and-glass contemporary architecture, terraced balcony and outdoor infinity pool overlooking Los Santos, original GTA V design.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto41",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Aserradero de Paleto",
+    "aliases": [
+      "Aserradero de Paleto",
+      "paleto sawmill",
+      "aserra­dero",
+      "sawmill",
+      "aserradero",
+      "aserradero paleto",
+      "paleto forest sawmill"
+    ],
+    "explanation": "Es Aserradero de Paleto.",
+    "image": "lugar-41.png",
+    "scene": "The Paleto Forest sawmill at the foot of Mount Chiliad, huge stacks of cut timber and logs, long green industrial sawmill sheds with smokestacks, logging machinery and tall pine forest.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto42",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Faro de El Gordo",
+    "aliases": [
+      "Faro de El Gordo",
+      "el gordo lighthouse",
+      "faro el gordo",
+      "faro",
+      "faro de gordo"
+    ],
+    "explanation": "Es Faro de El Gordo.",
+    "image": "lugar-42.png",
+    "scene": "El Gordo Lighthouse, the iconic tall white lighthouse with red lantern cap on its small rocky island off the northeast coast, wooden house on the mainland hillside and rough Pacific water, sunny afternoon.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto43",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Stab City",
+    "aliases": [
+      "Stab City",
+      "stab",
+      "campamento stab city",
+      "ciudad stab"
+    ],
+    "explanation": "Es Stab City.",
+    "image": "lugar-43.png",
+    "scene": "Stab City trailer park at the western end of the Alamo Sea, a cluster of battered trailers and mobile homes on dusty looping roads, scrap cars, a large central dirt area and dry mountains behind.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto44",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Campamento Hippie",
+    "aliases": [
+      "Campamento Hippie",
+      "hippie camp",
+      "beam me up",
+      "campamento alien",
+      "campamento hippie sandy shores"
+    ],
+    "explanation": "Es Campamento Hippie.",
+    "image": "lugar-44.png",
+    "scene": "The psychedelic alien-themed hippie camp near Sandy Shores, brightly painted rock sculptures and wrecked cars arranged on a small desert hill, painted peace and UFO symbols, open Grand Senora Desert landscape.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto45",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Dignity Village",
+    "aliases": [
+      "Dignity Village",
+      "dignity",
+      "campamento dignity",
+      "dignity village paleto"
+    ],
+    "explanation": "Es Dignity Village.",
+    "image": "lugar-45.png",
+    "scene": "Dignity Village at the northern San Andreas coast near Mount Chiliad: a secluded camp of colorful tents, tarps and makeshift wood shelters under pine trees beside a highway and beach, no close-up identifiable people.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto46",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Estación de policía de Paleto Bay",
+    "aliases": [
+      "Estación de policía de Paleto Bay",
+      "paleto bay sheriff",
+      "sheriff paleto",
+      "comisaria de paleto",
+      "comisaria paleto bay",
+      "policia paleto"
+    ],
+    "explanation": "Es Estación de policía de Paleto Bay.",
+    "image": "lugar-46.png",
+    "scene": "The Paleto Bay sheriffs station on Paleto Boulevard: low brick civic building with a small front lawn, a US flag, sheriffs signage and a paved forecourt, Mount Chiliad towering in the background.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto47",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Playa de Chumash",
+    "aliases": [
+      "Playa de Chumash",
+      "chumash",
+      "chumash beach",
+      "playa chumash"
+    ],
+    "explanation": "Es Playa de Chumash.",
+    "image": "lugar-47.png",
+    "scene": "Chumash coastal village west of Los Santos, the narrow sandy beach and its small wooden fishing pier lined by colorful beach houses, Great Ocean Highway behind and hills on one side, absolutely no Ferris wheel.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto48",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Parque eólico Ron Alternates",
+    "aliases": [
+      "Parque eólico Ron Alternates",
+      "ron alternates wind farm",
+      "parque eolico",
+      "molinos de viento",
+      "parque de molinos",
+      "ron alternates"
+    ],
+    "explanation": "Es Parque eólico Ron Alternates.",
+    "image": "lugar-48.png",
+    "scene": "The Ron Alternates wind farm, dozens of huge white wind turbines scattered across dusty hills above the desert highway, electrical pylons and San Andreas mountains, wide daylight landscape.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto49",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Mina abandonada",
+    "aliases": [
+      "Mina abandonada",
+      "abandoned mine",
+      "mina",
+      "mina de great chaparral",
+      "mina great chaparral"
+    ],
+    "explanation": "Es Mina abandonada.",
+    "image": "lugar-49.png",
+    "scene": "The abandoned mine entrance in Great Chaparral: a boarded-up timber tunnel opening built into the rocky hillside, weathered wooden supports, old mine rails and dusty rocky trail, unmistakable GTA V hidden mine exterior.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  },
+  {
+    "id": "foto50",
+    "kind": "foto",
+    "prompt": "¿Qué lugar de GTA V es este?",
+    "answer": "Monte Gordo",
+    "aliases": [
+      "Monte Gordo",
+      "mount gordo",
+      "gordo",
+      "montana gordo"
+    ],
+    "explanation": "Es Monte Gordo.",
+    "image": "lugar-50.png",
+    "scene": "Mount Gordo on the northeast coast of San Andreas: the recognizable cliffside ghost-rock viewpoint with a small mountain camp and distant El Gordo lighthouse below, rugged pine-covered mountain above the ocean, moody dusk without supernatural figures.",
+    "source": "Recreación generada de un lugar de GTA V; no es una captura del juego."
+  }
+]

@@ -13,14 +13,12 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='staff-recruitment-v1.1'
-SUMMARY='Completa las confirmaciones privadas del reclutamiento: desactiva el mensaje de confirmación mediante la respuesta de interacción de Discord antes de guardar, compatible con mensajes efímeros. Mantiene formularios, revisión por los siete cargos, entrevistas y avisos al candidato. La administración sigue asignando los roles después de aceptar.'
-RESTORE=('Para revertir solo esta corrección, desplegar 6b6d4bb636a98b9a552d232d135d6c6153dfdf3c conservando SQLite; esa versión mantiene el flujo, aunque su edición final del mensaje privado puede dar un error visual después de guardar. Para retirar todo el sistema, desplegar eb53eb5e623439325da6a752abe4ad6b97109efe. No restaurar una base antigua. Conservar todas las tablas lv_recruit_* y bot_changes. '
-         'La reversión de código no reconstruye el panel funcional del bot anterior: regenerarlo desde la configuración de ese bot usando el texto respaldado en lv_recruit_sources. '
-         'Antes de retirar esta versión, restaurar los accesos temporales pendientes de lv_recruit_voice comparando before_json/after_json con el permiso actual; no pisar cambios manuales posteriores. '
-         'Los accesos a revisores se registran en RECRUITMENT: restaurar únicamente los tres roles no protegidos y los campos que esa operación cambió, consultando el antes/después. Ver RECLUTAMIENTO.md. '
-         'Conservar ajustes, fotos, podios, archivos, votos, tickets, compras, saldos, movimientos y AutoMod. No reiniciar daily_server_up_slot ni duplicar anuncios o pagos. '
-         'Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos. No borrar canales ni mensajes históricos para revertir esta versión.')
+RELEASE='minigames-v1'
+SUMMARY='Añade minijuegos desde un panel en General: 50 imágenes recreadas de lugares de GTA V, 25 preguntas de roleplay y 25 acertijos, con pistas y respuestas privadas. Cada pregunta correcta paga 25 monedas al saldo de la tienda una vez por jugador, con acierto, saldo y recibo en una misma transacción. Incluye progreso y ranking persistentes. No cambia canales, roles ni permisos.'
+RESTORE=('Para retirar los minijuegos, desplegar 1838de442938bcf1cffbc2a14e66067e05d19b02 conservando la SQLite actual. No restaurar una base antigua, retirar monedas pagadas ni borrar lv_game_* o movimientos minigame:*. Los controles del juego dejarán de estar atendidos al retirar el código; no borrar mensajes históricos de General para revertir. Ver MINIJUEGOS.md. '
+         'Conservar reclutamiento, tickets, fotos, podios, archivos, votos, ajustes, compras, saldos y AutoMod. La administración sigue asignando el rol después de aceptar una solicitud de staff. '
+         'Los accesos temporales de entrevista siguen a cargo del sistema de reclutamiento; no retirar ni sobrescribir sus registros lv_recruit_voice. '
+         'No reiniciar daily_server_up_slot ni duplicar anuncios o premios. Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
 
 
 class Journal:

@@ -1,0 +1,302 @@
+[
+  {
+    "question": "foto01",
+    "file": "lugar-01.png",
+    "bytes": 2268989,
+    "sha256": "7f264b1e678146206c780eb866aba0cedf802f497c44eeccbc2647d59eb020e7"
+  },
+  {
+    "question": "foto02",
+    "file": "lugar-02.png",
+    "bytes": 2936197,
+    "sha256": "d8c0957d3bf300df251f5ccd4739140d6d067147aab2bb7306af7109ce737e99"
+  },
+  {
+    "question": "foto03",
+    "file": "lugar-03.png",
+    "bytes": 2045984,
+    "sha256": "b91e214764f01d12f0843fdeef5a450148687881f6f3ae376c025d7a1ad3ab4f"
+  },
+  {
+    "question": "foto04",
+    "file": "lugar-04.png",
+    "bytes": 2309200,
+    "sha256": "e2f81a145fb79fd0957562270dc4258d944a0ca877420f94f1ad97418e15fb59"
+  },
+  {
+    "question": "foto05",
+    "file": "lugar-05.png",
+    "bytes": 2723914,
+    "sha256": "8eff259e68ac1dd4d2216adf3fb7d4a782a705a7e306e701dab6858a9d219dee"
+  },
+  {
+    "question": "foto06",
+    "file": "lugar-06.png",
+    "bytes": 2851094,
+    "sha256": "13ca341c771d57c32d58c1dab1b3e4c72b3bd61163d4bac88bbbcd5a11152b5b"
+  },
+  {
+    "question": "foto07",
+    "file": "lugar-07.png",
+    "bytes": 2796829,
+    "sha256": "a22a089543a24a722295239bc8ecd2d12ecdbb4aa31f2c61ee75cf7ae8a9d02a"
+  },
+  {
+    "question": "foto08",
+    "file": "lugar-08.png",
+    "bytes": 2804145,
+    "sha256": "5e35075d3d53ecd1e391c39e7f1f80344eb506ee67003a5944204a8e9cbd124b"
+  },
+  {
+    "question": "foto09",
+    "file": "lugar-09.png",
+    "bytes": 2695245,
+    "sha256": "b565fbbc2af31850ddbe3f6f9004f9dbe63b28a0d0d4fbcb86591fc96992a76f"
+  },
+  {
+    "question": "foto10",
+    "file": "lugar-10.png",
+    "bytes": 3104400,
+    "sha256": "0664300875b70383cf6042016a8f55bbfc8040f5d554cc9b5591237fa6400ff3"
+  },
+  {
+    "question": "foto11",
+    "file": "lugar-11.png",
+    "bytes": 2991102,
+    "sha256": "017a36684ae0c0d12e6d020b48eb818dd2e9eba26eff30194e097a8a30792e32"
+  },
+  {
+    "question": "foto12",
+    "file": "lugar-12.png",
+    "bytes": 2650533,
+    "sha256": "365fa514d62bb3b93b9112c86087b27f13baea20b00d5482771b66b5e8354125"
+  },
+  {
+    "question": "foto13",
+    "file": "lugar-13.png",
+    "bytes": 3014333,
+    "sha256": "bc0169245bd583ebc6c9734763034eff95ea954ed1aef9725aa4af14d07137f9"
+  },
+  {
+    "question": "foto14",
+    "file": "lugar-14.png",
+    "bytes": 2852745,
+    "sha256": "1a36bca57c9e14c8e87c17a5c5bd826c739e303f9bf12171fd4d46c6be61b9cd"
+  },
+  {
+    "question": "foto15",
+    "file": "lugar-15.png",
+    "bytes": 2349280,
+    "sha256": "aeb081f96f2f806d055c050cda1c51dbd428fed1ba9a30579a7c11cb5daa3e55"
+  },
+  {
+    "question": "foto16",
+    "file": "lugar-16.png",
+    "bytes": 2998654,
+    "sha256": "711a01c8378bdf25aa8a4db1c07cb2bb488bb779da0e3db41433f506420a03e1"
+  },
+  {
+    "question": "foto17",
+    "file": "lugar-17.png",
+    "bytes": 3060391,
+    "sha256": "09c45591e03946d20a32e921ddb45e17e452388f4af23b48bc2082c34a84baea"
+  },
+  {
+    "question": "foto18",
+    "file": "lugar-18.png",
+    "bytes": 2708708,
+    "sha256": "87ff8a5f4dc7e1a54f153a3cb29949a20d05243da7f0ee4290b993bbfdd2d4e7"
+  },
+  {
+    "question": "foto19",
+    "file": "lugar-19.png",
+    "bytes": 2515193,
+    "sha256": "1684b05ac6d433d8c045d3d2586e18fa96126b6a10dbdaedfd8e78ab56a69f0a"
+  },
+  {
+    "question": "foto20",
+    "file": "lugar-20.png",
+    "bytes": 3048393,
+    "sha256": "c2fd2a98dc2bda1ecfc6ead3eae23a013c734ee876514ccb728b914186c34375"
+  },
+  {
+    "question": "foto21",
+    "file": "lugar-21.png",
+    "bytes": 2831481,
+    "sha256": "d79d387c27c9a084ee97b64c97ee3c36f62f1a37b5dbe0866229ebb028437b93"
+  },
+  {
+    "question": "foto22",
+    "file": "lugar-22.png",
+    "bytes": 2912717,
+    "sha256": "323518b1b9efe193ec206d77d7ec56bc5bdb323d92790edb79bb25ac5b838fee"
+  },
+  {
+    "question": "foto23",
+    "file": "lugar-23.png",
+    "bytes": 2701942,
+    "sha256": "a8eed442ea3b987ab1092d72636a739200562054f58d594581e9f5b60e7515f0"
+  },
+  {
+    "question": "foto24",
+    "file": "lugar-24.png",
+    "bytes": 2962657,
+    "sha256": "de1b9b6edefc6dd1755cc6abd557d5d22bccff443ca4d57131c0e184f592eb71"
+  },
+  {
+    "question": "foto25",
+    "file": "lugar-25.png",
+    "bytes": 3118230,
+    "sha256": "c36a0f22daa20a384e5e086e635c42ebb576eab01bc7620775df82fc043c540d"
+  },
+  {
+    "question": "foto26",
+    "file": "lugar-26.png",
+    "bytes": 2687279,
+    "sha256": "1317e4df351377e48d7e96386d083f20d7d010b2be8022532007fef576937b06"
+  },
+  {
+    "question": "foto27",
+    "file": "lugar-27.png",
+    "bytes": 3427131,
+    "sha256": "8a0194814526ca1750ffa52f0a39a2351a8d4ade69bde45505bf66dafa053bfe"
+  },
+  {
+    "question": "foto28",
+    "file": "lugar-28.png",
+    "bytes": 3239503,
+    "sha256": "0fcbf57424ebd02abd6e0ee6e8e256ffe6745c2bba0088cfa23c7fbb6189393c"
+  },
+  {
+    "question": "foto29",
+    "file": "lugar-29.png",
+    "bytes": 2890212,
+    "sha256": "22d2d65cc3707cb0f20ebe6bf0b29a9ccf40cef049f0b62964460d5dffb5e7c2"
+  },
+  {
+    "question": "foto30",
+    "file": "lugar-30.png",
+    "bytes": 3270821,
+    "sha256": "9db4af519d9452882ce89e0d3efc461fd579bee8d276f0244e9109fe49183ec5"
+  },
+  {
+    "question": "foto31",
+    "file": "lugar-31.png",
+    "bytes": 2684853,
+    "sha256": "1f29807260ea8f6f4e8285db687ec38ab171e4c190ea461ede47750d007a31eb"
+  },
+  {
+    "question": "foto32",
+    "file": "lugar-32.png",
+    "bytes": 2632829,
+    "sha256": "aec13eb151ac5a4e6e5c90eeefbb73dd80b9e2e91d123ccdffc9818b2669eb9f"
+  },
+  {
+    "question": "foto33",
+    "file": "lugar-33.png",
+    "bytes": 2929180,
+    "sha256": "a2c225938a6d030530594d0f3b2e1f9878175d3d829bcbc1d77cdfa7f1f11c42"
+  },
+  {
+    "question": "foto34",
+    "file": "lugar-34.png",
+    "bytes": 2828236,
+    "sha256": "b1839c081c3c73d940db1e41e8088c375674a7af4e0e90498ea9288aa2e454aa"
+  },
+  {
+    "question": "foto35",
+    "file": "lugar-35.png",
+    "bytes": 2765960,
+    "sha256": "2be1d872fa5f1b9e408476853427d59c1ea14f603a8992e359e9b9cb55bfd651"
+  },
+  {
+    "question": "foto36",
+    "file": "lugar-36.png",
+    "bytes": 2462324,
+    "sha256": "e15c6c7750046e4abd7f2840ea646376df3e4f15836de7b74d1c1d13cdcc3b67"
+  },
+  {
+    "question": "foto37",
+    "file": "lugar-37.png",
+    "bytes": 2758464,
+    "sha256": "58680b8ec90f311512895c98c0333906fdfe2d5452507d4ddc07d6edd853b498"
+  },
+  {
+    "question": "foto38",
+    "file": "lugar-38.png",
+    "bytes": 2947963,
+    "sha256": "af6792286f2d50c458c3439e6b7fc0b4df3c90f0f6f253a803a0eaa5fe8f4df4"
+  },
+  {
+    "question": "foto39",
+    "file": "lugar-39.png",
+    "bytes": 3079545,
+    "sha256": "4741dbe6834bb40e2cb9ca707c11f1cca1480ef1461213191015331168262fe0"
+  },
+  {
+    "question": "foto40",
+    "file": "lugar-40.png",
+    "bytes": 2834821,
+    "sha256": "6a7291d69f22c385ae5bb49258257e34fbdb87e94dd0193247c1fe6c070ee70b"
+  },
+  {
+    "question": "foto41",
+    "file": "lugar-41.png",
+    "bytes": 3168945,
+    "sha256": "b62a6335e997e46eabc575a4cfc26c4ddd282d0e76cee2a9a2fa558e24140ee1"
+  },
+  {
+    "question": "foto42",
+    "file": "lugar-42.png",
+    "bytes": 2902572,
+    "sha256": "8223cfe05a2ce70bfd5a1d7e7decd2dcb42f4820e66bcbfc05a60a7329db65f2"
+  },
+  {
+    "question": "foto43",
+    "file": "lugar-43.png",
+    "bytes": 3103066,
+    "sha256": "6cb492a589e834f01bfc5d4823c6465b2e20c06b5f85328e159bc47f375772d4"
+  },
+  {
+    "question": "foto44",
+    "file": "lugar-44.png",
+    "bytes": 3133283,
+    "sha256": "b120af0c0e6dd3c2993e3f4bf3536f76a1c8b68b09b452a2a5d242c2657405a7"
+  },
+  {
+    "question": "foto45",
+    "file": "lugar-45.png",
+    "bytes": 3211238,
+    "sha256": "87b26cf9090ea39462572b2d58b6fd71fd37a824c767430e5e2e4e5a697960d6"
+  },
+  {
+    "question": "foto46",
+    "file": "lugar-46.png",
+    "bytes": 2939525,
+    "sha256": "14df9f740b9dc1cd588818dc42de50e44b1357ed6c3e62d5e54a696baed9ed34"
+  },
+  {
+    "question": "foto47",
+    "file": "lugar-47.png",
+    "bytes": 2920210,
+    "sha256": "46eef8c0b6754df04fccb58823288b9d2549ed08f676177ef936e9efb28707c3"
+  },
+  {
+    "question": "foto48",
+    "file": "lugar-48.png",
+    "bytes": 2824333,
+    "sha256": "a09d87d3ac7e5fa07d20c3dd566b13835b2a161d5a4dc85da4b4abc65a316ed6"
+  },
+  {
+    "question": "foto49",
+    "file": "lugar-49.png",
+    "bytes": 3484972,
+    "sha256": "426c6d087d3b70d87f041a3be4412ead7b8b088b969d213951df7cafafdaeb9d"
+  },
+  {
+    "question": "foto50",
+    "file": "lugar-50.png",
+    "bytes": 2436199,
+    "sha256": "ffb18c67b9b606a3be58537333e2d6a3dce235a6db557fcd722f0ace1f284f04"
+  }
+]

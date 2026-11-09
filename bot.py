@@ -30,6 +30,7 @@ from server_health import OriginalPanel
 from obscenities import ObscenityFilter
 from settings_panel import SettingsPanel
 from recruitment import RecruitmentSystem
+from minigames import MinigameSystem
 from daily_up import announce_daily_up,daily_up_embed
 from economy import Economy
 from profiles_hub import ProfileTree
@@ -231,6 +232,9 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.settings_panel.group,guild=GUILD)
         self.recruitment=RecruitmentSystem(self,DB_PATH,GUILD_ID)
         self.tree.add_command(self.recruitment.group,guild=GUILD)
+        self.minigames=MinigameSystem(self,DB_PATH,GUILD_ID)
+        self.tree.add_command(self.minigames.group,guild=GUILD)
+        self.tree.add_command(self.minigames.play_command,guild=GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -257,6 +261,7 @@ class LaVenganzaBot(discord.Client):
         await self.tickets.start()
         await self.photos.start()
         await self.recruitment.start()
+        await self.minigames.start()
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
         self.obscenity_filter.install.start()
@@ -1605,6 +1610,10 @@ async def on_ready():
         await client.settings_panel.ready()
     except Exception:
         log.exception('No se pudo comprobar el panel de ajustes')
+    try:
+        await client.minigames.ready()
+    except Exception:
+        log.exception('No se pudo preparar el panel de minijuegos en General')
     try:
         await client.changes.tracked("CLEAR_EXCLUSIVE_LOG_REQUEST_ID", "Vaciar Registro Exclusive",
             lambda: clear_exclusive_log(client, GUILD_ID, DB_PATH))
