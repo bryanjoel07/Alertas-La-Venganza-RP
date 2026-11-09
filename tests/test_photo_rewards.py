@@ -246,3 +246,5 @@ class PhotoPodiumServiceTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestC
         self.assertEqual(self.bot.economy.store.inventory(1)[0]['sku'],'extra')
         message=self.messages[closed['announcement']]
         self.assertTrue(any(f.name=='🏅 Podio de la semana' for f in message.embeds[0].fields))
+        self.assertEqual(message.embeds[0].image.url,'attachment://'+message.attachments[0].filename)
+        self.assertEqual(message.edit.call_args.kwargs['attachments'],message.attachments)

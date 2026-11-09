@@ -13,11 +13,12 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='weekly-photos-v3'
-SUMMARY='Fotos entrega un podio semanal de tres jugadores distintos: 500, 300 y 150 monedas en sus saldos existentes de la tienda. Cuenta la mejor foto de cada autor con al menos un voto y conserva el desempate por antigüedad. Podio, recibos, imagen ganadora y movimientos se guardan juntos, sin duplicar premios tras reinicios. Incluye clasificación provisional, enlaces a fotos y tienda e instrucciones en los paneles y la guía; mantiene el artículo opcional como extra del primer lugar.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 759f0d234075d5af4c7efdb63ddf7e5b8de8d7c0, conservando /data y SQLite. '
-         'El código anterior vuelve al destacado de una sola foto y no paga monedas de Fotos. Conservar lv_photo_podium, podium_closed, coins_since, eco_accounts y eco_ledger: la migración es aditiva. No restaurar una base antigua ni retirar monedas o artículos como parte de revertir código. '
-         'Antes de revertir, completar los anuncios pendientes de semanas con podio ya pagado usando esta versión, o mantener PHOTO_CONTEST_ENABLED=0 hasta completarlos. El código anterior no comprende el podio congelado: no permitir que recalcule una semana ya pagada. '
+RELEASE='weekly-photos-v3.1'
+SUMMARY='Corrige la imagen duplicada de Fotos: las ediciones conservan el enlace attachment:// al archivo del propio mensaje en lugar de volver a enlazarlo como imagen externa. Conserva adjuntos al actualizar votos, cierre y premio extra. Repara una sola vez las tarjetas existentes del bot, incluidas las cerradas, con copias antes/después en PHOTO_IMAGE_LAYOUT, sin recrear mensajes ni cambiar textos, votos o saldos.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior d479118c46efaceb3fe3fec58bf6d1b416724053, conservando /data y SQLite. '
+         'El código anterior conserva el podio y las monedas, pero puede volver a mostrar el adjunto y la imagen de la tarjeta por separado al editar. Las marcas image_layout_v1: son aditivas y no afectan saldos, votos o publicaciones. No restaurar una base antigua ni retirar premios como parte de revertir código. '
+         'Para deshacer una reparación concreta, consultar PHOTO_IMAGE_LAYOUT y restaurar solo los embeds anteriores del mismo mensaje, conservando todos sus adjuntos, contenido y controles. No borrar ni volver a publicar la foto. '
+         'Conservar lv_photo_podium, podium_closed, coins_since, eco_accounts y eco_ledger. Si se revierte a un código anterior al podio de monedas, completar antes los anuncios de semanas ya pagadas, o mantener PHOTO_CONTEST_ENABLED=0 hasta completarlos. '
          'Los recibos photo-coins: y las acciones podio_monedas permiten consultar los premios; mantener saldos, compras posteriores, votos y respaldos actuales. '
          'Para un fijado, consultar PHOTO_PIN y restaurar solo el estado anterior del mensaje propio del bot por ID. No retirar fijados ni fotos de jugadores. '
          'Para otros cambios de Discord, descargar /cambios detalle, comparar antes/después y restaurar únicamente los campos autorizados por ID. '

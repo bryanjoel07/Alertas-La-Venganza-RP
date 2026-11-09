@@ -32,6 +32,11 @@ def images(message):
     return [a for a in message.attachments if is_image(a)]
 
 
+def image_reference(message,fallback):
+    attached=images(message) if message is not None else []
+    return 'attachment://'+attached[0].filename if attached else fallback
+
+
 def closed(entry, now=None):
     return not entry['active'] or entry['week_state'] != 'open' or (int(time.time()) if now is None else now) >= entry['ends']
 
@@ -161,13 +166,13 @@ class PhotoSystem:
         target=entry['control'] if entry.get('post_mode')=='post' and entry['control'] else entry['source']
         return f"https://discord.com/channels/{self.guild_id}/{FOTOS_CHANNEL}/{target}"
 
-    def control_embed(self, row):
+    def control_embed(self, row, message=None):
         embed = discord.Embed(title=f"📸 Foto #{row['id']} · Votación semanal", color=COLOR,
             description=f"Publicada por <@{row['author']}> · **{row['votes']} votos**\n" +
                 ('Votación cerrada.' if closed(row) else f"Cierra <t:{row['ends']}:F>.") +
                 (f"\n[Ver la foto]({self.source_link(row)})" if row.get('post_mode','reply')=='reply' else ''))
         if row.get('post_mode') in ('pending','post'):
-            embed.set_image(url=row['url'])
+            embed.set_image(url=image_reference(message,row['url']))
             if row.get('caption'):
                 embed.description=discord.utils.escape_markdown(row['caption'])+'\n\n'+embed.description
         else:
@@ -379,12 +384,13 @@ class PhotoSystem:
             raise ValueError('Esta publicación no pertenece al bot.')
         if message.attachments:
             row['url']=message.attachments[0].url
-        edit={'embed':self.control_embed(row),'view':PhotoControls(row['id'],row['votes'],closed(row)),
+        edit={'embed':self.control_embed(row,message),'attachments':message.attachments,'view':PhotoControls(row['id'],row['votes'],closed(row)),
             'allowed_mentions':discord.AllowedMentions.none()}
         content=' '.join(f'<@{uid}>' for uid in json.loads(row['mentions']))
         if (message.content or '')!=content:
             edit['content']=content or None
         await message.edit(**edit)
+        self.store.config(f'image_layout_v1:{message.id}','1')
         await self.call('rendered',row['id'],row['votes'],closed(row))
         await self.cleanup_legacy(row,channel)
         return message
@@ -446,7 +452,9 @@ class PhotoSystem:
                             raise ValueError('Ese mensaje no pertenece al bot.')
                         if row['post_mode']=='post' and message.attachments:
                             row['url']=message.attachments[0].url
-                        await message.edit(embed=self.control_embed(row), view=PhotoControls(row['id'], row['votes'], closed(row)), allowed_mentions=discord.AllowedMentions.none())
+                        await message.edit(embed=self.control_embed(row,message), attachments=message.attachments,
+                            view=PhotoControls(row['id'], row['votes'], closed(row)), allowed_mentions=discord.AllowedMentions.none())
+                        self.store.config(f'image_layout_v1:{message.id}','1')
                         await self.call('rendered', row['id'], row['votes'], closed(row))
                     elif not closed(row):
                         source, image = await self.source(channel, row)
@@ -481,13 +489,13 @@ class PhotoSystem:
         await answer(i, ('❤️ Tu voto quedó guardado.' if add else 'Quitaste tu voto.') if changed else
             ('Ya votaste por esta foto.' if add else 'No tenías un voto en esta foto.'))
 
-    def winner_embed(self, week):
+    def winner_embed(self, week, message=None):
         row = self.store.entry(week['winner']) if week['winner'] else None
         if row:
             embed = discord.Embed(title='🏆 FOTO DE LA SEMANA | LA VENGANZA RP', color=COLOR,
                 description=f"📸 Publicada por <@{row['author']}>\n❤️ **{week['winning_votes']} votos**\n[Ver la publicación original]({self.source_link(row)})")
             if week['image_url']:
-                embed.set_image(url=week['image_url'])
+                embed.set_image(url=image_reference(message,week['image_url']))
             podium=self.store.ranking(week['week']) if week['podium_closed'] is not None else []
             if podium:
                 embed.add_field(name='🏅 Podio de la semana',value='\n\n'.join(
@@ -596,9 +604,44 @@ class PhotoSystem:
         if current['announcement']:
             message = await channel.fetch_message(current['announcement'])
             if message.author.id == self.bot.user.id:
-                if message.attachments:
-                    current['image_url'] = message.attachments[0].url
-                await message.edit(embed=self.winner_embed(current), allowed_mentions=discord.AllowedMentions.none())
+                await message.edit(embed=self.winner_embed(current,message), attachments=message.attachments,
+                    allowed_mentions=discord.AllowedMentions.none())
+
+    async def repair_image_layout(self,channel):
+        repaired=0
+        for row in await self.call('entries'):
+            if row['post_mode']!='post' or not row['control']:continue
+            key=f"image_layout_v1:{row['control']}"
+            if self.store.config(key):continue
+            try:message=await channel.fetch_message(row['control'])
+            except discord.NotFound:
+                self.store.config(key,'missing');continue
+            if message.author.id!=self.bot.user.id or message.reference:continue
+            attached=images(message)
+            if len(attached)!=1:continue
+            marker=f"La Venganza RP · Foto #{row['id']} · {row['week']}"
+            if len(message.embeds)!=1 or message.embeds[0].footer.text!=marker:continue
+            ids=[getattr(c,'custom_id',None) for r in message.components for c in r.children]
+            if f"lv:photo:{row['id']}:vote" not in ids:continue
+            original_ids=[a.id for a in message.attachments]
+            embed=discord.Embed.from_dict(message.embeds[0].to_dict())
+            embed.set_image(url=image_reference(message,row['url']))
+            async def snapshot():
+                current=await channel.fetch_message(message.id)
+                return dict(message=current.id,content=current.content,embeds=[e.to_dict() for e in current.embeds],
+                    attachments=[dict(id=a.id,filename=a.filename,url=a.url) for a in current.attachments],
+                    components=[r.to_dict() for r in current.components])
+            async def repair():
+                await message.edit(embed=embed,attachments=message.attachments,allowed_mentions=discord.AllowedMentions.none())
+                confirmed=await channel.fetch_message(message.id)
+                if [a.id for a in confirmed.attachments]!=original_ids or len(confirmed.embeds)!=1 or not confirmed.embeds[0].image.url:
+                    raise RuntimeError('Discord no confirmó la foto y su archivo después del ajuste.')
+            await self.bot.changes.tracked('PHOTO_IMAGE_LAYOUT','Mostrar la foto una sola vez dentro de su tarjeta',repair,
+                request_id=f'{message.id}:v1',snapshot=snapshot)
+            self.store.config(key,'1');repaired+=1
+            log.info('PHOTOS image_layout_repaired entry=%s message=%s attachments=%s active=%s votes=%s '
+                'single_image_reference=True original_preserved=True',row['id'],message.id,len(attached),row['active'],row['votes'])
+        log.info('PHOTOS image_layout_verified repaired=%s attachment_reference_on_updates=True files_preserved=True',repaired)
 
     async def ready(self):
         if not self.enabled():
@@ -622,6 +665,8 @@ class PhotoSystem:
                 'distinct_players=True minimum_votes=1 ties=earliest_photo coins_since=%s paid_positions=%s panel_verified=True',
                 list(rewards['rewards']),rewards['since'],rewards['paid_positions'])
             await self.scan(channel)
+            async with self.lock:
+                await self.repair_image_layout(channel)
             # Recheck existing controls after offline deletions without touching original posts.
             week = await self.call('current')
             verified = 0

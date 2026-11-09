@@ -30,6 +30,8 @@ class PhotoUploadTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.channel.send.await_count,1)
         self.assertIsNone(message.reference);self.assertEqual(len(message.attachments),1)
         self.assertTrue(message.embeds[0].image.url)
+        self.assertEqual(message.embeds[0].image.url,'attachment://'+message.attachments[0].filename)
+        self.assertEqual(message.edit.call_args.kwargs['attachments'],message.attachments)
         self.assertIn('<@1>',message.embeds[0].description);self.assertIn('Mi foto',message.embeds[0].description)
         self.assertEqual(row['source'],message.id);self.assertEqual(row['control'],message.id)
         self.assertEqual(row['post_mode'],'post');self.assertIsNone(row['media'])
@@ -77,10 +79,60 @@ class PhotoUploadTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.system.store.entry(row['id'])['votes'],1)
         await self.system.vote(i,row['id'],False)
         self.assertEqual(self.system.store.entry(row['id'])['votes'],0)
+        self.assertEqual(message.embeds[0].image.url,'attachment://'+message.attachments[0].filename)
         i.user.id=1
         with self.assertRaisesRegex(ValueError,'propia'):await self.system.vote(i,row['id'],True)
         i.user.id=2;i.channel_id=123
         with self.assertRaises(ValueError):await self.system.vote(i,row['id'],True)
+
+    async def test_background_vote_refresh_keeps_the_image_inside_the_embed_and_retains_its_file(self):
+        row,message,_,_=await self.upload()
+        original_ids=[a.id for a in message.attachments]
+        message.embeds[0].set_image(url=message.attachments[0].url)
+        self.system.store.vote(row['id'],2,now=BASE+100)
+        await self.system.refresh_controls(self.channel)
+        self.assertEqual(message.embeds[0].image.url,'attachment://'+message.attachments[0].filename)
+        self.assertEqual([a.id for a in message.edit.call_args.kwargs['attachments']],original_ids)
+        self.assertIn('1 votos',message.embeds[0].description)
+        self.assertTrue(self.system.store.entry(row['id'])['url'].startswith('https://'))
+
+    async def test_existing_closed_photo_is_repaired_in_place_once_without_changing_its_text_votes_or_file(self):
+        row,message,_,original=await self.upload()
+        self.system.store.vote(row['id'],2,now=BASE+100)
+        self.system.store.deleted(message.id)
+        current=self.system.store.entry(row['id'])
+        message.embeds=[self.system.control_embed(current)]
+        self.system.store.config(f'image_layout_v1:{message.id}','')
+        description=message.embeds[0].description;ids=[a.id for a in message.attachments]
+        message.edit.reset_mock();self.channel.send.reset_mock()
+        await self.system.repair_image_layout(self.channel)
+        self.assertEqual(message.embeds[0].image.url,'attachment://'+message.attachments[0].filename)
+        self.assertEqual(message.embeds[0].description,description)
+        self.assertEqual([a.id for a in message.edit.call_args.kwargs['attachments']],ids)
+        self.assertNotIn('view',message.edit.call_args.kwargs)
+        self.assertFalse(message.edit.call_args.kwargs['allowed_mentions'].users)
+        self.assertEqual(self.system.store.entry(row['id'])['votes'],1)
+        self.assertEqual(self.system.store.entry(row['id'])['active'],0)
+        self.channel.send.assert_not_awaited();message.delete.assert_not_awaited();original.delete.assert_not_awaited()
+        self.assertTrue(self.tracked)
+        await self.system.repair_image_layout(self.channel)
+        message.edit.assert_awaited_once()
+
+    async def test_discord_can_normalize_the_attachment_url_without_triggering_repeat_repairs(self):
+        row,message,_,_=await self.upload()
+        self.system.store.config(f'image_layout_v1:{message.id}','')
+        edit=message.edit.side_effect
+        async def normalized(**kwargs):
+            self.assertEqual(kwargs['embed'].image.url,'attachment://'+message.attachments[0].filename)
+            result=await edit(**kwargs)
+            message.embeds[0].set_image(url=message.attachments[0].url)
+            return result
+        message.edit.side_effect=normalized;message.edit.reset_mock()
+        await self.system.repair_image_layout(self.channel)
+        self.assertEqual(message.edit.call_args.kwargs['embed'].image.url,message.attachments[0].url)
+        self.assertEqual(self.system.store.config(f'image_layout_v1:{message.id}'),'1')
+        await self.system.repair_image_layout(self.channel)
+        message.edit.assert_awaited_once()
 
     async def test_native_uploads_do_not_generate_replies_or_duplicate_photo_posts(self):
         direct=self.source()
