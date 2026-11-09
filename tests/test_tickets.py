@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock,MagicMock,patch
 import discord
 from tickets_store import TicketStore,PROTECTED,NORMAL_STAFF
 from tickets import TicketSystem,can_staff,channel_overwrites,transcript_html
-from tickets_ui import TicketControls,TicketPanel,TicketAction
+from tickets_ui import TicketControls,TicketPanel,TicketAction,ClosedArchivePanel,CasePicker
 
 class FakeRole:
  def __init__(self,rid):self.id=rid
@@ -131,7 +131,9 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
   self.bot=MagicMock();self.system=TicketSystem(self.bot,Path(tmp.name)/'db.sqlite3',10)
   self.system.store.initialize()
-  self.guild=SimpleNamespace(id=10)
+  self.guild=SimpleNamespace(id=10,fetch_channels=AsyncMock(return_value=[MagicMock(spec=discord.TextChannel,id=n,topic=f'lv-ticket:{n-99}') for n in (100,101,102)]))
+  self.guild.edit_role_positions=MagicMock()
+  self.bot.get_guild.return_value=self.guild
   self.owner=FakeMember(1,guild=self.guild);self.staff=FakeMember(5,roles=NORMAL_STAFF,guild=self.guild)
   self.i=MagicMock(user=self.owner,guild_id=10)
   self.i.response.is_done.return_value=False;self.i.response.defer=AsyncMock();self.i.response.send_message=AsyncMock();self.i.followup.send=AsyncMock()
@@ -253,7 +255,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   body=self.i.response.send_message.call_args.kwargs['embed'].description
   self.assertIn(f'**#{other}**',body);self.assertNotIn(f'**#{reserved}**',body)
   panel=TicketPanel(self.system)
-  self.assertIn('lv:ticket:closed',[item.custom_id for item in panel.children])
+  self.assertNotIn('lv:ticket:closed',[item.custom_id for item in panel.children])
+  self.assertIn('lv:ticket:closed',[item.custom_id for item in ClosedArchivePanel(self.system).children])
 
  async def prepare_deletion(self):
   self.system.store.transition(self.rid,'cerrado',5,'Resuelto')
@@ -372,3 +375,38 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   row['department']='staff'
   reserved=channel_overwrites(guild,row,self.system.store,self.owner)
   self.assertTrue(all(role not in reserved for role in closed_staff_roles(guild)))
+
+
+ async def test_closed_list_excludes_open_deleted_missing_and_test_channels(self):
+  self.system.store.transition(self.rid,'cerrado',5,'Resuelto')
+  others=[]
+  for user,status,deleted,form,channel in [(8,'nuevo',False,{},101),(9,'cerrado',True,{},102),(10,'cerrado',False,{},103),(11,'cerrado',False,{'selftest':'hidden'},104)]:
+   rid=self.system.store.create(user,'soporte','Caso',form,now=1000)
+   self.system.store.update(rid,status='nuevo',channel=channel)
+   if status=='cerrado':self.system.store.transition(rid,'cerrado',5,'Terminado')
+   if deleted:self.system.store.mark_deleted(rid,5)
+   others.append(rid)
+  self.guild.fetch_channels.return_value=[MagicMock(spec=discord.TextChannel,id=100,topic=f'lv-ticket:{self.rid}'),
+     MagicMock(spec=discord.TextChannel,id=101,topic=f'lv-ticket:{others[0]}'),
+     MagicMock(spec=discord.TextChannel,id=102,topic=f'lv-ticket:{others[1]}'),
+     MagicMock(spec=discord.TextChannel,id=104,topic=f'lv-ticket:{others[3]}')]
+  self.i.user=self.staff
+  await self.system.show_closed(self.i)
+  kwargs=self.i.response.send_message.call_args.kwargs
+  self.assertEqual([o.value for o in kwargs['view'].children[0].options],[str(self.rid)])
+  for rid in others:self.assertNotIn(f'**#{rid}**',kwargs['embed'].description)
+  self.system.store.mark_deleted(self.rid,5)
+  await self.system.show_closed(self.i)
+  self.assertFalse(self.i.response.send_message.call_args.kwargs['view'].children)
+
+ async def test_stale_closed_menu_cannot_open_a_deleted_or_reopened_case(self):
+  self.system.store.transition(self.rid,'cerrado',5,'Cerrado')
+  picker=CasePicker(self.system,[self.system.store.get(self.rid)],True,closed_only=True)
+  picker._values=[str(self.rid)];self.i.user=self.staff
+  self.system.access=AsyncMock();self.system.channel=AsyncMock()
+  self.system.store.transition(self.rid,'en_atencion',5,'Reapertura: revisar')
+  await picker.callback(self.i)
+  self.system.access.assert_not_awaited();self.system.channel.assert_not_awaited()
+  self.system.store.transition(self.rid,'cerrado',5,'Cerrado otra vez');self.system.store.mark_deleted(self.rid,5)
+  await picker.callback(self.i)
+  self.system.access.assert_not_awaited();self.system.channel.assert_not_awaited()

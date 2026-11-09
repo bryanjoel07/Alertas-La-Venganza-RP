@@ -24,7 +24,7 @@ Controles persistentes: Eliminar ticket (solo tras cerrar), Reclamar, Solicitar 
 
 Comandos principales:
 
-- `/ticket mis`, `/ticket cerrados` y `/ticket gestion`: listas paginadas. El panel incluye un botón Tickets cerrados para abrir la lista autorizada desde el canal de entrada. Los datos reservados se filtran antes de calcular estadísticas.
+- `/ticket mis`, `/ticket cerrados` y `/ticket gestion`: listas paginadas. La consulta de cerrados está únicamente en la categoría Tickets Cerrados y en `/ticket cerrados`. El panel de entrada no incluye ese botón. Las listas excluyen todos los casos de prueba y eliminados y comprueban que exista el canal; la lista de cerrados solo admite estado cerrado. Los datos reservados se filtran antes de calcular estadísticas.
 - `/ticket acceso`, `/ticket estado`, `/ticket transferir`, `/ticket participante`.
 - `/ticket nota`, `/ticket notas`, `/ticket historial`.
 - `/ticket transcripcion` y `/ticket archivo` descargan copias privadas tras verificar de nuevo la autorización.
@@ -39,7 +39,7 @@ Avisos: recordatorio tras 6 horas pendientes. Los casos esperando al jugador rec
 
 ## Archivo y recuperación
 
-Se crea `│・ 🔒┊ 𝐓𝐢𝐜𝐤𝐞𝐭𝐬 𝐂𝐞𝐫𝐫𝐚𝐝𝐨𝐬`, junto a Tickets. La categoría incluye un índice privado Archivo-Tickets, visible para los rangos autorizados, que permite consultar los casos y mantiene la categoría visible aunque no queden canales de casos. El bot mueve el mismo canal y conserva su historial, con escritura desactivada para participantes habituales. Si una categoría llega a su capacidad, crea otra privada con sufijo, sin mover tickets anteriores. No hay eliminación automática. Después del cierre aparece **Eliminar ticket**, solo para staff autorizado y con confirmación. Antes de borrar el canal se exige una transcripción completa, integridad de las pruebas y un respaldo verificado (Drive cuando está habilitado). Si falla, el canal se conserva. El registro y las pruebas permanecen accesibles con Tickets cerrados, aunque el canal ya no exista; no se puede reabrir un canal eliminado.
+Se crea `│・ 🔒┊ 𝐓𝐢𝐜𝐤𝐞𝐭𝐬 𝐂𝐞𝐫𝐫𝐚𝐝𝐨𝐬`, junto a Tickets. La categoría incluye un índice privado Archivo-Tickets, visible para los rangos autorizados, que permite consultar los casos y mantiene la categoría visible aunque no queden canales de casos. El bot mueve el mismo canal y conserva su historial, con escritura desactivada para participantes habituales. Si una categoría llega a su capacidad, crea otra privada con sufijo, sin mover tickets anteriores. No hay eliminación automática. Después del cierre aparece **Eliminar ticket**, solo para staff autorizado y con confirmación. Antes de borrar el canal se exige una transcripción completa, integridad de las pruebas y un respaldo verificado (Drive cuando está habilitado). Si falla, el canal se conserva. El registro y las pruebas se conservan en el respaldo interno; los tickets eliminados no aparecen en las listas y no pueden reabrirse.
 
 Mensajes y sus ediciones/eliminaciones se conservan en tablas SQLite. Los adjuntos se guardan como datos binarios con SHA-256, por lo que los respaldos completos existentes (incluido Drive) contienen también las pruebas, no solo enlaces caducables. Límites iniciales: 25 MB por archivo, 100 MB por caso y 500 MB en total; se reserva espacio para respaldos. Si falla una copia o excede el límite, se avisa y el archivo figura como no respaldado. Los enlaces externos son referencias, no copias de archivos.
 

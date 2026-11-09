@@ -34,6 +34,15 @@ def is_staff_role(role):
 def closed_staff_roles(guild):
  return [role for role in guild.roles if is_staff_role(role)]
 
+def listed_ticket(row,channels,closed_only=False):
+ if row.get('deleted_at') or json.loads(row['form']).get('selftest'):
+  return False
+ if closed_only and row['status']!='cerrado':return False
+ if not row['channel']:
+  return not closed_only and row['status']=='creando'
+ channel=channels.get(row['channel'])
+ return channel is not None and channel.topic==f"lv-ticket:{row['id']}"
+
 def route_roles(store,department):
  if department=='staff':return set()
  raw=store.config('route:'+department)
@@ -98,7 +107,7 @@ class TicketSystem:
   self.register()
  async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
  async def start(self):
-  await self.call('initialize');self.bot.add_view(TicketPanel(self));self.bot.add_dynamic_items(TicketAction)
+  await self.call('initialize');self.bot.add_view(TicketPanel(self));self.bot.add_view(ClosedArchivePanel(self));self.bot.add_dynamic_items(TicketAction)
   self.task=asyncio.create_task(self.loop(),name='advanced-tickets')
  def enabled(self):return os.getenv('TICKETS_ENABLED')=='1'
  def authorize(self,member,row,staff=False):
@@ -114,7 +123,7 @@ class TicketSystem:
  def admin(self,member):
   if member.guild.id!=self.guild_id or not member.guild_permissions.administrator:raise ValueError('Esta configuración requiere Administrador de Discord.')
  async def channel(self,row):
-  if row.get('deleted_at'):raise ValueError('El canal fue eliminado; su transcripción y pruebas siguen en Tickets cerrados.')
+  if row.get('deleted_at'):raise ValueError('El canal fue eliminado y ya no figura en las listas de tickets.')
   if not row['channel']:raise ValueError('El canal de este ticket todavía está en preparación. El staff puede usar /ticket recuperar.')
   channel=await self.bot.fetch_channel(row['channel'])
   if channel.guild.id!=self.guild_id or not isinstance(channel,discord.TextChannel) or channel.topic!=f"lv-ticket:{row['id']}":raise ValueError('Ese canal no está identificado como un ticket gestionado por este bot.')
@@ -284,7 +293,12 @@ class TicketSystem:
   if not own and not (i.user.guild_permissions.administrator or any(is_staff_role(r) for r in i.user.roles) or coordinator):raise ValueError('Panel reservado para el staff.')
   # Fetch beyond one department then filter BEFORE displaying anything, including statistics.
   all_rows=await self.call('list',owner=i.user.id if own else None,limit=10000)
-  visible=[r for r in all_rows if (own or can_staff(i.user,r,self.store)) and (closed_only or not json.loads(r['form']).get('selftest')) and (not closed_only or r['status']=='cerrado')]
+  candidates=[r for r in all_rows if (own or can_staff(i.user,r,self.store)) and not r.get('deleted_at') and not json.loads(r['form']).get('selftest') and (not closed_only or r['status']=='cerrado')]
+  channels={}
+  if any(r['channel'] for r in candidates):
+   guild=self.bot.get_guild(self.guild_id)
+   channels={c.id:c for c in await guild.fetch_channels() if isinstance(c,discord.TextChannel)}
+  visible=[r for r in candidates if listed_ticket(r,channels,closed_only)]
   visible=sorted(visible,key=lambda r:(r['status']=='cerrado',-r['id']))
   rows=visible[(page-1)*25:page*25]
   lines=[f"**#{r['id']}** · {DEPARTMENTS[r['department']][1]} · {STATE_LABELS.get(r['status'],r['status'])} · "+('Canal eliminado · archivo disponible' if r.get('deleted_at') else f"<#{r['channel']}>" if r['channel'] else 'Preparando') for r in rows]
@@ -300,7 +314,7 @@ class TicketSystem:
   command='cerrados' if closed_only else 'gestion' if not own else 'mis'
   embed.set_footer(text=f'Página {page} · /ticket {command} pagina:{page+1}')
   view=discord.ui.View(timeout=180)
-  if rows:view.add_item(CasePicker(self,rows,not own))
+  if rows:view.add_item(CasePicker(self,rows,not own,closed_only))
   await reply(i,embed=embed,view=view)
  async def record(self,rid,actor,action,detail):
   def save():
@@ -434,7 +448,7 @@ class TicketSystem:
   if i.guild_id!=self.guild_id:raise ValueError('Usa los controles en La Venganza RP.')
   self.authorize(i.user,row,staff=action in ('claim','wait','resolve','note','transfer','priority','people','delete'))
   if action=='delete':
-   if row.get('deleted_at'):return await reply(i,'El canal ya fue eliminado. Su archivo se conserva en Tickets cerrados.')
+   if row.get('deleted_at'):return await reply(i,'El canal ya fue eliminado y no está disponible en las listas.')
    if row['status']!='cerrado':raise ValueError('Primero cierra el ticket. Solo después aparecerá la opción de eliminarlo.')
    return await reply(i,f"¿Eliminar el canal del ticket #{rid}? Esta acción borra el canal de Discord; su transcripción y pruebas se conservarán. Solo se eliminará si el respaldo queda completo y verificado.",view=DeleteConfirm(self,i.user.id,rid))
   if action=='close' and not(can_staff(i.user,row,self.store) or i.user.id==row['owner']):raise ValueError('Solo el autor o el staff pueden cerrar.')
@@ -544,7 +558,7 @@ class TicketSystem:
    await self.bot.changes.tracked('CLOSED_ARCHIVE_INDEX_MOVE','Colocar índice de cerrados',move,request_id=str(time.time_ns()))
   channel=await self.grant_closed_visibility(await self.bot.fetch_channel(channel.id))
   embed=discord.Embed(title='🔒 ARCHIVO DE TICKETS | LA VENGANZA RP',color=0xD60000,
-    description='**Esta categoría recibe los tickets cuando se cierran.**\nLos canales permanecen aquí hasta que el staff confirma su eliminación.\n\nPulsa **Consultar tickets cerrados** para ver los casos autorizados y descargar sus transcripciones y pruebas. Los archivos siguen disponibles aunque se elimine el canal del caso.\n\nEste índice mantiene visible la categoría aunque no queden canales de tickets.')
+    description='**Esta categoría recibe los tickets cuando se cierran.**\nLos canales permanecen aquí hasta que el staff confirma su eliminación.\n\nPulsa **Consultar tickets cerrados** para ver los casos autorizados y descargar sus transcripciones y pruebas. Aquí solo aparecen tickets cerrados cuyo canal siga existiendo. Los eliminados y los casos de prueba no aparecen en la lista.\n\nEste índice mantiene visible la categoría aunque no queden canales de tickets.')
   message=None;saved_message=self.store.config('closed_index_message')
   if saved_message:
    with suppress(discord.NotFound):message=await channel.fetch_message(int(saved_message))
@@ -601,7 +615,7 @@ class TicketSystem:
   confirmed=await panel.fetch_message(message.id)
   ids=[getattr(c,'custom_id',None) for r in confirmed.components for c in r.children]
   labels=[option.label for row in confirmed.components for component in row.children for option in getattr(component,'options',[])]
-  if 'lv:ticket:department' not in ids or 'lv:ticket:closed' not in ids or DEPARTMENTS['faccion'][1] not in labels:raise ValueError('Discord no confirmó el panel de tickets actualizado.')
+  if 'lv:ticket:department' not in ids or 'lv:ticket:closed' in ids or DEPARTMENTS['faccion'][1] not in labels:raise ValueError('Discord no confirmó el panel de tickets actualizado.')
   upgraded=0
   for ticket in self.store.list(limit=10000):
    if ticket.get('deleted_at'):continue
@@ -625,7 +639,7 @@ class TicketSystem:
    elif ticket['department']=='faccion' and ticket['channel']:await self.refresh(ticket)
   log.info('TICKETS closed_delete_controls_verified upgraded=%s category=%s',upgraded,closed.id)
   log.info('TICKETS department_labels_verified labels=%s',labels)
-  log.info('TICKETS closed_navigation_verified button=lv:ticket:closed category=%s states=%s',closed.id,self.store.stats()['states'])
+  log.info('TICKETS closed_navigation_verified location=closed_category main_button_removed=True category=%s existing_closed_cases=%s',closed.id,sum(listed_ticket(r,{c.id:c for c in all_channels if isinstance(c,discord.TextChannel)},True) for r in self.store.list(limit=10000)))
   log.info('TICKETS panel_verified channel=%s message=%s closed_category=%s legacy_channels_untouched=True protected_roles_untouched=True',panel.id,message.id,closed.id)
  async def ready(self):
   if not self.enabled():return

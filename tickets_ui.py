@@ -1,5 +1,6 @@
 """Persistent ticket controls; every callback is authorized again by the service."""
 import re
+import json
 from contextlib import suppress
 import logging
 import discord
@@ -66,8 +67,6 @@ class TicketPanel(SafeView):
   super().__init__(timeout=None);self.system=system;self.add_item(DepartmentPicker(system))
  @discord.ui.button(label='Mis tickets',emoji='📂',custom_id='lv:ticket:mine',row=1)
  async def mine(self,i,button):await self.system.show_list(i,own=True)
- @discord.ui.button(label='Tickets cerrados',emoji='🔒',custom_id='lv:ticket:closed',row=1)
- async def closed(self,i,button):await self.system.show_closed(i)
  @discord.ui.button(label='Gestión Staff',emoji='🧰',custom_id='lv:ticket:dashboard',row=1)
  async def dashboard(self,i,button):await self.system.show_list(i,own=False)
 
@@ -123,19 +122,25 @@ class TextForm(discord.ui.Modal):
   except discord.HTTPException:await reply(i,'Discord no completó la operación. El ticket y su historial siguen guardados.')
 
 class CasePicker(discord.ui.Select):
- def __init__(self,system,rows,staff):
+ def __init__(self,system,rows,staff,closed_only=False):
   super().__init__(placeholder='Abrir un caso',options=[discord.SelectOption(label=f"#{r['id']} · {r['subject']}"[:100],value=str(r['id']),description=f"{DEPARTMENTS[r['department']][1]} · {r['status']}"[:100]) for r in rows])
-  self.system,self.staff=system,staff
+  self.system,self.staff,self.closed_only=system,staff,closed_only
  async def callback(self,i):
   await i.response.defer(ephemeral=True)
   try:
-   row=self.system.store.get(int(self.values[0]))
-   if self.staff:
-    async with self.system.lock:await self.system.access(i.user,row)
-   else:self.system.authorize(i.user,row)
-   row=self.system.store.get(row['id'])
+   async with self.system.lock:
+    row=self.system.store.get(int(self.values[0]))
+    if row is None:raise ValueError('Ese ticket ya no está disponible. Actualiza la lista.')
+    self.system.authorize(i.user,row,staff=self.staff)
+    if row.get('deleted_at') or json.loads(row['form']).get('selftest'):
+     raise ValueError('Ese ticket ya no está disponible. Actualiza la lista.')
+    if self.closed_only and row['status']!='cerrado':raise ValueError('Ese ticket ya no está cerrado. Actualiza la lista.')
+    await self.system.channel(row)
+    if self.staff:await self.system.access(i.user,row)
+    row=self.system.store.get(row['id'])
    location='Canal eliminado · archivo disponible' if row.get('deleted_at') else f"<#{row['channel']}>"
    await reply(i,f"Ticket #{row['id']} · {location}",embed=self.system.embed(row),view=TicketControls(row['id'],row['status']=='cerrado',bool(row.get('deleted_at'))))
+  except discord.NotFound:await reply(i,'El canal de ese ticket ya no existe. Abre de nuevo la lista.')
   except (ValueError,discord.HTTPException) as error:await reply(i,str(error) if isinstance(error,ValueError) else 'No se pudo abrir el caso.')
 
 class ChoiceView(SafeView):
@@ -159,7 +164,7 @@ class DeleteConfirm(SafeView):
   try:
    changed=await self.system.delete_ticket(i.user,self.rid)
    with suppress(discord.NotFound):
-    await reply(i,'Canal eliminado. Su transcripción y pruebas siguen en Tickets cerrados.' if changed else 'El canal ya estaba eliminado; su archivo se conserva.')
+    await reply(i,'Canal eliminado y retirado de las listas. Se conserva una copia interna de respaldo.' if changed else 'El canal ya estaba eliminado; su archivo se conserva.')
   except (ValueError,discord.HTTPException) as error:
    await reply(i,str(error) if isinstance(error,ValueError) else 'Discord no confirmó la eliminación. El caso sigue registrado para revisión.')
  @discord.ui.button(label='Cancelar',style=discord.ButtonStyle.secondary)

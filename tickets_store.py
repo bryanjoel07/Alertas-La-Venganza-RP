@@ -107,7 +107,7 @@ class TicketStore:
   with self.db() as db:
    r=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
    if not r:raise ValueError('Ticket no encontrado.')
-   if r['deleted_at']:raise ValueError('El canal fue eliminado. Su transcripción y pruebas siguen disponibles en Tickets cerrados.')
+   if r['deleted_at']:raise ValueError('El canal fue eliminado y ya no figura en las listas de tickets.')
    if status=='cerrado' and r['status']=='cerrado':raise ValueError('El ticket ya está cerrado.')
    if r['status']=='cerrado' and status!='en_atencion':raise ValueError('Primero reabre el ticket.')
    if r['status'] in ('creando','fallido'):raise ValueError('La creación de este ticket no ha terminado.')
