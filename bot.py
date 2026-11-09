@@ -29,6 +29,7 @@ from streamer_panel import StreamerPanel
 from server_health import OriginalPanel
 from obscenities import ObscenityFilter
 from settings_panel import SettingsPanel
+from recruitment_survey import survey_recruitment
 from daily_up import announce_daily_up,daily_up_embed
 from economy import Economy
 from profiles_hub import ProfileTree
@@ -1524,6 +1525,12 @@ async def on_raw_bulk_message_delete(payload):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    if not getattr(client,'_recruitment_survey_started',False):
+        client._recruitment_survey_started=True
+        async def inspect_recruitment():
+            try:await survey_recruitment(client,DB_PATH,GUILD_ID)
+            except Exception:log.exception('RECRUIT_SURVEY failed; existing recruitment unchanged')
+        asyncio.create_task(inspect_recruitment(),name='recruitment-source-inventory')
     try:
         await client.changes.tracked("REPAIR_STAFF_ACCESS_REQUEST_ID", "Restaurar accesos de Staff",
             lambda: repair_staff_command_access(client, GUILD_ID, DB_PATH))
