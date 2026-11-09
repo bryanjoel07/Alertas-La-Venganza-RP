@@ -30,6 +30,7 @@ PR=ZoneInfo('America/Puerto_Rico')
 HEAD_STAFF=1567253212937846935
 ESCALATE_SECONDS=24*3600
 PLAYER_NOTICE_COOLDOWN=15*60
+PLAYER_SEARCH_PAGE_SIZE=5
 NIGHT_NOTICE='🌙 Recibimos tu ticket, bro. El equipo te responde cuando esté disponible.'
 STATE_LABELS={'creando':'Preparando','nuevo':'Nuevo','en_atencion':'En atención','esperando_jugador':'Esperando al jugador',
  'resuelto':'Resuelto','cerrado':'Cerrado','fallido':'Creación fallida'}
@@ -368,41 +369,88 @@ class TicketSystem:
   log.info('TICKETS player_notice ticket=%s kind=%s state=sent',rid,kind)
   return True
  async def escalate(self,rid,now):
+  return await self.notify_staff(rid,'escalation',now)
+ async def notify_urgent(self,rid,now=None):
+  return await self.notify_staff(rid,'urgent',int(time.time()) if now is None else now)
+ async def notify_staff(self,rid,kind,now):
   async with self.lock:
    row=self.store.get(rid)
-   if not row or row.get('deleted_at') or row['status'] not in ('nuevo','en_atencion') or json.loads(row['form']).get('selftest'):return False
-   since=row.get('staff_wait_since')
-   if since is None or now-since<ESCALATE_SECONDS:return False
+   if not row or row.get('deleted_at') or row['status'] in ('creando','fallido','cerrado') or json.loads(row['form']).get('selftest'):return False
+   if kind=='urgent':
+    if row['priority']!='urgente':return False
+    event=self.store.priority_event(rid)
+    episode=str(event['id']) if event else f"existing:{row['id']}:{row['created']}"
+    reason=event['detail'].partition(':')[2].strip() if event else ''
+    text='marcaron este ticket como **urgente**. ¿Pueden revisarlo cuanto antes?'
+    if reason:text+='\nMotivo: '+discord.utils.escape_markdown(reason)[:600]
+   elif kind=='escalation':
+    since=row.get('staff_wait_since')
+    if row['status'] not in ('nuevo','en_atencion') or since is None or now-since<ESCALATE_SECONDS:return False
+    recent=self.store.notice(rid,'urgent')
+    if recent and recent['state']=='sent' and now-recent['attempted']<PLAYER_NOTICE_COOLDOWN:return False
+    episode=str(since)
+    text='este ticket lleva más de 24 horas esperando una respuesta. ¿Pueden revisarlo?'
+   else:raise ValueError('Aviso de staff no válido.')
    channel=await self.channel(row)
    if channel.permissions_for(channel.guild.default_role).view_channel:raise ValueError('El aviso requiere un ticket privado.')
    roles=escalation_roles(channel.guild,row,channel)
    if not roles:
-    log.warning('TICKETS escalation_no_recipient ticket=%s reserved=%s',rid,row['department']=='staff');return False
-   if not self.store.reserve_notice(rid,'escalation',since,now=now):return False
+    log.warning('TICKETS staff_notice_no_recipient ticket=%s kind=%s reserved=%s',rid,kind,row['department']=='staff');return False
+   if not self.store.reserve_notice(rid,kind,episode,now=now):return False
    mentions=' '.join(f'<@&{r.id}>' for r in roles)
    try:
-    notice=await channel.send(f"🚨 {mentions} este ticket lleva más de 24 horas esperando una respuesta. ¿Pueden revisarlo?",
+    notice=await channel.send(f"🚨 {mentions} {text}",
       allowed_mentions=discord.AllowedMentions(roles=roles,users=False,everyone=False))
    except discord.HTTPException:
-    await self.call('finish_notice',rid,'escalation',since,'failed');raise
-   await self.call('finish_notice',rid,'escalation',since,'sent',notice.id)
-   await self.record(rid,self.bot.user.id,'avisar_encargado','24 horas esperando respuesta; aviso privado a responsables autorizados')
-   log.info('TICKETS escalated ticket=%s reserved=%s role_ids=%s',rid,row['department']=='staff',[r.id for r in roles])
+    await self.call('finish_notice',rid,kind,episode,'failed');raise
+   await self.call('finish_notice',rid,kind,episode,'sent',notice.id)
+   await self.record(rid,self.bot.user.id,'avisar_urgente' if kind=='urgent' else 'avisar_encargado',
+     'Aviso inmediato de prioridad urgente' if kind=='urgent' else '24 horas esperando respuesta; aviso privado a responsables autorizados')
+   log.info('TICKETS %s ticket=%s reserved=%s role_ids=%s','urgent_notified' if kind=='urgent' else 'escalated',rid,row['department']=='staff',[r.id for r in roles])
    return True
  async def show_closed(self,i,page=1):
   reviewer=i.user.guild_permissions.administrator or any(is_staff_role(r) for r in i.user.roles) or any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
   await self.show_list(i,own=not reviewer,page=page,closed_only=True)
- async def show_list(self,i,own=False,page=1,closed_only=False):
+ async def show_list(self,i,own=False,page=1,closed_only=False,player=None):
+  if i.guild_id!=self.guild_id:raise ValueError('Consulta los tickets desde La Venganza RP.')
+  if page<1:raise ValueError('Elige una página a partir de 1.')
   if not i.response.is_done():await i.response.defer(ephemeral=True)
   coordinator=any({r.id for r in i.user.roles}&route_roles(self.store,department) for department in DEPARTMENTS)
   if not own and not (i.user.guild_permissions.administrator or any(is_staff_role(r) for r in i.user.roles) or coordinator):raise ValueError('Panel reservado para el staff.')
   # Fetch beyond one department then filter BEFORE displaying anything, including statistics.
-  all_rows=await self.call('list',owner=i.user.id if own else None,limit=10000)
-  candidates=[r for r in all_rows if (own or can_staff(i.user,r,self.store)) and not r.get('deleted_at') and not json.loads(r['form']).get('selftest') and (not closed_only or r['status']=='cerrado')]
+  if player is not None and own:raise ValueError('La búsqueda por jugador es solo para el staff.')
+  owner=player.id if player is not None else i.user.id if own else None
+  limit=-1 if player is not None else 10000
+  all_rows=await self.call('list',owner=owner,limit=limit)
+  def allowed(r):
+   return (own or can_staff(i.user,r,self.store)) and not r.get('deleted_at') and not json.loads(r['form']).get('selftest') and (not closed_only or r['status']=='cerrado') and (player is None or r['status'] not in ('creando','fallido'))
+  candidates=[r for r in all_rows if allowed(r)]
   channels={}
   if any(r['channel'] for r in candidates):
    guild=self.bot.get_guild(self.guild_id)
    channels={c.id:c for c in await guild.fetch_channels() if isinstance(c,discord.TextChannel)}
+  if player is not None:
+   async with self.lock:
+    # Recheck after fetching channels and keep transfers/deletions out while rendering the private summary.
+    candidates=[r for r in await self.call('list',owner=owner,limit=limit) if allowed(r)]
+    visible=sorted((r for r in candidates if listed_ticket(r,channels,closed_only)),key=lambda r:(r['status']=='cerrado',-r['id']))
+    rows=visible[(page-1)*PLAYER_SEARCH_PAGE_SIZE:page*PLAYER_SEARCH_PAGE_SIZE]
+    embed=discord.Embed(title='🔎 Tickets del jugador',color=0xD60000,
+      description=f"Jugador: <@{player.id}> · Tickets que puedes ver: **{len(visible)}**"+('' if rows else '\nNo hay tickets para mostrar en esta página.'))
+    for row in rows:
+     subject=discord.utils.escape_markdown(row['subject']).replace('\n',' ')[:120]
+     solution=discord.utils.escape_markdown(row['resolution'] or 'Todavía sin solución.').replace('\n',' ')
+     if len(solution)>500:solution=solution[:497]+'…'
+     responsible=f"<@{row['assignee']}>" if row['assignee'] else 'Sin asignar'
+     attended=await self.call('attended_by',row['id'],self.bot.user.id)
+     value=f"**Asunto:** {subject}\n**Responsable:** {responsible}"
+     if attended and attended!=row['assignee']:value+=f'\n**Atendió:** <@{attended}>'
+     value+=f"\n**Abierto:** <t:{row['created']}:d> · <#{row['channel']}>\n**Solución:** {solution}"
+     embed.add_field(name=f"#{row['id']} · {DEPARTMENTS[row['department']][1]} · {STATE_LABELS.get(row['status'],row['status'])}",value=value,inline=False)
+    embed.set_footer(text=f'Página {page} · /ticket buscar jugador:{player.id} pagina:{page+1}')
+    view=discord.ui.View(timeout=180)
+    if rows:view.add_item(CasePicker(self,rows,True))
+   return await reply(i,embed=embed,view=view)
   visible=[r for r in candidates if listed_ticket(r,channels,closed_only)]
   visible=sorted(visible,key=lambda r:(r['status']=='cerrado',-r['id']))
   rows=visible[(page-1)*25:page*25]
@@ -592,9 +640,7 @@ class TicketSystem:
    async def change_priority(click,value):
     parts=value.split(':',1)
     if len(parts)!=2 or parts[0].strip() not in ('normal','alta','urgente') or not parts[1].strip():raise ValueError('Escribe normal, alta o urgente, seguido de dos puntos y un motivo.')
-    self.authorize(click.user,self.store.get(rid),staff=True)
-    await self.call('update',rid,priority=parts[0].strip());await self.record(rid,click.user.id,'prioridad',value)
-    await self.refresh(self.store.get(rid));await reply(click,'Prioridad registrada.')
+    await self.change_priority(click,rid,parts[0].strip(),parts[1].strip())
    return await i.response.send_modal(TextForm('Cambiar prioridad','Ejemplo: alta: problema de acceso',change_priority))
   if action=='rate':
    if i.user.id!=row['owner'] or row['status']!='cerrado':raise ValueError('Solo el jugador que abrió el ticket puede dejar su opinión cuando esté cerrado.')
@@ -613,6 +659,22 @@ class TicketSystem:
    files=await self.call('files',rid)
    lines=[f"**{n+1}.** {discord.utils.escape_markdown(f['filename'])[:100]} · {f['state']} · ID `{f['attachment']}`" for n,f in enumerate(files)]
    return await reply(i,('\n'.join(lines)[:1700] or 'Todavía no hay archivos adjuntos.')+'\nDescarga una copia con `/ticket archivo` indicando el ID del archivo.')
+ async def change_priority(self,i,rid,priority,reason):
+  if i.guild_id!=self.guild_id:raise ValueError('Cambia la prioridad desde La Venganza RP.')
+  async with self.lock:
+   row=self.store.get(rid)
+   if not row:raise ValueError('Ese ticket ya no está disponible.')
+   self.authorize(i.user,row,staff=True)
+   changed=await self.call('set_priority',rid,priority,i.user.id,reason)
+   await self.refresh(self.store.get(rid))
+  text='Prioridad guardada.' if changed else 'El ticket ya tiene esa prioridad.'
+  if priority=='urgente':
+   try:
+    if await self.notify_urgent(rid):text+=' Ya avisé a los encargados.'
+   except discord.HTTPException:
+    log.warning('TICKETS urgent_notice_pending ticket=%s',rid)
+    text+=' No pude mandar el aviso ahora; volveré a intentarlo.'
+  await reply(i,text)
  async def submit_rating(self,i,rid,score,comment):
   async with self.lock:
    row=self.store.get(rid)
@@ -775,6 +837,12 @@ class TicketSystem:
   log.info('TICKETS followup_ready escalation_hours=24 normal_role_ids=%s reserved_admin_role_ids=%s overnight=00:00-08:00 timezone=America/Puerto_Rico dm_cooldown_minutes=15 rating_stars=1-5 optional_comment=True',
     [r.id for r in escalation_roles(guild,{'department':'soporte'},panel)],
     [r.id for r in escalation_roles(guild,{'department':'staff'},panel)])
+  registered=await self.bot.tree.fetch_commands(guild=discord.Object(id=self.guild_id))
+  ticket_command=next((c.to_dict() for c in registered if c.name=='ticket'),{})
+  search=next((c for c in ticket_command.get('options',[]) if c['name']=='buscar'),{})
+  if not any(o['name']=='jugador' and o.get('required') and o['type']==6 for o in search.get('options',[])):
+   raise RuntimeError('Discord no confirmó /ticket buscar jugador')
+  log.info('TICKETS search_command_verified command=/ticket buscar jugador page_size=%s private=True per_case_access=True urgency_immediate=True',PLAYER_SEARCH_PAGE_SIZE)
   for department,questions in FORMS.items():
    modal=OpenForm(self,department)
    payload=modal.to_dict()
@@ -830,6 +898,7 @@ class TicketSystem:
   for row in await self.call('list',limit=10000):
    if row['status'] in ('creando','fallido','cerrado') or row.get('deleted_at') or json.loads(row['form']).get('selftest'):continue
    try:
+    if row['priority']=='urgente':await self.notify_urgent(row['id'],now)
     await self.escalate(row['id'],now)
     # A reply arriving during the cooldown is delivered later if the player has not answered it.
     await self.notify_player(row['id'],'reply')
@@ -986,6 +1055,10 @@ class TicketSystem:
   async def closed(i:discord.Interaction,pagina:app_commands.Range[int,1,1000000]=1):await self.show_closed(i,pagina)
   @self.group.command(name='gestion',description='Panel privado de responsables, pendientes y atención')
   async def dashboard(i:discord.Interaction,pagina:app_commands.Range[int,1,1000000]=1):await self.show_list(i,False,pagina)
+  @self.group.command(name='buscar',description='Buscar los tickets de un jugador que puedes atender')
+  @app_commands.describe(jugador='El jugador cuyos tickets quieres consultar',pagina='Página del historial')
+  async def search(i:discord.Interaction,jugador:discord.User,pagina:app_commands.Range[int,1,1000000]=1):
+   await self.show_list(i,page=pagina,player=jugador)
   @self.group.command(name='acceso',description='Abrir un ticket como revisor autorizado')
   async def access(i:discord.Interaction,numero:int):
    await i.response.defer(ephemeral=True)

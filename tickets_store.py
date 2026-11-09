@@ -40,6 +40,7 @@ class TicketStore:
        resolution TEXT,warning_at INTEGER,reminded_at INTEGER,rating INTEGER,rating_comment TEXT,transcript TEXT,archive_state TEXT,
        excluded INTEGER,purchase_id TEXT)''',
     "CREATE UNIQUE INDEX IF NOT EXISTS lv_ticket_duplicate ON lv_tickets(owner,department) WHERE status NOT IN ('cerrado','fallido')",
+    'CREATE INDEX IF NOT EXISTS lv_ticket_owner_history ON lv_tickets(owner,id DESC)',
     '''CREATE TABLE IF NOT EXISTS lv_ticket_events(id INTEGER PRIMARY KEY,ticket INTEGER NOT NULL REFERENCES lv_tickets(id),actor INTEGER NOT NULL,
        action TEXT NOT NULL,detail TEXT NOT NULL,created INTEGER NOT NULL)''',
     '''CREATE TABLE IF NOT EXISTS lv_ticket_people(ticket INTEGER NOT NULL REFERENCES lv_tickets(id),user INTEGER NOT NULL,
@@ -102,6 +103,29 @@ class TicketStore:
   allowed={'channel','control_message','status','assignee','priority','resolution','warning_at','reminded_at','closed','transcript','archive_state','department','deletion_requested','deletion_actor'}
   if not fields or not set(fields)<=allowed:raise ValueError('Actualización no válida')
   with self.db() as db:db.execute('UPDATE lv_tickets SET '+','.join(k+'=?' for k in fields)+',updated=? WHERE id=?',(*fields.values(),int(time.time()),rid))
+ def set_priority(self,rid,priority,actor,reason):
+  if priority not in ('normal','alta','urgente') or not reason.strip():raise ValueError('Elige normal, alta o urgente y cuéntanos por qué.')
+  with self.db() as db:
+   row=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
+   if not row or row['deleted_at'] or row['status'] in ('creando','fallido','cerrado'):raise ValueError('Solo puedes cambiar la prioridad de un ticket abierto.')
+   if row['priority']==priority:return False
+   db.execute('UPDATE lv_tickets SET priority=?,updated=? WHERE id=?',(priority,int(time.time()),rid))
+   self.event(db,rid,actor,'prioridad',f'{priority}: {reason.strip()}')
+   return True
+ def priority_event(self,rid):
+  with self.db() as db:
+   row=db.execute("SELECT * FROM lv_ticket_events WHERE ticket=? AND action='prioridad' ORDER BY id DESC LIMIT 1",(rid,)).fetchone()
+   return dict(row) if row else None
+ def attended_by(self,rid,bot_id):
+  with self.db() as db:
+   row=db.execute('SELECT owner,last_staff_message FROM lv_tickets WHERE id=?',(rid,)).fetchone()
+   if not row:return None
+   message=db.execute('SELECT author FROM lv_ticket_messages WHERE ticket=? AND message=? AND author NOT IN (?,?)',
+     (rid,row['last_staff_message'],row['owner'],bot_id)).fetchone()
+   if message:return message[0]
+   event=db.execute("SELECT actor FROM lv_ticket_events WHERE ticket=? AND action IN ('resuelto','esperando_jugador','cerrado') AND actor NOT IN (?,?) ORDER BY id DESC LIMIT 1",
+     (rid,row['owner'],bot_id)).fetchone()
+   return event[0] if event else None
  def claim(self,rid,actor):
   with self.db() as db:
    r=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
@@ -169,6 +193,10 @@ class TicketStore:
  def finish_notice(self,rid,kind,episode,state,message=None):
   with self.db() as db:db.execute('UPDATE lv_ticket_notices SET state=?,message=? WHERE ticket=? AND kind=? AND episode=?',
       (state,message,rid,kind,str(episode)))
+ def notice(self,rid,kind):
+  with self.db() as db:
+   row=db.execute('SELECT * FROM lv_ticket_notices WHERE ticket=? AND kind=?',(rid,kind)).fetchone()
+   return dict(row) if row else None
  def has_message(self,rid,message):
   with self.db() as db:return db.execute('SELECT 1 FROM lv_ticket_messages WHERE ticket=? AND message=?',(rid,message)).fetchone() is not None
  def people(self,rid):

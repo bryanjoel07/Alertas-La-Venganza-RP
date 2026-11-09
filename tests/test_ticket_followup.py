@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime,timezone
 from pathlib import Path
@@ -219,6 +220,97 @@ class FollowupTests(unittest.IsolatedAsyncioTestCase):
   self.assertIsNone(self.store.get(waiting)['staff_wait_since'])
   self.assertIsNone(self.store.get(self.rid)['last_staff_message'])
   self.assertEqual(len(self.store.list()),3)
+
+ def use_staff(self,admin=False):
+  self.i.user=SimpleNamespace(id=5,guild=self.guild,bot=False,roles=[self.admin if admin else self.support],guild_permissions=discord.Permissions(administrator=admin))
+  self.system.refresh=AsyncMock()
+
+ async def test_priority_button_alerts_immediately_and_not_again_for_the_same_urgent_period(self):
+  self.use_staff()
+  await self.system.action(self.i,self.rid,'priority')
+  modal=self.i.response.send_modal.call_args.args[0];modal.value._value='urgente: Nadie puede entrar'
+  with patch('tickets.time.time',return_value=2000):await modal.on_submit(self.i)
+  self.assertEqual(self.store.get(self.rid)['priority'],'urgente')
+  self.channel.send.assert_awaited_once()
+  args=self.channel.send.call_args
+  self.assertIn('urgente',args.args[0]);self.assertIn('Nadie puede entrar',args.args[0]);self.assertNotIn('@everyone',args.args[0])
+  self.assertEqual([r.id for r in args.kwargs['allowed_mentions'].roles],[HEAD_STAFF])
+  with patch('tickets.time.time',return_value=2100):await modal.on_submit(self.i)
+  self.channel.send.assert_awaited_once()
+  self.assertEqual(len([e for e in self.store.events(self.rid) if e['action']=='prioridad']),1)
+  restarted=TicketSystem(self.bot,self.store.path,10);restarted.store.initialize()
+  self.assertFalse(await restarted.notify_urgent(self.rid,3000))
+  with patch('tickets.time.time',return_value=4000):
+   await self.system.change_priority(self.i,self.rid,'alta','Se puede entrar de nuevo')
+   await self.system.change_priority(self.i,self.rid,'urgente','Volvió el problema')
+  self.assertEqual(self.channel.send.await_count,2)
+
+ async def test_reserved_urgent_alert_only_mentions_actual_administrators(self):
+  self.store.transfer(self.rid,'staff',self.admin.id,'Solo administradores')
+  self.store.config('route:staff',json.dumps([HEAD_STAFF,self.support.id]))
+  self.use_staff(admin=True)
+  with patch('tickets.time.time',return_value=2000):await self.system.change_priority(self.i,self.rid,'urgente','Revisar hoy')
+  args=self.channel.send.call_args
+  self.assertEqual([r.id for r in args.kwargs['allowed_mentions'].roles],[self.admin.id])
+  self.assertNotIn(str(HEAD_STAFF),args.args[0]);self.assertFalse(args.kwargs['allowed_mentions'].everyone)
+
+ async def test_priority_submission_rechecks_permissions_and_closed_state(self):
+  self.use_staff();await self.system.action(self.i,self.rid,'priority')
+  modal=self.i.response.send_modal.call_args.args[0];modal.value._value='urgente: Revisar'
+  self.i.user=self.owner
+  await modal.on_submit(self.i)
+  self.assertEqual(self.store.get(self.rid)['priority'],'normal');self.channel.send.assert_not_awaited()
+  self.use_staff();self.store.transition(self.rid,'cerrado',5,'Ya está')
+  await modal.on_submit(self.i)
+  self.assertEqual(self.store.get(self.rid)['priority'],'normal');self.channel.send.assert_not_awaited()
+  self.system.refresh.assert_not_awaited()
+
+ async def test_urgent_failure_keeps_priority_and_maintenance_retries_without_waiting_24_hours(self):
+  self.use_staff()
+  self.channel.send.side_effect=discord.HTTPException(SimpleNamespace(status=503,reason='Unavailable'),'later')
+  with patch('tickets.time.time',return_value=2000),self.assertLogs('LaVenganzaRP.tickets',level='WARNING'):
+   await self.system.change_priority(self.i,self.rid,'urgente','No carga')
+  self.assertEqual(self.store.get(self.rid)['priority'],'urgente')
+  self.assertEqual(self.store.notice(self.rid,'urgent')['state'],'failed')
+  self.assertIn('volveré a intentarlo',self.i.response.send_message.call_args.args[0])
+  self.channel.send.side_effect=None
+  self.system.maintain_ticket=AsyncMock()
+  with patch('tickets.time.time',return_value=2001):await self.system.maintenance()
+  self.assertEqual(self.channel.send.await_count,1)
+  with patch('tickets.time.time',return_value=2900):await self.system.maintenance()
+  self.assertEqual(self.channel.send.await_count,2);self.assertEqual(self.store.notice(self.rid,'urgent')['state'],'sent')
+
+ async def test_parallel_urgent_changes_send_one_alert_with_priority_durably_saved_first(self):
+  self.use_staff()
+  async def send(*args,**kwargs):
+   self.assertEqual(self.store.get(self.rid)['priority'],'urgente')
+   self.assertEqual(self.store.priority_event(self.rid)['actor'],5)
+   return SimpleNamespace(id=700)
+  self.channel.send.side_effect=send
+  with patch('tickets.time.time',return_value=2000):
+   await asyncio.gather(self.system.change_priority(self.i,self.rid,'urgente','Revisar'),self.system.change_priority(self.i,self.rid,'urgente','Revisar'))
+  self.channel.send.assert_awaited_once()
+
+ async def test_urgent_notice_avoids_simultaneous_24_hour_ping_but_keeps_later_reminder(self):
+  self.use_staff();self.system.maintain_ticket=AsyncMock()
+  with patch('tickets.time.time',return_value=87400):
+   await self.system.change_priority(self.i,self.rid,'urgente','Pendiente')
+   await self.system.maintenance()
+  self.assertEqual(self.channel.send.await_count,1)
+  with patch('tickets.time.time',return_value=88300):await self.system.maintenance()
+  self.assertEqual(self.channel.send.await_count,2)
+  self.assertIn('24 horas',self.channel.send.call_args.args[0])
+
+ async def test_waiting_player_can_be_marked_urgent_but_closed_deleted_tests_cannot_notify(self):
+  self.use_staff();self.store.transition(self.rid,'esperando_jugador',5,'Pruebas')
+  with patch('tickets.time.time',return_value=2000):await self.system.change_priority(self.i,self.rid,'urgente','Revisar antes')
+  self.channel.send.assert_awaited_once()
+  self.store.transition(self.rid,'cerrado',5,'Solucionado');self.store.mark_deleted(self.rid,5)
+  self.assertFalse(await self.system.notify_urgent(self.rid,3000))
+  rid=self.store.create(2,'staff','Prueba',{'selftest':'hidden'},now=1000)
+  self.store.update(rid,status='nuevo',channel=101)
+  self.store.set_priority(rid,'urgente',5,'Prueba')
+  self.assertFalse(await self.system.notify_urgent(rid,3000));self.channel.send.assert_awaited_once()
 
 
 class OvernightTests(unittest.TestCase):

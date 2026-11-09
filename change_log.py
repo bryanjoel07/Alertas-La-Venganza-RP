@@ -13,10 +13,10 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='advanced-tickets-v2.2'
-SUMMARY='Aviso privado al encargado después de 24 horas esperando respuesta, reportes contra staff solo a administradores; recepción de madrugada en hora de Puerto Rico; mensajes privados al reclamar y responder sin avisar por cada mensaje; valoración de 1 a 5 estrellas con comentario opcional. Los botones del ticket y los accesos existentes se conservan.'
-RESTORE=('Para revertir esta versión: desplegar el commit anterior 27f0174b70838b75a928263535e83891e16e5c0c en Railway. '
-         'Conservar las columnas de seguimiento y la tabla lv_ticket_notices: son aditivas y el código anterior las ignora. La reversión desactiva los nuevos avisos y vuelve al formulario de valoración anterior sin perder opiniones ya guardadas. '
+RELEASE='advanced-tickets-v2.3'
+SUMMARY='Búsqueda privada de tickets por jugador con responsable, atención registrada y solución; permisos comprobados antes de contar y paginar, sin tickets eliminados ni de prueba. Marcar urgente avisa inmediatamente al encargado, o solo administradores en reportes contra staff, con control de duplicados y reintento de avisos fallidos.'
+RESTORE=('Para revertir esta versión: desplegar el commit anterior 67b4dcce78d5dbfdd1cce876b31859776d6f0db8 en Railway. '
+         'La reversión retira /ticket buscar y los avisos inmediatos de urgencia, manteniendo los avisos de 24 horas, los privados y las estrellas de la versión anterior. Conservar /data, los eventos de prioridad y lv_ticket_notices; el índice lv_ticket_owner_history es aditivo y puede conservarse. '
          'Antes de revertir, exportar los archivos de tickets eliminados con esta versión. Un canal eliminado no recupera su historial en Discord; su transcripción y pruebas sí se conservan. '
          'Primero desactivar TICKETS_ENABLED para detener nuevas operaciones; conservar /data y SQLite, incluyendo pruebas. Los canales de tickets ya creados deben conservarse. Volver al código anterior no requiere borrar compras ni saldos. '
          'Para cambios de Discord: descargar /cambios detalle, comparar antes/después y restaurar solamente los campos autorizados por ID. '

@@ -27,6 +27,7 @@ Valorar abre un formulario con una selección de 1 a 5 estrellas y un comentario
 Comandos principales:
 
 - `/ticket mis`, `/ticket cerrados` y `/ticket gestion`: listas paginadas. La consulta de cerrados está únicamente en la categoría Tickets Cerrados y en `/ticket cerrados`. El panel de entrada no incluye ese botón. Las listas excluyen todos los casos de prueba y eliminados y comprueban que exista el canal; la lista de cerrados solo admite estado cerrado. Los datos reservados se filtran antes de calcular estadísticas.
+- `/ticket buscar jugador:@nombre pagina:1`: historial privado para el staff, con cinco casos por página, asunto, estado, responsable, quién atendió cuando está registrado y solución. Incluye abiertos y cerrados que conservan su canal. Cada caso se filtra por la autorización actual del revisor antes de contar o paginar; se excluyen eliminados, ausentes, de prueba y creaciones incompletas. Un encargado de un departamento solo ve los casos que puede atender; los reportes contra staff siguen reservados a administradores. Elegir un caso vuelve a comprobar acceso y existencia. Los resúmenes largos se recortan y el caso conserva el detalle completo. Consultar la lista no cambia permisos.
 - `/ticket acceso`, `/ticket estado`, `/ticket transferir`, `/ticket participante`.
 - `/ticket nota`, `/ticket notas`, `/ticket historial`.
 - `/ticket transcripcion` y `/ticket archivo` descargan copias privadas tras verificar de nuevo la autorización.
@@ -36,6 +37,8 @@ Comandos principales:
 - `/ticket recuperar`: concilia creaciones y archivos interrumpidos. Una creación incierta nunca genera otro canal automáticamente. Tras revisar la auditoría y esperar dos minutos, un administrador puede cancelar solo la reserva con `cancelar_reserva:true` para permitir una nueva solicitud, sin borrar canales.
 
 Estados: Nuevo → En atención → Esperando al jugador → Resuelto → Cerrado. Cada actuación conserva actor, fecha y motivo. Prioridades: normal, alta o urgente, con justificación.
+
+El botón **Prioridad** conserva el formulario actual. Al cambiar a **urgente**, se guarda primero la prioridad y su motivo y se avisa inmediatamente a los mismos encargados del aviso de 24 horas dentro del ticket privado. En reportes contra staff solo se menciona a roles con Administrador de Discord. Repetir urgente no vuelve a avisar; bajar la prioridad y volver a subirla inicia otro aviso. La entrega se guarda en SQLite para no duplicarla después de reiniciar. Si Discord falla, el mantenimiento puede reintentar después de 15 minutos mientras el caso siga abierto y urgente. No se envía otro aviso de 24 horas durante los 15 minutos posteriores a una alerta urgente entregada; después continúa el seguimiento pendiente. No hay nuevos botones dentro del ticket.
 
 Avisos: recordatorio tras 6 horas pendientes. Los casos esperando al jugador reciben advertencia después de 72 horas y se archivan tras otras 24 horas sin respuesta. Responder cancela el cierre pendiente. Los resueltos no se cierran automáticamente sin aviso. No se usa @everyone; la apertura avisa a los roles encargados dentro del canal privado, y los recordatorios se limitan al autor o responsable.
 
@@ -59,6 +62,6 @@ Las acciones de tickets tienen su propio historial. Las creaciones, movimientos 
 
 El nuevo panel se publica y fija en el canal indicado. Los paneles y casos de otros bots no se eliminan ni se modifican: los casos anteriores deben cerrarse desde sus controles originales. Este bot solo administra canales con sus propios registros y la marca `lv-ticket:<número>`.
 
-Para pausar, poner `TICKETS_ENABLED=0` en Railway; se conserva toda la información. Para volver al código anterior desplegar `a85b9bdc5f9564abfcd57d5463fb94508d1768cc`, conservando `/data` y SQLite. No restaurar una base vieja sobre la actual: se perderían actuaciones nuevas. Conservar los canales ya creados y sus IDs. No modificar los cuatro roles protegidos para recuperar tickets.
+Para pausar, poner `TICKETS_ENABLED=0` en Railway; se conserva toda la información. Para volver al código anterior desplegar `67b4dcce78d5dbfdd1cce876b31859776d6f0db8`, conservando `/data` y SQLite. No restaurar una base vieja sobre la actual: se perderían actuaciones nuevas. Conservar los canales ya creados y sus IDs. No modificar los cuatro roles protegidos para recuperar tickets.
 
 `TICKETS_INSTALL_REQUEST_ID` identifica la instalación en el registro. `TICKETS_SELFTEST_REQUEST_ID` activa una única verificación privada con dos casos del bot, excluidos de las estadísticas de atención. Verifica privacidad, notas, respaldo real de adjuntos, cierre, reapertura, transferencia y una copia/restauración en Drive si los respaldos automáticos están habilitados. Quitar estas dos variables tras verificar; mantener `TICKETS_ENABLED=1`.
