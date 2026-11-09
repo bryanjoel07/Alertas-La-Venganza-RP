@@ -51,7 +51,7 @@ async def survey_recruitment(bot,path,guild_id):
     source=RecruitmentSource(path);await asyncio.to_thread(source.initialize)
     previous=await asyncio.to_thread(source.report)
     if previous:
-        log.info('RECRUIT_SURVEY cached %s',json.dumps(previous,ensure_ascii=False));return previous
+        log.info('RECRUIT_SURVEY cached channels=%s messages=%s files=%s',len(previous['channels']),sum(previous['counts'].values()),previous['files']);return previous
     guild=bot.get_guild(guild_id)
     if guild is None:raise ValueError('No encuentro La Venganza RP para revisar el reclutamiento.')
     channels=await guild.fetch_channels()

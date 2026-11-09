@@ -13,12 +13,13 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='recruitment-survey-v1'
-SUMMARY='Prepara la transferencia del reclutamiento de staff con una revisión de solo lectura de su categoría y canales existentes. Conserva mensajes y adjuntos disponibles en SQLite y extrae los paneles y etiquetas del formulario anterior, sin modificar canales, roles, permisos o solicitudes ni publicar mensajes.'
-RESTORE=('Para revertir el código de inspección, desplegar 9808f455775f3e81672803dcf753241469ecc1fa y conservar SQLite. No hay cambios de Discord que deshacer. Conservar lv_recruit_surveys, lv_recruit_sources y lv_recruit_source_files; contienen el material de referencia para la transferencia. '
-         'Conservar lv_photo_reward_rates, bot_setting_ops y las claves daily_server_up_* y admin_settings_revision. No borrar daily_server_up_slot ni reanunciar el aviso del mismo día. Los datos adicionales son compatibles y quedan disponibles al volver a esta versión. '
-         'Para deshacer un ajuste, usar el panel con una confirmación nueva o consultar ADMIN_SETTINGS y su recibo antes/después; restaurar únicamente los valores de esa operación respetando cambios posteriores. No recalcular podios ya pagados ni retirar monedas como parte de revertir ajustes. '
-         'Conservar fotos, archivos, votos, compras, saldos, movimientos y la regla vigente de AutoMod. No restaurar una base antigua. '
+RELEASE='staff-recruitment-v1'
+SUMMARY='Transfiere el reclutamiento de staff al bot: formulario en dos pasos con borrador, revisión privada por los siete cargos indicados, mensajes y notas, entrevistas con recordatorio y acceso temporal, decisión confirmada y aviso al candidato. Usa los canales existentes, conserva sus mensajes y sustituye únicamente el panel antiguo respaldado. La administración asigna el rol después; no se modifican roles protegidos ni Ciudadanos.'
+RESTORE=('Para revertir el código, desplegar eb53eb5e623439325da6a752abe4ad6b97109efe conservando SQLite. No restaurar una base antigua. Conservar todas las tablas lv_recruit_* y bot_changes. '
+         'La reversión de código no reconstruye el panel funcional del bot anterior: regenerarlo desde la configuración de ese bot usando el texto respaldado en lv_recruit_sources. '
+         'Antes de retirar esta versión, restaurar los accesos temporales pendientes de lv_recruit_voice comparando before_json/after_json con el permiso actual; no pisar cambios manuales posteriores. '
+         'Los accesos a revisores se registran en RECRUITMENT: restaurar únicamente los tres roles no protegidos y los campos que esa operación cambió, consultando el antes/después. Ver RECLUTAMIENTO.md. '
+         'Conservar ajustes, fotos, podios, archivos, votos, tickets, compras, saldos, movimientos y AutoMod. No reiniciar daily_server_up_slot ni duplicar anuncios o pagos. '
          'Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos. No borrar canales ni mensajes históricos para revertir esta versión.')
 
 

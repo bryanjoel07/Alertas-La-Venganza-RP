@@ -29,7 +29,7 @@ from streamer_panel import StreamerPanel
 from server_health import OriginalPanel
 from obscenities import ObscenityFilter
 from settings_panel import SettingsPanel
-from recruitment_survey import survey_recruitment
+from recruitment import RecruitmentSystem
 from daily_up import announce_daily_up,daily_up_embed
 from economy import Economy
 from profiles_hub import ProfileTree
@@ -229,6 +229,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.photos.group, guild=GUILD)
         self.settings_panel=SettingsPanel(self,DB_PATH,GUILD_ID,CONNECT_URL)
         self.tree.add_command(self.settings_panel.group,guild=GUILD)
+        self.recruitment=RecruitmentSystem(self,DB_PATH,GUILD_ID)
+        self.tree.add_command(self.recruitment.group,guild=GUILD)
         self.lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -254,6 +256,7 @@ class LaVenganzaBot(discord.Client):
         await self.economy.start()
         await self.tickets.start()
         await self.photos.start()
+        await self.recruitment.start()
         await asyncio.to_thread(self.streamers.start)
         self.streamer_panel.start()
         self.obscenity_filter.install.start()
@@ -275,7 +278,7 @@ class LaVenganzaBot(discord.Client):
         self.obscenity_filter.install.cancel()
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -1525,12 +1528,6 @@ async def on_raw_bulk_message_delete(payload):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
-    if not getattr(client,'_recruitment_survey_started',False):
-        client._recruitment_survey_started=True
-        async def inspect_recruitment():
-            try:await survey_recruitment(client,DB_PATH,GUILD_ID)
-            except Exception:log.exception('RECRUIT_SURVEY failed; existing recruitment unchanged')
-        asyncio.create_task(inspect_recruitment(),name='recruitment-source-inventory')
     try:
         await client.changes.tracked("REPAIR_STAFF_ACCESS_REQUEST_ID", "Restaurar accesos de Staff",
             lambda: repair_staff_command_access(client, GUILD_ID, DB_PATH))
