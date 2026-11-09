@@ -20,7 +20,7 @@ Se permite un caso activo por usuario y motivo, hasta tres abiertos y una apertu
 
 ## Gestión
 
-Controles persistentes: Eliminar ticket (solo tras cerrar), Reclamar, Solicitar pruebas, Resolver, Cerrar, Reabrir, Transcripción, Nota interna, Transferir, Prioridad, Participantes, Valorar y Pruebas guardadas.
+Botones del ticket abierto: Reclamar, Resolver, Cerrar y Prioridad. Tras cerrar: Valorar (solo para el autor) y Eliminar ticket (solo staff autorizado). Los mensajes antiguos se actualizan y se retiran sus botones sobrantes. El resto de herramientas del staff se usan por comandos.
 
 Comandos principales:
 

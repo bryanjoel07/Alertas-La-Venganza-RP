@@ -97,7 +97,7 @@ def transcript_html(row,messages,files):
   attachments=''.join('<li>'+html.escape(f['filename'])+' · '+html.escape(f['state'])+' · SHA-256 '+html.escape(f['sha256'] or 'pendiente')+'</li>' for f in files_by_message.get(m['message'],[]))
   entries.append(f"<article><h3>{html.escape(m['name'])} · {m['author']}</h3><small>{html.escape(m['created'])}"+
      (' · ELIMINADO' if m['deleted'] else '')+(' · EDITADO' if m['edited'] else '')+f"</small><pre>{body}</pre><ul>{attachments}</ul></article>")
- return '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Ticket '+str(row['id'])+'</title><style>body{background:#171719;color:#eee;font:16px sans-serif;max-width:900px;margin:auto;padding:24px}article{border-left:3px solid #d60000;padding:12px;margin:16px 0;background:#252529}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#bbb}</style><h1>La Venganza RP · Ticket #'+str(row['id'])+'</h1><p>'+html.escape(row['subject'])+'</p><pre>'+html.escape(json.dumps(json.loads(row['form']),ensure_ascii=False,indent=2))+'</pre><p>Resolución: '+html.escape(row['resolution'] or 'Sin resolución registrada')+'</p>'+''.join(entries)+'</html>'
+ return '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Ticket '+str(row['id'])+'</title><style>body{background:#171719;color:#eee;font:16px sans-serif;max-width:900px;margin:auto;padding:24px}article{border-left:3px solid #d60000;padding:12px;margin:16px 0;background:#252529}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#bbb}</style><h1>La Venganza RP · Ticket #'+str(row['id'])+'</h1><p>'+html.escape(row['subject'])+'</p><pre>'+html.escape(json.dumps(json.loads(row['form']),ensure_ascii=False,indent=2))+'</pre><p>Solución: '+html.escape(row['resolution'] or 'Sin solución registrada')+'</p>'+''.join(entries)+'</html>'
 
 class TicketSystem:
  def __init__(self,bot,path,guild_id):
@@ -142,7 +142,7 @@ class TicketSystem:
    if value:embed.add_field(name=key[:1].upper()+key[1:],value=discord.utils.escape_markdown(value)[:1024],inline=False)
   if row.get('purchase_id'):embed.add_field(name='Compra vinculada',value=f"`{row['purchase_id']}` · Staff puede consultar /ticket compra",inline=False)
   if row.get('deleted_at'):embed.add_field(name='Archivo conservado',value=f"Canal eliminado <t:{row['deleted_at']}:F>. La transcripción y las pruebas siguen disponibles.",inline=False)
-  if row.get('resolution'):embed.add_field(name='Resolución',value=discord.utils.escape_markdown(row['resolution'])[:1024],inline=False)
+  if row.get('resolution'):embed.add_field(name='Solución',value=discord.utils.escape_markdown(row['resolution'])[:1024],inline=False)
   if row['department']=='staff':embed.add_field(name='Privacidad',value='Caso reservado. Los usuarios con Administrador en Discord conservan acceso técnico.',inline=False)
   embed.set_footer(text=f"Autor ID {row['owner']} · Usa los controles del ticket · No compartas contraseñas ni datos de tarjeta")
   return embed
@@ -160,6 +160,24 @@ class TicketSystem:
    if message:await message.edit(embed=self.embed(row),view=TicketControls(row['id'],row['status']=='cerrado'))
    else:message=await channel.send(embed=self.embed(row),view=TicketControls(row['id'],row['status']=='cerrado'),allowed_mentions=discord.AllowedMentions.none())
    await self.call('update',row['id'],control_message=message.id)
+  await self.sync_control_messages(row,channel,message.id)
+ async def sync_control_messages(self,row,channel,control_id):
+  prefix=f"lv:ticket:case:{row['id']}:"
+  kept_closed_notice=False
+  async for previous in channel.history(limit=100):
+   if previous.author.id!=self.bot.user.id or previous.id==control_id:continue
+   ids=[getattr(c,'custom_id','') or '' for r in previous.components for c in r.children]
+   if not any(value.startswith(prefix) for value in ids):continue
+   keep=row['status']=='cerrado' and not kept_closed_notice and previous.content.startswith('🔒 Ticket cerrado.')
+   changes={}
+   content=previous.content.replace('Resolución:','Solución:').replace('El autor puede valorar o solicitar reapertura desde los controles.','El jugador que abrió el ticket puede dejar su opinión con **⭐ Valorar**.')
+   if content!=previous.content:changes['content']=content
+   if keep:
+    kept_closed_notice=True
+    desired=TicketControls(row['id'],True)
+    if ids!=[c.custom_id for c in desired.children] or any(getattr(c,'disabled',False) for r in previous.components for c in r.children):changes['view']=desired
+   else:changes['view']=None
+   if changes:await previous.edit(**changes)
  async def ensure_category(self,guild,closed=False):
   key='closed_category' if closed else 'active_category'
   saved=self.store.config(key)
@@ -369,11 +387,12 @@ class TicketSystem:
   except Exception:
    self.store.update(row['id'],archive_state='pendiente')
    log.exception('TICKETS close_recovery_required id=%s',row['id']);raise
-  await channel.send(f"🔒 Ticket cerrado. Resolución: {discord.utils.escape_markdown(reason)[:1200]}\nTranscripción y pruebas: **{state}**. El staff puede usar **🗑️ Eliminar ticket** con confirmación. El autor puede valorar o solicitar reapertura desde los controles.",
+  await channel.send(f"🔒 Ticket cerrado. Solución: {discord.utils.escape_markdown(reason)[:1200]}\nTranscripción y pruebas: **{state}**. El staff puede usar **🗑️ Eliminar ticket** con confirmación. El jugador que abrió el ticket puede dejar su opinión con **⭐ Valorar**.",
     view=TicketControls(row['id'],True),allowed_mentions=discord.AllowedMentions.none())
+  await self.sync_control_messages(row,channel,self.store.get(row['id'])['control_message'])
   owner=await self.member(channel.guild,row['owner'])
   if owner and not owner.bot:
-   with suppress(discord.Forbidden):await owner.send(f"Tu ticket #{row['id']} de La Venganza RP fue cerrado.\nResolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes valorarlo o reabrirlo en <#{channel.id}>.",allowed_mentions=discord.AllowedMentions.none())
+   with suppress(discord.Forbidden):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes dejar tu opinión con el botón ⭐ Valorar dentro del ticket.",allowed_mentions=discord.AllowedMentions.none())
  async def delete_ticket(self,member,rid):
   async with self.lock:
    row=self.store.get(rid)
@@ -467,10 +486,10 @@ class TicketSystem:
      state='resuelto' if action=='resolve' else 'esperando_jugador'
      await self.call('transition',rid,state,click.user.id,value)
      channel=await self.channel(current)
-     await channel.send(('✅ Resolución propuesta: ' if action=='resolve' else '📎 Información o pruebas solicitadas: ')+discord.utils.escape_markdown(value),allowed_mentions=discord.AllowedMentions.none())
+     await channel.send(('✅ Solución: ' if action=='resolve' else '📎 Información o pruebas solicitadas: ')+discord.utils.escape_markdown(value),allowed_mentions=discord.AllowedMentions.none())
      await self.refresh(self.store.get(rid));await reply(click,'Estado actualizado.')
    return await i.response.send_modal(TextForm({'close':'Cerrar ticket','resolve':'Resolver ticket','wait':'Solicitar información','note':'Nota interna privada','reopen':'Reabrir ticket'}[action],
-      'Motivo o resolución' if action!='note' else 'Nota (solo personal autorizado)',submit))
+      {'close':'¿Por qué cierras el ticket?','resolve':'¿Cuál fue la solución?','wait':'¿Qué necesitas que envíe el jugador?','note':'Nota (solo la ve el staff)','reopen':'¿Por qué quieres volver a abrirlo?'}[action],submit))
   if action=='transfer':
    async def transfer_form(click,value):
     self.authorize(click.user,self.store.get(rid),staff=True)
@@ -488,7 +507,7 @@ class TicketSystem:
     await self.refresh(self.store.get(rid));await reply(click,'Prioridad registrada.')
    return await i.response.send_modal(TextForm('Cambiar prioridad','Ejemplo: alta: problema de acceso',change_priority))
   if action=='rate':
-   if i.user.id!=row['owner'] or row['status']!='cerrado':raise ValueError('Solo el autor puede valorar un ticket cerrado.')
+   if i.user.id!=row['owner'] or row['status']!='cerrado':raise ValueError('Solo el jugador que abrió el ticket puede dejar su opinión cuando esté cerrado.')
    async def rate_form(click,value):
     parts=value.split(':',1)
     try:score=int(parts[0].strip())
@@ -619,7 +638,7 @@ class TicketSystem:
   ids=[getattr(c,'custom_id',None) for r in confirmed.components for c in r.children]
   labels=[option.label for row in confirmed.components for component in row.children for option in getattr(component,'options',[])]
   if 'lv:ticket:department' not in ids or 'lv:ticket:closed' in ids or DEPARTMENTS['faccion'][1] not in labels:raise ValueError('Discord no confirmó el panel de tickets actualizado.')
-  upgraded=0
+  upgraded=0;active_updated=0
   for ticket in self.store.list(limit=10000):
    if ticket.get('deleted_at'):continue
    if ticket['channel'] and ticket['status']=='cerrado':
@@ -639,8 +658,22 @@ class TicketSystem:
       if f"lv:ticket:case:{ticket['id']}:delete" not in buttons:raise ValueError('Discord no confirmó el botón de eliminación')
       upgraded+=1
      except discord.NotFound:log.warning('TICKETS missing_closed_channel id=%s',ticket['id'])
-   elif ticket['department']=='faccion' and ticket['channel']:await self.refresh(ticket)
-  log.info('TICKETS closed_delete_controls_verified upgraded=%s category=%s',upgraded,closed.id)
+   elif ticket['channel'] and ticket['status'] not in ('creando','fallido'):
+    async with self.lock:
+     current=self.store.get(ticket['id'])
+     if current['status']=='cerrado' or current.get('deleted_at'):continue
+     try:
+      await self.refresh(current)
+      case_channel=await self.channel(current)
+      control=await case_channel.fetch_message(self.store.get(current['id'])['control_message'])
+      actions=[getattr(c,'custom_id',None) for r in control.components for c in r.children]
+      expected=[f"lv:ticket:case:{current['id']}:{a}" for a in ('claim','resolve','close','priority')]
+      if actions!=expected:raise RuntimeError('Discord no confirmó los cuatro botones del ticket abierto')
+      active_updated+=1
+      log.info('TICKETS active_controls_verified id=%s channel=%s actions=%s',current['id'],case_channel.id,actions)
+     except discord.NotFound:log.warning('TICKETS missing_active_channel id=%s',current['id'])
+  log.info('TICKETS controls_verified active_updated=%s closed_updated=%s category=%s',active_updated,upgraded,closed.id)
+  log.info('TICKETS controls_layout_verified open=%s closed=%s rating_owner_only=True',[c.item.label for c in TicketControls(0).children],[c.item.label for c in TicketControls(0,True).children])
   for department,questions in FORMS.items():
    modal=OpenForm(self,department)
    payload=modal.to_dict()

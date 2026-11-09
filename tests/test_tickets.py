@@ -141,8 +141,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.store.update(self.rid,status='nuevo',channel=100)
  async def test_buttons_are_persistent_and_all_routes_have_unique_ids(self):
   view=TicketControls(self.rid)
-  self.assertTrue(view.is_persistent());self.assertEqual(len(view.children),12)
-  ids=[c.custom_id for c in view.children];self.assertEqual(len(set(ids)),12)
+  self.assertTrue(view.is_persistent());self.assertEqual(len(view.children),4)
+  ids=[c.custom_id for c in view.children];self.assertEqual(len(set(ids)),4)
   self.assertTrue(TicketPanel(self.system).is_persistent())
   for custom in ids:
    match=TicketAction.__discord_ui_compiled_template__.fullmatch(custom)
@@ -410,3 +410,42 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.store.transition(self.rid,'cerrado',5,'Cerrado otra vez');self.system.store.mark_deleted(self.rid,5)
   await picker.callback(self.i)
   self.system.access.assert_not_awaited();self.system.channel.assert_not_awaited()
+
+
+ async def test_only_four_controls_when_open_and_rating_only_after_close(self):
+  expected=[f'lv:ticket:case:{self.rid}:{action}' for action in ('claim','resolve','close','priority')]
+  self.assertEqual([c.custom_id for c in TicketControls(self.rid).children],expected)
+  self.assertEqual([c.custom_id for c in TicketControls(self.rid,True).children],[f'lv:ticket:case:{self.rid}:rate',f'lv:ticket:case:{self.rid}:delete'])
+  self.assertFalse(TicketControls(self.rid,True,True).children)
+  self.i.response.send_modal=AsyncMock()
+  with self.assertRaisesRegex(ValueError,'cerrado'):await self.system.action(self.i,self.rid,'rate')
+  self.system.store.transition(self.rid,'cerrado',5,'Listo')
+  self.i.user=self.staff
+  with self.assertRaises(ValueError):await self.system.action(self.i,self.rid,'rate')
+  self.i.user=self.owner
+  await self.system.action(self.i,self.rid,'rate')
+  modal=self.i.response.send_modal.call_args.args[0]
+  modal.value._value='5: Me ayudaron rápido'
+  await modal.on_submit(self.i)
+  saved=self.system.store.get(self.rid)
+  self.assertEqual(saved['rating'],5);self.assertEqual(saved['rating_comment'],'Me ayudaron rápido')
+
+ async def test_old_extra_buttons_are_removed_from_open_ticket_messages(self):
+  controls=[SimpleNamespace(custom_id=f'lv:ticket:case:{self.rid}:rate',disabled=True)]
+  old=SimpleNamespace(id=200,author=SimpleNamespace(id=99),components=[SimpleNamespace(children=controls)],content='🔒 Ticket cerrado.',edit=AsyncMock())
+  other=SimpleNamespace(id=201,author=SimpleNamespace(id=88),components=[SimpleNamespace(children=controls)],content='Otro bot',edit=AsyncMock())
+  self.bot.user.id=99;channel=MagicMock()
+  async def history(**kwargs):
+   yield old;yield other
+  channel.history=history
+  await self.system.sync_control_messages(self.system.store.get(self.rid),channel,100)
+  old.edit.assert_awaited_once_with(view=None);other.edit.assert_not_awaited()
+
+ async def test_solution_label_is_used_in_ticket_and_resolve_form(self):
+  self.system.store.update(self.rid,resolution='Ya está arreglado')
+  row=self.system.store.get(self.rid)
+  self.assertIn('Solución',[f.name for f in self.system.embed(row).fields])
+  self.i.user=self.staff;self.i.response.send_modal=AsyncMock()
+  await self.system.action(self.i,self.rid,'resolve')
+  modal=self.i.response.send_modal.call_args.args[0]
+  self.assertEqual(modal.value.label,'¿Cuál fue la solución?')

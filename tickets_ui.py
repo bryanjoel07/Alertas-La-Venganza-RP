@@ -99,11 +99,10 @@ class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticke
 class TicketControls(discord.ui.View):
  def __init__(self,rid,closed=False,deleted=False):
   super().__init__(timeout=None)
-  actions=[action for action in ACTIONS if (action!='delete' or closed) and (not deleted or action in ('transcript','proof','rate'))]
+  actions=[] if deleted else ['rate','delete'] if closed else ['claim','resolve','close','priority']
   for n,action in enumerate(actions):
    item=TicketAction(rid,action)
    item.item.row=n//4
-   item.item.disabled=(closed and action in ('claim','wait','resolve','close','transfer','priority','people')) or (not closed and action in ('reopen','rate'))
    self.add_item(item)
 
 class TextForm(discord.ui.Modal):
