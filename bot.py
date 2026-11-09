@@ -32,6 +32,7 @@ from daily_up import announce_daily_up
 from economy import Economy
 from profiles_hub import ProfileTree
 from server_audit import audit_server
+from server_fixes import fix_high_priorities
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1483,6 +1484,10 @@ async def on_raw_message_delete(payload):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    try:
+        await fix_high_priorities(client, GUILD_ID)
+    except Exception:
+        log.exception("No se pudieron completar los ajustes autorizados de prioridad alta")
     try:
         channel = daily_up_channel()
         log.info("Destino SERVER UP diario 18:30 Puerto Rico: %s (%s); alertas caída/recuperación: %s",
