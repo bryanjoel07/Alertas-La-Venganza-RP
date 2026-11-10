@@ -16,6 +16,7 @@ GUIDE=1564719087798460466
 TAGS={'pendiente':1564715642911981718,'revision':1564715732309250078,'proceso':1564715806330192012,
       'solucionado':1564715869026648237,'cerrado':1564715973465079951,'info':1564718816959660062}
 PORTAL='🐛 REPORTAR UN ERROR | LA VENGANZA RP'
+OLD_PORTAL=1569698524654993449
 log=logging.getLogger('LaVenganzaRP.bugs')
 
 class BugSystem:
@@ -60,50 +61,71 @@ class BugSystem:
         async def snapshot():
             row=await self.call('get',rid) if rid else None
             if row:row={k:v for k,v in row.items() if k!='video'}
-            return dict(forum=FORUM,report=row,portal=await self.call('config','portal'))
+            return dict(forum=FORUM,report=row,portal=await self.call('config','portal'),guide_buttons=await self.call('config','guide_buttons'))
         return await self.bot.changes.tracked('BUG_REPORTS',title,operation,request_id=request,snapshot=snapshot)
     async def ready(self):
         async with self.install_lock:
-            forum=await self.forum();saved=await self.call('config','portal')
-            pin_limited=await self.call('config','pin_limited')=='1'
-            thread=None
-            if saved:
-                try:thread=await self.bot.fetch_channel(int(saved))
-                except discord.NotFound:pass
-            if not thread:
-                thread=next((t for t in (await self.threads(forum)).values() if t.owner_id==self.bot.user.id and t.name==PORTAL),None)
-            async def install():
-                nonlocal thread
-                if thread is None:
-                    embed=discord.Embed(title='🐛 ¿Encontraste un error?',color=RED,description='Repórtalo aquí, bro.\n\n**1.** Completa los datos del problema.\n**2.** Adjunta el video directamente o pega el enlace del clip.\n**3.** Revisa y publica tu reporte.\n\nEl bot guarda tu borrador y crea una publicación con la etiqueta 🔴 Pendiente. Owner, Programador y administradores actualizarán su estado.\n\nNo compartas contraseñas ni datos personales. Un reporte por error; continúa en el mismo si ya lo enviaste.')
-                    result=await forum.create_thread(name=PORTAL,embed=embed,applied_tags=[forum.get_tag(TAGS['info'])],view=buttons('new','mine'),allowed_mentions=NONE,reason='Activar reportes con el bot')
-                    thread=result.thread
-                if thread.parent_id!=FORUM or thread.owner_id!=self.bot.user.id:raise ValueError('El panel guardado no pertenece a este bot en Reportes.')
-                await self.call('config','portal',thread.id)
-                if not thread.flags.pinned:
-                    try:await thread.edit(pinned=True,reason='Panel de reportes solicitado por el dueño')
-                    except discord.HTTPException as exc:
-                        if exc.code!=30047:raise
-                        await self.guide_buttons()
-                        await self.call('config','pin_limited','1')
-                        log.info('BUGS existing_guide_pin_preserved guide=%s controls_added=True',GUIDE)
-            if not thread or (not thread.flags.pinned and not pin_limited):
-                await self.tracked(None,'Instalar panel de reportes de errores','portal-v1',install)
-            verified=await self.bot.fetch_channel(thread.id)
-            if not saved:await self.call('config','portal',thread.id)
-            starter=await verified.fetch_message(verified.id)
-            ids=[c.custom_id for r in starter.components for c in r.children if hasattr(c,'custom_id')]
-            if ids!=['lvbug:new:0','lvbug:mine:0']:raise RuntimeError('No se confirmaron los botones de reportes.')
-            log.info('BUGS ready forum=%s portal=%s original_template_preserved=True clip_upload=True admin_controls=True controls=%s',FORUM,thread.id,ids)
+            await self.forum()
+            await self.tracked(None,'Mantener una sola entrada de Reportes','guide-entry-v2',self.guide_buttons)
+            await self.retire_duplicate_portal()
+            guide=await self.bot.fetch_channel(GUIDE)
+            message=await guide.fetch_message(int(await self.call('config','guide_buttons')))
+            if message.author.id!=self.bot.user.id or self.entry_controls(message)!=['lvbug:new:0','lvbug:mine:0']:
+                raise RuntimeError('No se confirmó el único panel de Reportes.')
+            log.info('BUGS ready forum=%s guide=%s entry_message=%s single_entry=True original_template_preserved=True clip_upload=True admin_controls=True',FORUM,GUIDE,message.id)
+    @staticmethod
+    def entry_controls(message):
+        return [getattr(c,'custom_id',None) for row in message.components for c in row.children]
     async def guide_buttons(self):
         guide=await self.bot.fetch_channel(GUIDE)
         if guide.parent_id!=FORUM:raise ValueError('La plantilla original ya no está en Reportes.')
-        async for message in guide.history(limit=100):
-            ids=[getattr(c,'custom_id',None) for row in message.components for c in row.children]
-            if message.author.id==self.bot.user.id and ids==['lvbug:new:0','lvbug:mine:0']:
-                await self.call('config','guide_buttons',message.id);return
+        found=[]
+        async for message in guide.history(limit=None,oldest_first=True):
+            if message.author.id==self.bot.user.id and self.entry_controls(message)==['lvbug:new:0','lvbug:mine:0']:
+                found.append(message)
+        if found:
+            await self.call('config','guide_buttons',found[0].id)
+            for duplicate in found[1:]:
+                if duplicate.attachments:raise ValueError('Una copia tiene archivos; se conserva para revisión.')
+                async def snapshot():
+                    try:current=await guide.fetch_message(duplicate.id)
+                    except discord.NotFound:return dict(id=duplicate.id,exists=False)
+                    return dict(id=current.id,author=current.author.id,exists=True,content=current.content,embeds=[e.to_dict() for e in current.embeds],components=[c.to_dict() for c in current.components])
+                async def remove():
+                    fresh=await guide.fetch_message(duplicate.id)
+                    if fresh.author.id!=self.bot.user.id or fresh.attachments or self.entry_controls(fresh)!=['lvbug:new:0','lvbug:mine:0']:
+                        raise ValueError('La copia cambió; no se eliminará.')
+                    await fresh.delete()
+                await self.bot.changes.tracked('BUG_GUIDE_DUPLICATES','Retirar mensaje duplicado del bot',remove,request_id=str(duplicate.id),snapshot=snapshot)
+            return
         message=await guide.send('🐛 **Ahora puedes enviar el reporte con el bot, bro.**\nPulsa **Reportar un error**, completa el formulario y adjunta el video o pega su enlace. El bot guardará tu borrador y lo publicará con su estado.',view=buttons('new','mine'),allowed_mentions=NONE)
         await self.call('config','guide_buttons',message.id)
+    async def retire_duplicate_portal(self):
+        if await self.call('config','retired_portal')==str(OLD_PORTAL):return
+        try:thread=await self.bot.fetch_channel(OLD_PORTAL)
+        except discord.NotFound:
+            await self.call('config','retired_portal',OLD_PORTAL);return
+        if thread.parent_id!=FORUM or thread.owner_id!=self.bot.user.id or await self.call('by_thread',OLD_PORTAL):
+            raise ValueError('La publicación extra no es el panel vacío esperado; se conserva.')
+        starter=await thread.fetch_message(thread.id)
+        if starter.author.id!=self.bot.user.id or starter.attachments:
+            raise ValueError('La publicación extra contiene un archivo o cambió de autor; se conserva.')
+        async def snapshot():
+            current=await self.bot.fetch_channel(thread.id)
+            message=await current.fetch_message(current.id)
+            return dict(id=current.id,name=current.name,archived=current.archived,locked=current.locked,
+                message=dict(id=message.id,content=message.content,embeds=[e.to_dict() for e in message.embeds],components=[c.to_dict() for c in message.components]))
+        async def retire():
+            guide_message=await self.call('config','guide_buttons')
+            if thread.archived:await thread.edit(archived=False,locked=False,reason='Actualizar la entrada duplicada antes de archivarla')
+            await starter.edit(content=f'📌 El formulario está en la **plantilla oficial fijada**.\nhttps://discord.com/channels/{self.guild_id}/{GUIDE}/{guide_message}',embed=None,view=None,allowed_mentions=NONE)
+            await thread.edit(name='📁 Acceso anterior · Reportes',archived=True,locked=True,reason='Consolidar la entrada duplicada del bot conservando el historial')
+            await self.call('config','retired_portal',OLD_PORTAL)
+        await self.bot.changes.tracked('BUG_PORTAL_RETIRE','Retirar entrada repetida de Reportes',retire,request_id=str(OLD_PORTAL),snapshot=snapshot)
+        verified=await self.bot.fetch_channel(OLD_PORTAL)
+        root=await verified.fetch_message(verified.id)
+        if root.components or root.embeds or not verified.archived:raise RuntimeError('La entrada repetida no quedó retirada.')
+        log.info('BUGS duplicate_portal_retired thread=%s archived=True controls_removed=True all_history_preserved=True',OLD_PORTAL)
     async def form(self,i,rid=0):
         await self.member(i)
         rid=rid or await self.call('begin',i.user.id);row=await self.call('get',rid)

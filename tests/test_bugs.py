@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock,MagicMock
 import discord
 from bug_store import BugStore,clip_url
 from bug_ui import BugForm
-from bugs import BugSystem,FORUM,TAGS,GUIDE
+from bugs import BugSystem,FORUM,TAGS,GUIDE,OLD_PORTAL,PORTAL
 from tickets_store import PROTECTED
 
 class StoreTests(unittest.TestCase):
@@ -130,3 +130,39 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.system.guide_buttons();await self.system.guide_buttons()
         guide.send.assert_awaited_once();original.edit.assert_not_awaited()
         self.assertEqual(original.content,'PLANTILLA ORIGINAL')
+    async def test_extra_portal_is_archived_without_deleting_thread_or_user_history(self):
+        root=SimpleNamespace(id=OLD_PORTAL,author=self.bot.user,attachments=[],content='Panel anterior',
+            embeds=[discord.Embed(title='🐛 ¿Encontraste un error?')],components=[],edit=AsyncMock())
+        thread=SimpleNamespace(id=OLD_PORTAL,parent_id=FORUM,owner_id=500,name=PORTAL,archived=False,locked=False,
+            fetch_message=AsyncMock(return_value=root),edit=AsyncMock(),delete=AsyncMock())
+        async def edit_root(**kwargs):
+            root.content=kwargs['content'];root.embeds=[];root.components=[]
+        async def edit_thread(**kwargs):thread.archived=True;thread.locked=True
+        root.edit.side_effect=edit_root;thread.edit.side_effect=edit_thread
+        self.bot.fetch_channel=AsyncMock(return_value=thread)
+        snapshots=[]
+        async def tracked(env,title,operation,*,request_id,snapshot):
+            snapshots.append(await snapshot());await operation();snapshots.append(await snapshot())
+        self.bot.changes=SimpleNamespace(tracked=tracked)
+        self.system.store.config('guide_buttons',888)
+        await self.system.retire_duplicate_portal();await self.system.retire_duplicate_portal()
+        thread.delete.assert_not_awaited();root.edit.assert_awaited_once()
+        self.assertFalse(snapshots[0]['archived']);self.assertTrue(snapshots[1]['archived'])
+        self.assertIn(str(GUIDE),root.content)
+    async def test_canonical_ready_never_creates_another_forum_post_even_when_called_twice(self):
+        entry=SimpleNamespace(author=self.bot.user,id=888,components=[SimpleNamespace(children=[SimpleNamespace(custom_id='lvbug:new:0'),SimpleNamespace(custom_id='lvbug:mine:0')])])
+        guide=SimpleNamespace(fetch_message=AsyncMock(return_value=entry))
+        self.bot.fetch_channel=AsyncMock(return_value=guide)
+        self.system.forum=AsyncMock(return_value=self.forum)
+        self.system.guide_buttons=AsyncMock()
+        self.system.retire_duplicate_portal=AsyncMock()
+        async def tracked(rid,title,request,operation):return await operation()
+        self.system.tracked=tracked;self.system.store.config('guide_buttons',888)
+        await self.system.ready();await self.system.ready()
+        self.forum.create_thread.assert_not_called()
+    async def test_cleanup_refuses_a_real_report_even_if_it_has_the_old_portal_id(self):
+        self.system.store.adopt(OLD_PORTAL,1,'Reporte real','Datos','https://example.com/video')
+        thread=SimpleNamespace(parent_id=FORUM,owner_id=500,delete=AsyncMock(),edit=AsyncMock())
+        self.bot.fetch_channel=AsyncMock(return_value=thread)
+        with self.assertRaises(ValueError):await self.system.retire_duplicate_portal()
+        thread.delete.assert_not_awaited();thread.edit.assert_not_awaited()

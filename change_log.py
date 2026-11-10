@@ -14,9 +14,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bug-reports-v1-messages'
-SUMMARY='Reportes de errores integrados en el foro existente 1556488595131466000: panel y botones en la plantilla oficial fijada (Discord limita a un solo pin), formulario de dos pasos, borradores, video adjunto o enlace obligatorio, vista previa y publicación con Pendiente. Owner, Programador y administradores pueden tomar reportes y cambiar estados con motivo e historial. También registra nuevas publicaciones manuales y sincroniza etiquetas; conserva la plantilla oficial y los permisos existentes. Los videos del formulario se guardan en SQLite con hash antes de publicarse y las operaciones pendientes se recuperan.'
-RESTORE=('Para revertir solo los mensajes de error, desplegar c41c05d3942ee532e3a176f7ca116a9f62ee16ea conservando SQLite y /data. Para retirar el sistema completo usar 303a4beb7cb6e61a40491b33417aea8039d1c752 y quitar solo los controles propios identificados por lv_bug_config.portal, lv_bug_config.guide_buttons y lv_bugs.message. Conservar la plantilla oficial, publicaciones, etiquetas y videos; no restaurar un SQLite antiguo ni cambiar roles o permisos.')
+RELEASE='bug-reports-single-entry-v2'
+SUMMARY='Corrige las entradas repetidas de Reportes. Conserva un único panel activo dentro de la plantilla oficial fijada y deja de crear paneles separados. La antigua publicación del bot 1569698524654993449 se convierte en enlace a la plantilla y se archiva conservando toda su conversación. Solo se retiran mensajes de botones duplicados escritos por este bot, sin archivos, con copia previa. Los reportes reales y sus videos no se modifican.'
+RESTORE=('Para revertir el código desplegar c0a5c7d05df44372c605cd61c7b0f3ecbed7c02e conservando SQLite y /data. Para reactivar además el antiguo panel, restaurar su mensaje, archived y locked desde el before de BUG_PORTAL_RETIRE:1569698524654993449 y vaciar lv_bug_config.retired_portal. Eso reintroduce las dos entradas. Los mensajes del bot retirados de la guía pueden recrearse desde BUG_GUIDE_DUPLICATES, con IDs nuevos. No borrar hilos ni restaurar un SQLite antiguo; conservar todos los reportes, videos y la plantilla original.')
 
 
 class Journal:

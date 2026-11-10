@@ -1,6 +1,6 @@
 # Reportes de errores
 
-Foro existente: 1556488595131466000. La plantilla oficial 1564719087798460466, las etiquetas y los permisos se conservan. El bot añade una publicación con «Reportar un error» y «Mis reportes». Como Discord permite un solo hilo fijado, conserva fijada la plantilla oficial y añade también esos botones dentro de ella.
+Foro existente: 1556488595131466000. La plantilla oficial 1564719087798460466, las etiquetas y los permisos se conservan. La única entrada activa está dentro de la plantilla oficial fijada, con «Reportar un error» y «Mis reportes». El antiguo panel separado del bot se convierte en enlace a esa plantilla y se archiva conservando su conversación; no se vuelve a crear al reiniciar.
 
 El formulario tiene dos pasos: ID dentro del juego, título, descripción, pasos y sistema afectado; después frecuencia y clip. Se puede **adjuntar un video MP4, WEBM, MOV o M4V de hasta 25 MB**, o pegar un enlace HTTPS. El enlace es una referencia para revisión del equipo, no una validación automática del contenido del video. La cuenta de Discord se identifica automáticamente. La vista previa avisa que el reporte será público y requiere confirmar antes de publicar. Los borradores sobreviven a reinicios.
 
