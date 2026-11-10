@@ -5,13 +5,14 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock,MagicMock
+from unittest.mock import AsyncMock,MagicMock,patch
 
 import discord
 
 from bug_ui import BugForm
 from bug_store import BugStore
 from bug_uploads import ClipUploads,validate_source
+from bug_limits import MAX_CLIP_BYTES
 import test_bugs as fixtures
 
 DETAILS=fixtures.DETAILS
@@ -45,6 +46,16 @@ class UploadStoreTests(unittest.TestCase):
     def test_only_discord_upload_sources_are_allowed(self):
         for url in ('http://cdn.discordapp.com/attachments/100/900/a.mp4','https://example.com/attachments/100/900/a.mp4','https://cdn.discordapp.com/attachments/100/901/a.mp4','https://user:secret@cdn.discordapp.com/attachments/100/900/a.mp4'):
             with self.assertRaises(ValueError):validate_source(dict(SOURCE,url=url))
+    def test_more_than_60_mb_is_rejected_without_reserving_or_replacing_a_clip(self):
+        with self.assertRaisesRegex(ValueError,'60 MB'):
+            self.store.prepare_upload(self.rid,1,VALUES,0,SOURCE,'clip.mp4',MAX_CLIP_BYTES+1)
+        self.assertIsNone(self.store.upload_job(self.rid))
+        self.assertEqual(self.store.get(self.rid)['revision'],0)
+    def test_queued_uploads_also_reserve_space_against_synchronous_saves(self):
+        self.prepare();other=self.store.begin(2)
+        with patch('bug_store.MAX_STORED_CLIP_BYTES',10):
+            with self.assertRaisesRegex(ValueError,'espacio'):
+                self.store.save_full(other,2,VALUES,0,'clip.mp4',b'1234567')
 
 class ResponsiveTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -109,3 +120,13 @@ class ResponsiveTests(unittest.IsolatedAsyncioTestCase):
         self.guild.fetch_member.assert_not_awaited();self.bot.fetch_channel.assert_not_awaited()
         with self.assertRaises(ValueError):await self.system.member(self.i,admin=True)
         self.guild.fetch_member.assert_awaited_once_with(1)
+    async def test_native_60_mb_user_upload_is_not_limited_by_the_bots_10_mb_guild_limit(self):
+        self.guild.filesize_limit=10*1024*1024
+        gate=asyncio.Event()
+        async def read():await gate.wait();return b'clip'
+        rid,form=self.form(AsyncMock(side_effect=read))
+        form.file.values[0].size=MAX_CLIP_BYTES
+        await asyncio.wait_for(form.on_submit(self.i),1)
+        self.assertEqual(self.system.store.upload_job(rid)['size'],MAX_CLIP_BYTES)
+        self.assertIn('Datos guardados',self.i.edit_original_response.call_args.kwargs['content'])
+        self.assertTrue(all(len(label.description or '')<=100 for label in form.children))

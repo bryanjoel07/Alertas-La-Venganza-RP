@@ -300,6 +300,7 @@ class LaVenganzaBot(discord.Client):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.bugs.media.close()
         await super().close()
 
 

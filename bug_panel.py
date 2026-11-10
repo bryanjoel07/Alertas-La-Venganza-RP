@@ -66,11 +66,11 @@ class ReportPanel:
             if thread.parent_id!=FORUM or thread.owner_id!=self.bot.user.id or thread.id in (LEGACY,OLD_PORTAL):raise ValueError('El panel nuevo no pertenece a este bot o no está en Reportes.')
             root=await thread.fetch_message(thread.id)
             if root.author.id!=self.bot.user.id:raise ValueError('El mensaje nuevo no pertenece al bot.')
-            if await self.call('config','panel_revision')!='4' or self.system.entry_controls(root)!=CONTROLS:
+            if await self.call('config','panel_revision')!='6' or self.system.entry_controls(root)!=CONTROLS:
                 await root.edit(content=None,embed=embed,view=buttons('new','mine'),allowed_mentions=NONE)
             await self.call('config','official_guide_v4',thread.id)
             await self.call('config','guide_buttons',thread.id)
-            await self.call('config','panel_revision','4')
+            await self.call('config','panel_revision','6')
         await self.system.tracked(None,'Publicar la nueva plantilla oficial del bot','official-panel-v4',publish)
         await self.verify(thread.id)
         return await self.bot.fetch_channel(thread.id)

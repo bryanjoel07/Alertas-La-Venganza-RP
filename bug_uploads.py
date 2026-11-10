@@ -48,10 +48,10 @@ class ClipUploads:
                 async def read():
                     if attachment is not None:return await attachment.read()
                     return await self.system.bot.http.get_from_cdn(source['url'])
-                data=await asyncio.wait_for(read(),timeout=60)
+                data=await asyncio.wait_for(read(),timeout=180)
                 transfer_seconds=time.monotonic()-transfer
                 if not await self.system.call('complete_upload',rid,revision,data):return
-            row=await self.system.call('get',rid)
+            row=await self.system.call('get',rid,include_video=False)
             if i is not None:
                 try:await self.system.preview(i,row)
                 except discord.HTTPException:log.info('BUGS clip_ready_preview_unavailable id=%s draft_preserved=True',rid)

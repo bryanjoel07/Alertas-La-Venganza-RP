@@ -11,6 +11,8 @@ from bug_ui import BugAction,BugForm,StatePicker,buttons,failed
 from feedback_ui import reply,RED,NONE
 from tickets_store import PROTECTED
 from bug_uploads import ClipUploads
+from bug_media import ReportMedia
+from bug_limits import MAX_CLIP_BYTES
 
 FORUM=1556488595131466000
 GUIDE=1564719087798460466
@@ -25,11 +27,13 @@ class BugSystem:
         self.bot,self.guild_id=bot,guild_id;self.store=BugStore(path)
         self.lock=asyncio.Lock();self.install_lock=asyncio.Lock();self.task=None
         self.clips=ClipUploads(self)
+        self.media=ReportMedia(self)
         self.group=app_commands.Group(name='errores',description='Reportar errores y seguir su solución')
         self.register()
     async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
     async def start(self):
         await self.call('initialize');self.bot.add_dynamic_items(BugAction)
+        await self.media.start()
         self.task=asyncio.create_task(self.loop(),name='bug-reports')
     async def member(self,i,admin=False):
         if i.guild_id not in (None,self.guild_id):raise ValueError('Usa los reportes en La Venganza RP.')
@@ -64,7 +68,9 @@ class BugSystem:
         if data.get('details') and not structured:
             text=discord.utils.escape_markdown(data['details'])
             for start in range(0,len(text),1024):embed.add_field(name='Detalles del problema' if start==0 else 'Detalles (continúa)',value=text[start:start+1024],inline=False)
-        embed.add_field(name='🎥 Clip',value='Preparando el video adjunto…' if data.get('upload_pending') else data.get('clip') or ('Video adjunto al reporte' if row.get('video') else 'Falta adjuntar el clip'),inline=False)
+        hosted=self.media.url(row)
+        embed.add_field(name='🎥 Clip',value='Preparando el video adjunto…' if data.get('upload_pending') else
+            (f'[▶️ Ver el clip]({hosted})' if hosted else data.get('clip') or ('Video adjunto al reporte' if row.get('video') else 'Falta adjuntar el clip')),inline=False)
         embed.set_footer(text=f"lvbug:{row['id']} · La Venganza RP")
         return embed
     async def preview(self,i,row,processing=False):
@@ -74,7 +80,7 @@ class BugSystem:
         await i.edit_original_response(content=('**Datos guardados. Preparando el clip adjunto…**\nEste mensaje se actualizará cuando el video esté listo.' if processing else '**Revisa tu reporte. Se publicará en el foro para que lo vea la comunidad.**\nEvita contraseñas y datos personales.'),embed=self.embed(row),view=view,allowed_mentions=NONE)
     async def tracked(self,rid,title,request,operation):
         async def snapshot():
-            row=await self.call('get',rid) if rid else None
+            row=await self.call('get',rid,include_video=False) if rid else None
             if row:row={k:v for k,v in row.items() if k!='video'}
             return dict(forum=FORUM,report=row,portal=await self.call('config','portal'),guide_buttons=await self.call('config','guide_buttons'))
         return await self.bot.changes.tracked('BUG_REPORTS',title,operation,request_id=request,snapshot=snapshot)
@@ -88,7 +94,7 @@ class BugSystem:
             form=BugForm(self,dict(id=0,revision=0,data='{}',video=None))
             components=form.to_dict()['components']
             if len(components)!=5 or components[3]['component']['type']!=19:raise RuntimeError('El formulario único no incluye el archivo adjunto.')
-            log.info('BUGS ready forum=%s guide=%s entry_message=%s bot_owned_template=True single_entry=True single_form=True fields=5 detailed_sections=4 clip_required=True clip_upload=True admin_controls=True legacy_removed=%s',FORUM,guide.id,message.id,await self.call('config','legacy_guide_removed'))
+            log.info('BUGS ready forum=%s guide=%s entry_message=%s bot_owned_template=True single_entry=True single_form=True fields=5 detailed_sections=4 clip_required=True clip_upload=True admin_controls=True legacy_removed=%s max_clip_mb=%s large_clip_links=%s',FORUM,guide.id,message.id,await self.call('config','legacy_guide_removed'),MAX_CLIP_BYTES//(1024*1024),bool(self.media.runner))
     @staticmethod
     def entry_controls(message):
         return [getattr(c,'custom_id',None) for row in message.components for c in row.children]
@@ -144,7 +150,7 @@ class BugSystem:
         log.info('BUGS duplicate_portal_retired thread=%s archived=True controls_removed=True all_history_preserved=True',OLD_PORTAL)
     async def form(self,i,rid=0):
         await self.member(i)
-        rid=rid or await self.call('begin',i.user.id);row=await self.call('get',rid)
+        rid=rid or await self.call('begin',i.user.id);row=await self.call('get',rid,include_video=False)
         if not row or row['owner']!=i.user.id or row['status']!='borrador':raise ValueError('Ese borrador ya fue publicado o no es tuyo.')
         await i.response.send_modal(BugForm(self,row))
     async def action(self,i,action,rid):
@@ -155,16 +161,16 @@ class BugSystem:
             rows=await self.call('rows',owner=i.user.id)
             text='\n'.join(f"**#{r['id']}** · {STATES.get(r['status'],r['status'])}"+(f" · <#{r['thread']}>" if r['thread'] else ' · Borrador guardado') for r in rows)
             return await reply(i,text or 'Todavía no has enviado un reporte.',view=buttons('new'))
-        row=await self.call('get',rid)
+        row=await self.call('get',rid,include_video=False)
         if not row:raise ValueError('Ese reporte no existe.')
         if action=='publish':
             if row['owner']!=i.user.id:raise ValueError('Ese reporte no es tuyo.')
             async with self.lock:
-                row=await self.call('get',rid)
+                row=await self.call('get',rid,include_video=False)
                 if not row['thread']:
                     await self.call('reserve',rid,i.user.id)
                     await self.create(rid)
-            row=await self.call('get',rid)
+            row=await self.call('get',rid,include_video=False)
             return await reply(i,f"Tu reporte está publicado, bro: <#{row['thread']}>.")
         if action=='claim':
             async with self.lock:
@@ -177,7 +183,7 @@ class BugSystem:
             history=await self.call('events',rid)
             return await reply(i,('\n'.join(f"<t:{e['created']}:f> · <@{e['actor']}> · **{STATES.get(e['action'],e['action'])}**\n{discord.utils.escape_markdown(e['detail'])[:200]}" for e in history[-10:]) or 'Todavía no hay cambios.')[:1900])
     async def create(self,rid,recover=False):
-        row=await self.call('get',rid);forum=await self.forum();thread=None
+        row=await self.call('get',rid,include_video=False);forum=await self.forum();thread=None
         if row['thread']:return
         if row['status']!='publicando' or json.loads(row['data']).get('upload_pending') or (not json.loads(row['data']).get('clip') and not row['video']):
             raise ValueError('El clip es obligatorio. No se puede publicar un reporte sin él.')
@@ -187,24 +193,40 @@ class BugSystem:
                 first=await candidate.fetch_message(candidate.id)
                 if any(e.footer.text==f'lvbug:{rid} · La Venganza RP' for e in first.embeds):thread=candidate;break
         async def publish():
-            nonlocal thread
+            nonlocal thread,row
             if thread is None:
                 kwargs={}
-                if row['video']:kwargs['file']=discord.File(io.BytesIO(row['video']),filename=row['filename'])
-                result=await forum.create_thread(name=f"🐛 #{rid:04d} · {json.loads(row['data'])['title']}"[:100],embed=self.embed(dict(row,status='pendiente')),
-                    applied_tags=[forum.get_tag(TAGS['pendiente'])],view=buttons('claim','state','history',rid=rid),allowed_mentions=NONE,**kwargs)
+                limit=getattr(forum.guild,'filesize_limit',10*1024*1024)
+                if row['video'] and row['video_size']>limit:
+                    row=await self.media.share(rid)
+                elif row['video']:
+                    saved=await self.call('get',rid)
+                    kwargs['file']=discord.File(io.BytesIO(saved['video']),filename=row['filename'])
+                async def send():
+                    return await forum.create_thread(name=f"🐛 #{rid:04d} · {json.loads(row['data'])['title']}"[:100],embed=self.embed(dict(row,status='pendiente')),
+                        applied_tags=[forum.get_tag(TAGS['pendiente'])],view=buttons('claim','state','history',rid=rid),allowed_mentions=NONE,**kwargs)
+                try:
+                    try:result=await send()
+                    except discord.HTTPException as error:
+                        if not kwargs.get('file') or (error.status!=413 and error.code!=40005):raise
+                        # Discord can change its ceiling independently of the SDK.
+                        row=await self.media.share(rid)
+                        kwargs.pop('file').close()
+                        result=await send()
+                finally:
+                    if kwargs.get('file'):kwargs['file'].close()
                 thread=result.thread
             await self.call('published',rid,thread.id,thread.id)
         await self.tracked(rid,'Publicar reporte de error',f'create:{rid}',publish)
-        log.info('BUGS published id=%s thread=%s recovered=%s',rid,thread.id,recover)
+        log.info('BUGS published id=%s thread=%s recovered=%s clip_bytes=%s clip_delivery=%s',rid,thread.id,recover,row.get('video_size') or 0,'link' if self.media.url(row) else 'attachment_or_external_link')
     async def refresh(self,rid):
-        row=await self.call('get',rid);thread=await self.bot.fetch_channel(row['thread'])
+        row=await self.call('get',rid,include_video=False);thread=await self.bot.fetch_channel(row['thread'])
         if thread.parent_id!=FORUM:raise ValueError('Ese hilo no pertenece a Reportes.')
         message=await thread.fetch_message(row['message'])
         if message.author.id!=self.bot.user.id:raise ValueError('El mensaje no es de este bot.')
         await message.edit(embed=self.embed(row),view=buttons('claim','state','history',rid=rid),allowed_mentions=NONE)
     async def apply_state(self,rid):
-        row=await self.call('get',rid);pending=json.loads(row['pending']);forum=await self.forum()
+        row=await self.call('get',rid,include_video=False);pending=json.loads(row['pending']);forum=await self.forum()
         thread=await self.bot.fetch_channel(row['thread'])
         if thread.parent_id!=FORUM:raise ValueError('Ese hilo no pertenece a Reportes.')
         tags=[t for t in thread.applied_tags if t.id not in {TAGS[k] for k in STATES}]
@@ -251,7 +273,7 @@ class BugSystem:
                 return
             if message.id!=message.channel.id:return
             rid=await self.call('adopt',message.channel.id,message.author.id,message.channel.name,message.content,clip)
-            await self.attach_manual(await self.call('get',rid))
+            await self.attach_manual(await self.call('get',rid,include_video=False))
     async def thread_update(self,thread):
         if thread.parent_id!=FORUM:return
         async with self.lock:

@@ -14,9 +14,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bug-reports-fast-form-v5'
-SUMMARY='El formulario confirma los datos guardados sin esperar la descarga del video. Prepara el clip por separado y actualiza el mismo mensaje; Publicar permanece bloqueado hasta guardar el archivo íntegro. La fuente y revisión del clip quedan persistidas para recuperar interrupciones. Valida los apartados antes de descargar y aprovecha el miembro actual de la interacción para evitar lecturas REST repetidas; administración conserva comprobaciones frescas. Añade tiempos de recepción y preparación sin registrar URLs ni contenido del usuario.'
-RESTORE=('Código anterior: 34393e7c3be902d8961c7b6f8c03d303c1449343. Antes de revertir, completar las filas pendientes de lv_bug_uploads o conservarlas para recuperar sus archivos; la versión anterior no procesa esa cola. Conservar SQLite, lv_bugs, lv_bug_uploads, videos y hashes. No restaurar una base antigua ni reactivar o recrear la plantilla eliminada. Las cargas pendientes no autorizan publicar sin un archivo completo o un enlace válido.')
+RELEASE='bug-reports-60mb-clips-v6'
+SUMMARY='Reportes acepta clips de hasta 60 MiB sin confundir el límite del jugador con el de los adjuntos del bot. Los archivos que superan el límite del bot se publican con un enlace aleatorio al original persistido, servido por Railway con lectura por partes y sin exponer borradores. El formulario mantiene su confirmación rápida y preparación en segundo plano. El presupuesto de clips guardados sube de 200 MiB a 1 GiB y las lecturas de formularios, listados e historial evitan cargar los videos completos. Actualiza las instrucciones en el mismo panel existente, sin crear publicaciones duplicadas.'
+RESTORE=('Código anterior: 5909a42442fa112c8f892e8fc48e07a241dbe17e. Conservar SQLite, lv_bugs, lv_bug_uploads, lv_bug_media, videos y hashes. Antes de revertir, mantener activo el servicio de lectura de clips y su dominio BUG_CLIPS_BASE_URL, o migrar los videos grandes y actualizar sus enlaces: la versión anterior no sirve estos enlaces ni publica adjuntos mayores de su límite anterior. Volver al código anterior sin ese servicio deja inaccesibles los enlaces aunque los originales sigan guardados. Para reconstruir el texto anterior del panel, cambiar solo lv_bug_config.panel_revision a una cadena vacía; no borrar ni recrear el panel. No restaurar una base antigua.')
 
 
 class Journal:

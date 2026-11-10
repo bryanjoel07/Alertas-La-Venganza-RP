@@ -6,6 +6,7 @@ import discord
 from feedback_ui import reply, NONE, RED
 from bug_store import STATES,clip_url
 from bug_template import DETAILS_LIMIT,details_default,parse_details
+from bug_limits import MAX_CLIP_BYTES
 
 async def failed(i,error):
     if isinstance(error,ValueError):return await reply(i,str(error))
@@ -32,7 +33,9 @@ def buttons(*actions,rid=0):
 class BugForm(discord.ui.Modal):
     def __init__(self,system,row):
         self.system,self.rid,self.revision=system,row['id'],row['revision']
-        self.upload_limit=min(25*1024*1024,getattr(system.bot.get_guild(system.guild_id),'filesize_limit',25*1024*1024))
+        # Discord already checks the player's upload entitlement in its picker.
+        # The guild's bot attachment limit must not reject a resolved user upload.
+        self.upload_limit=MAX_CLIP_BYTES
         super().__init__(title='Reportar un error',timeout=900)
         data=json.loads(row['data']);self.inputs={}
         details=details_default(data)
@@ -43,7 +46,7 @@ class BugForm(discord.ui.Modal):
             self.add_item(discord.ui.Label(text=label,description='Completa los cuatro apartados. Conserva sus títulos y reemplaza los textos entre corchetes.' if paragraph else None,component=item))
         self.file=discord.ui.FileUpload(custom_id='clip_file',required=False,min_values=0,max_values=1)
         self.clip=discord.ui.TextInput(custom_id='clip_link',required=False,max_length=1000,placeholder='https://…',default=data.get('clip') or None)
-        self.add_item(discord.ui.Label(text='Clip obligatorio · Adjunta el video aquí',description=('Ya tienes un video guardado; puedes reemplazarlo.' if row.get('video') else f'Hasta {self.upload_limit//(1024*1024)} MB. Adjunta un video o pega un enlace abajo.'),component=self.file))
+        self.add_item(discord.ui.Label(text='Clip obligatorio · Adjunta el video aquí',description=('Ya hay un video guardado. ' if row.get('video') else '')+f'Hasta {self.upload_limit//(1024*1024)} MB. Si Discord no te deja adjuntarlo, pega el enlace abajo.',component=self.file))
         self.add_item(discord.ui.Label(text='Enlace del clip si no adjuntas el video',description='Sin video ni enlace no se puede enviar el reporte.',component=self.clip))
     async def on_submit(self,i):
         started=time.monotonic()
@@ -63,13 +66,13 @@ class BugForm(discord.ui.Modal):
             if attachment is not None:
                 source=dict(id=attachment.id,url=attachment.url,proxy_url=attachment.proxy_url)
                 revision=await self.system.call('prepare_upload',self.rid,i.user.id,values,self.revision,source,filename,attachment.size)
-                row=await self.system.call('get',self.rid)
+                row=await self.system.call('get',self.rid,include_video=False)
                 try:await self.system.preview(i,row,processing=True)
                 finally:self.system.clips.launch(self.rid,revision,i,attachment)
                 logging.getLogger('LaVenganzaRP.bugs').info('BUGS form_received id=%s clip_bytes=%s receipt_seconds=%.2f clip_preparation=background',self.rid,attachment.size,time.monotonic()-started)
             else:
                 await self.system.call('save_full',self.rid,i.user.id,values,self.revision)
-                await self.system.preview(i,await self.system.call('get',self.rid))
+                await self.system.preview(i,await self.system.call('get',self.rid,include_video=False))
                 logging.getLogger('LaVenganzaRP.bugs').info('BUGS form_received id=%s clip_bytes=0 receipt_seconds=%.2f clip_preparation=not_needed',self.rid,time.monotonic()-started)
         except Exception as exc:await failed(i,exc)
     async def on_error(self,i,error):await failed(i,error)
