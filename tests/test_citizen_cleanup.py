@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from change_log import ChangeLog
-from citizen_cleanup import (BOT_ID, CITIZEN_ID, ENV, GUILD_ID, REQUEST,
+from citizen_cleanup import (BOT_ID, CITIZEN_ID, ENV, GUILD_ID, REQUEST, RETRY_REQUEST,
                              keep_citizen_roles, resolve_targets)
 from economy_store import EconomyStore
 
@@ -170,3 +170,27 @@ class CleanupTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await keep_citizen_roles(self.bot)
         self.assertFalse(self.events)
+
+    async def test_renewed_request_uses_original_ids_and_records_discord_rejection(self):
+        self.roles[1300627506801541230].position = 100
+        await keep_citizen_roles(self.bot)
+        self.directory.reset_mock()
+        self.second.remove_roles.side_effect = discord.Forbidden(
+            SimpleNamespace(status=403, reason="Forbidden"),
+            {"code": 50013, "message": "Missing Permissions"})
+        with patch.dict("os.environ", {ENV: RETRY_REQUEST}):
+            result = await keep_citizen_roles(self.bot)
+        self.directory.assert_not_awaited()
+        self.second.remove_roles.assert_awaited_once()
+        self.assertEqual(result["102"]["blocked"][0]["reason"], "discord_403_50013")
+        self.assertEqual(result["102"]["blocked"][0]["role_position"], 100)
+        self.assertEqual(result["102"]["blocked"][0]["bot_top_position"], 90)
+        row = self.bot.changes.journal.by_key(f"operation:{ENV}:{RETRY_REQUEST}")
+        self.assertEqual(json.loads(row["before_json"])["members"][1]["roles"][1]["id"], 1300627506801541230)
+
+    async def test_renewed_request_cannot_start_without_original_receipt(self):
+        with patch.dict("os.environ", {ENV: RETRY_REQUEST}):
+            with self.assertRaisesRegex(ValueError, "copia original"):
+                await keep_citizen_roles(self.bot)
+        self.assertFalse(self.events)
+        self.directory.assert_not_awaited()

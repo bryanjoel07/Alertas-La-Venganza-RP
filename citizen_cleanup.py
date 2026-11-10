@@ -14,6 +14,7 @@ GUILD_ID = 1244988345327550565
 BOT_ID = 1567658433497399408
 CITIZEN_ID = 1245009164070158409
 REQUEST = "esschino-citizen-20261110-v1"
+RETRY_REQUEST = "esschino-citizen-20261110-v2"
 ENV = "CITIZEN_CLEANUP_REQUEST_ID"
 TARGETS = ("esschino__", "esschino_")
 ROLE_SLOTS = ("color", "titulo")
@@ -47,7 +48,8 @@ def role_assignable(role, top, can_manage):
 
 
 async def keep_citizen_roles(bot):
-    if os.getenv(ENV, "").strip() != REQUEST:
+    request = os.getenv(ENV, "").strip()
+    if request not in (REQUEST, RETRY_REQUEST):
         return
     if bot.user.id != BOT_ID:
         raise ValueError("Esta solicitud pertenece al bot de La Venganza RP.")
@@ -57,19 +59,25 @@ async def keep_citizen_roles(bot):
     # Also exclude a concurrent automatic cosmetic recovery while removing roles.
     async with bot.citizen_cleanup_lock, bot.economy.delivery.lock:
         journal = bot.changes.journal
-        key = f"operation:{ENV}:{REQUEST}"
+        key = f"operation:{ENV}:{request}"
         existing = await asyncio.to_thread(journal.by_key, key)
         if existing and existing["status"] == "completado":
-            log.info("CITIZEN_CLEANUP already_completed request=%s", REQUEST)
+            log.info("CITIZEN_CLEANUP already_completed request=%s", request)
             return json.loads(existing["after_json"])
+
+        source = existing
+        if request == RETRY_REQUEST and not source:
+            source = await asyncio.to_thread(journal.by_key, f"operation:{ENV}:{REQUEST}")
+            if not source:
+                raise ValueError("El reintento necesita la copia original de las dos cuentas.")
 
         store = bot.economy.store
 
         def equipped(uid):
             return store.rows("SELECT * FROM eco_equipped WHERE user_id=? AND slot IN ('color','titulo') ORDER BY slot", (uid,))
 
-        if existing:
-            plan = json.loads(existing["before_json"])["plan"]
+        if source:
+            plan = json.loads(source["before_json"])["plan"]
         else:
             directory = MemberDirectory(bot, GUILD_ID)
             targets = resolve_targets(await directory.load(guild, force=True))
@@ -100,7 +108,7 @@ async def keep_citizen_roles(bot):
                 state = member_state(member, roles)
                 state["equipped"] = equipped(member.id)
                 states.append(state)
-            return dict(plan=plan, members=states, result=result)
+            return dict(request=request, plan=plan, members=states, result=result)
 
         async def apply():
             for target in plan["targets"]:
@@ -112,6 +120,9 @@ async def keep_citizen_roles(bot):
                 mine = [roles[rid] for rid in assigned_ids(me) | {GUILD_ID}]
                 top = max(mine)
                 can_manage = any(r.permissions.administrator or r.permissions.manage_roles for r in mine)
+                administrator = any(r.permissions.administrator for r in mine)
+                log.info("CITIZEN_CLEANUP permissions administrator=%s manage_roles=%s top_role=%s top_role_id=%s top_position=%s request=%s",
+                         administrator, can_manage, top.name, top.id, top.position, request)
                 member = await guild.fetch_member(target["user_id"])
                 if member.bot:
                     raise ValueError("Una cuenta autorizada no puede ser un bot.")
@@ -133,7 +144,10 @@ async def keep_citizen_roles(bot):
                 original = {r["id"] for r in target["roles"]} - {CITIZEN_ID}
                 for rid in sorted(original & assigned_ids(member)):
                     role = roles[rid]
-                    if not role_assignable(role, top, can_manage):
+                    # The owner explicitly renewed this exact membership request.
+                    # On v2 let Discord make the final decision, without editing
+                    # any role's permissions or hierarchy. Managed roles stay out.
+                    if role.managed or (request != RETRY_REQUEST and not role_assignable(role, top, can_manage)):
                         blocked.append(dict(id=rid, name=role.name, reason="managed" if role.managed else "hierarchy_or_permission"))
                         continue
                     try:
@@ -141,7 +155,10 @@ async def keep_citizen_roles(bot):
                             reason="Solicitud del dueño: dejar solo Ciudadanos en sus dos cuentas")
                         log.info("CITIZEN_CLEANUP removed user=%s id=%s role=%s role_id=%s", target["username"], member.id, role.name, rid)
                     except discord.HTTPException as exc:
-                        blocked.append(dict(id=rid, name=role.name, reason=f"discord_{exc.status}_{exc.code}"))
+                        blocked.append(dict(id=rid, name=role.name, reason=f"discord_{exc.status}_{exc.code}",
+                                            role_position=role.position, bot_top_position=top.position))
+                        log.warning("CITIZEN_CLEANUP discord_rejected user_id=%s role_id=%s role=%s status=%s code=%s role_position=%s bot_top_position=%s administrator=%s",
+                                    member.id, rid, role.name, exc.status, exc.code, role.position, top.position, administrator)
                 fresh_roles = {r.id: r for r in await guild.fetch_roles()}
                 fresh = await guild.fetch_member(member.id)
                 verified = member_state(fresh, fresh_roles)
@@ -151,7 +168,7 @@ async def keep_citizen_roles(bot):
                 log.info("CITIZEN_CLEANUP verified %s", json.dumps(verified, ensure_ascii=False))
 
         await bot.changes.tracked(ENV, "Dejar Ciudadanos en las dos cuentas del dueño", apply,
-                                  request_id=REQUEST, snapshot=snapshot)
-        log.info("CITIZEN_CLEANUP finished request=%s only_citizen=%s", REQUEST,
+                                  request_id=request, snapshot=snapshot)
+        log.info("CITIZEN_CLEANUP finished request=%s only_citizen=%s", request,
                  all(r["only_citizen"] for r in result.values()))
         return result
