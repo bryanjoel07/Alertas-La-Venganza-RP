@@ -62,6 +62,11 @@ def ticket_link(guild_id,row,message=None):
  target=message or row['control_message']
  return f"https://discord.com/channels/{guild_id}/{row['channel']}"+(f'/{target}' if target else '')
 
+def claim_reminder_eligible(row):
+ return (row['status'] in ('nuevo','en_atencion') and not row.get('assignee')
+   and row.get('staff_wait_since') is not None and not row.get('deleted_at')
+   and not json.loads(row['form']).get('selftest'))
+
 def listed_ticket(row,channels,closed_only=False):
  if row.get('deleted_at') or json.loads(row['form']).get('selftest'):
   return False
@@ -906,14 +911,14 @@ class TicketSystem:
       expected=[f"lv:ticket:case:{current['id']}:{a}" for a in ('claim','resolve','close','priority')]
       if actions!=expected:raise RuntimeError('Discord no confirmó los cuatro botones del ticket abierto')
       active_updated+=1
-      log.info('TICKETS active_controls_verified id=%s channel=%s actions=%s',current['id'],case_channel.id,actions)
+      log.info('TICKETS active_controls_verified id=%s channel=%s actions=%s assigned=%s claim_reminders=%s',current['id'],case_channel.id,actions,bool(current['assignee']),claim_reminder_eligible(current))
      except discord.NotFound:log.warning('TICKETS missing_active_channel id=%s',current['id'])
   log.info('TICKETS controls_verified active_updated=%s closed_updated=%s category=%s',active_updated,upgraded,closed.id)
   log.info('TICKETS controls_layout_verified open=%s closed=%s rating_owner_only=True',[c.item.label for c in TicketControls(0).children],[c.item.label for c in TicketControls(0,True).children])
   rating=RatingForm(self,0)
   rating_payload=rating.to_dict()['components']
   if len(rating_payload)!=2 or len(rating.stars.options)!=5 or rating.comment.required:raise RuntimeError('No se confirmó el formulario de estrellas')
-  log.info('TICKETS followup_ready escalation_hours=24 normal_role_ids=%s reserved_admin_role_ids=%s overnight=00:00-08:00 timezone=America/Puerto_Rico dm_cooldown_minutes=15 rating_stars=1-5 optional_comment=True',
+  log.info('TICKETS followup_ready claim_reminders=unassigned_unanswered_only escalation_hours=24 normal_role_ids=%s reserved_admin_role_ids=%s overnight=00:00-08:00 timezone=America/Puerto_Rico dm_cooldown_minutes=15 rating_stars=1-5 optional_comment=True',
     [r.id for r in escalation_roles(guild,{'department':'soporte'},panel)],
     [r.id for r in escalation_roles(guild,{'department':'staff'},panel)])
   registered=await self.bot.tree.fetch_commands(guild=discord.Object(id=self.guild_id))
@@ -1025,11 +1030,10 @@ class TicketSystem:
      await self.call('update',row['id'],warning_at=now)
     elif row['warning_at'] and now-row['warning_at']>=int(self.store.config('close_warning_hours'))*3600:
      closing=row
-   elif row['status'] in ('nuevo','en_atencion') and now-max(row['created'],row['last_staff'] or 0,row['last_user'])>=int(self.store.config('remind_hours'))*3600 and now-(row['reminded_at'] or 0)>=int(self.store.config('remind_hours'))*3600:
+   elif claim_reminder_eligible(row) and now-max(row['created'],row['last_staff'] or 0,row['last_user'])>=int(self.store.config('remind_hours'))*3600 and now-(row['reminded_at'] or 0)>=int(self.store.config('remind_hours'))*3600:
     channel=await self.channel(row)
-    target=f"<@{row['assignee']}> " if row['assignee'] else ''
-    await channel.send('🔔 '+target+'este caso sigue pendiente de atención. Staff puede reclamarlo o actualizar su estado.',
-        allowed_mentions=discord.AllowedMentions(users=[discord.Object(id=row['assignee'])] if row['assignee'] else []))
+    await channel.send('🔔 Este ticket todavía no tiene responsable. Staff puede reclamarlo para atender al jugador.',
+        allowed_mentions=discord.AllowedMentions.none())
     await self.call('update',row['id'],reminded_at=now)
   if closing:await self.close(closing,self.bot.user.id,'Archivado por falta de respuesta después del aviso previo. Puede reabrirse durante siete días.')
  async def loop(self):

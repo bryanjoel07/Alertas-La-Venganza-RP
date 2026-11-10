@@ -38,6 +38,50 @@ class FollowupTests(unittest.IsolatedAsyncioTestCase):
   self.i.response.is_done.return_value=False;self.i.response.defer=AsyncMock();self.i.response.send_message=AsyncMock()
   self.i.followup.send=AsyncMock();self.i.response.send_modal=AsyncMock()
 
+ async def test_claimed_ticket_never_gets_claim_reminders_even_after_another_player_message(self):
+  self.store.claim(self.rid,5)
+  await self.system.maintain_ticket(self.rid,1000+6*3600)
+  self.store.activity(self.rid,5,True,now=30000,message_id=1001)
+  await self.system.maintain_ticket(self.rid,30000+6*3600)
+  self.store.activity(self.rid,1,False,now=60000,message_id=1002)
+  await self.system.maintain_ticket(self.rid,60000+12*3600)
+  self.channel.send.assert_not_awaited();self.bot.fetch_channel.assert_not_awaited()
+  row=self.store.get(self.rid)
+  self.assertEqual(row['assignee'],5);self.assertEqual(row['status'],'en_atencion')
+  self.assertIsNone(row['reminded_at'])
+
+ async def test_unclaimed_unanswered_ticket_keeps_six_hour_cooldown_across_restarts(self):
+  await self.system.maintain_ticket(self.rid,1000+6*3600-1)
+  self.channel.send.assert_not_awaited()
+  await self.system.maintain_ticket(self.rid,1000+6*3600)
+  self.channel.send.assert_awaited_once()
+  self.assertIn('todavía no tiene responsable',self.channel.send.call_args.args[0])
+  self.assertEqual(self.channel.send.call_args.kwargs['allowed_mentions'].to_dict()['parse'],[])
+  restarted=TicketSystem(self.bot,self.store.path,10);restarted.store.initialize()
+  await restarted.maintain_ticket(self.rid,1000+12*3600-1)
+  self.channel.send.assert_awaited_once()
+  await restarted.maintain_ticket(self.rid,1000+12*3600)
+  self.assertEqual(self.channel.send.await_count,2)
+  self.store.claim(self.rid,5)
+  await restarted.maintain_ticket(self.rid,1000+18*3600)
+  self.assertEqual(self.channel.send.await_count,2)
+
+ async def test_staff_reply_stops_claim_reminders_even_if_ticket_was_not_claimed(self):
+  self.store.activity(self.rid,5,True,now=2000,message_id=1001)
+  await self.system.maintain_ticket(self.rid,2000+12*3600)
+  self.channel.send.assert_not_awaited()
+  self.assertIsNone(self.store.get(self.rid)['assignee'])
+  self.assertIsNone(self.store.get(self.rid)['reminded_at'])
+
+ async def test_claim_after_maintenance_snapshot_is_rechecked_before_sending(self):
+  async def claim_during_cycle(rid,now):
+   self.store.claim(rid,5)
+  self.system.escalate=AsyncMock(side_effect=claim_during_cycle)
+  self.system.notify_player=AsyncMock()
+  with patch('tickets.time.time',return_value=1000+6*3600):await self.system.maintenance()
+  self.channel.send.assert_not_awaited()
+  self.assertEqual(self.store.get(self.rid)['assignee'],5)
+
  async def test_exactly_24_hours_claiming_and_bumping_do_not_delay_escalation(self):
   self.store.claim(self.rid,5)
   self.store.activity(self.rid,1,False,now=80000,message_id=1001)
