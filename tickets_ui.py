@@ -125,6 +125,32 @@ class TextForm(discord.ui.Modal):
   except ValueError as error:await reply(i,str(error))
   except discord.HTTPException:await reply(i,'Discord no completó la operación. El ticket y su historial siguen guardados.')
 
+class PriorityForm(discord.ui.Modal):
+ def __init__(self,system,rid,current='normal'):
+  super().__init__(title='Cambiar prioridad',timeout=600)
+  self.system,self.rid=system,rid
+  self.priority=discord.ui.Select(custom_id='priority',placeholder='Elige Normal, Alta o Urgente',options=[
+    discord.SelectOption(label=label,value=value,emoji=emoji,default=value==current)
+    for value,label,emoji in [('normal','Normal','⚪'),('alta','Alta','🟠'),('urgente','Urgente','🔴')]])
+  self.reason=discord.ui.TextInput(custom_id='priority_reason',style=discord.TextStyle.paragraph,
+    placeholder='Cuéntanos por qué quieres cambiarla.',required=True,max_length=1500)
+  self.add_item(discord.ui.Label(text='Elige la prioridad',component=self.priority))
+  self.add_item(discord.ui.Label(text='¿Por qué cambias la prioridad?',component=self.reason))
+ async def on_submit(self,i):
+  await i.response.defer(ephemeral=True,thinking=True)
+  try:
+   values=self.priority.values
+   if len(values)!=1 or values[0] not in ('normal','alta','urgente'):
+    raise ValueError('Elige Normal, Alta o Urgente en la lista.')
+   reason=self.reason.value.strip()
+   if not reason:raise ValueError('Cuéntanos brevemente por qué cambias la prioridad.')
+   await self.system.change_priority(i,self.rid,values[0],reason)
+  except ValueError as error:await reply(i,str(error))
+  except discord.HTTPException:await reply(i,'Discord no completó la operación. El ticket y su historial siguen guardados.')
+ async def on_error(self,i,error):
+  logging.getLogger('LaVenganzaRP.tickets').error('Ticket priority form failed',exc_info=error)
+  await reply(i,'No se completó el cambio. El ticket y sus datos siguen guardados.')
+
 class RatingForm(discord.ui.Modal):
  def __init__(self,system,rid):
   super().__init__(title='¿Cómo te atendieron?',timeout=600)

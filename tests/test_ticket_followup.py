@@ -269,10 +269,42 @@ class FollowupTests(unittest.IsolatedAsyncioTestCase):
   self.i.user=SimpleNamespace(id=5,guild=self.guild,bot=False,roles=[self.admin if admin else self.support],guild_permissions=discord.Permissions(administrator=admin))
   self.system.refresh=AsyncMock()
 
+ async def test_priority_form_selects_current_value_and_accepts_each_choice_with_separate_reason(self):
+  self.use_staff()
+  reason='El jugador no puede entrar: se queda cargando.'
+  for value,label in [('normal','Normal'),('alta','Alta'),('urgente','Urgente')]:
+   previous=self.store.get(self.rid)['priority']
+   await self.system.action(self.i,self.rid,'priority')
+   modal=self.i.response.send_modal.call_args.args[0]
+   fields=modal.to_dict()['components']
+   self.assertEqual(len(fields),2);self.assertEqual(fields[0]['component']['type'],3)
+   self.assertEqual([(o['value'],o['label']) for o in fields[0]['component']['options']],
+    [('normal','Normal'),('alta','Alta'),('urgente','Urgente')])
+   self.assertEqual([o.value for o in modal.priority.options if o.default],[previous])
+   self.assertTrue(modal.reason.required)
+   modal.priority._values=[value];modal.reason._value=reason
+   with patch('tickets.time.time',return_value=2000):await modal.on_submit(self.i)
+   self.assertEqual(self.store.get(self.rid)['priority'],value)
+   self.assertIn(label,[o.label for o in modal.priority.options])
+  self.assertEqual(self.store.priority_event(self.rid)['detail'],'urgente: '+reason)
+  self.channel.send.assert_awaited_once()
+  self.assertIn(reason,self.channel.send.call_args.args[0])
+
+ async def test_missing_forged_priority_or_blank_reason_never_changes_ticket_or_alerts_staff(self):
+  self.use_staff();await self.system.action(self.i,self.rid,'priority')
+  modal=self.i.response.send_modal.call_args.args[0]
+  before=self.store.get(self.rid)
+  for values,reason in [([], 'Revisar'),(['media'],'Revisar'),(['normal','urgente'],'Revisar'),(['urgente'],'  ')]:
+   modal.priority._values=values;modal.reason._value=reason
+   await modal.on_submit(self.i)
+   self.assertEqual(self.store.get(self.rid),before)
+  self.assertIsNone(self.store.priority_event(self.rid))
+  self.channel.send.assert_not_awaited();self.system.refresh.assert_not_awaited()
+
  async def test_priority_button_alerts_immediately_and_not_again_for_the_same_urgent_period(self):
   self.use_staff()
   await self.system.action(self.i,self.rid,'priority')
-  modal=self.i.response.send_modal.call_args.args[0];modal.value._value='urgente: Nadie puede entrar'
+  modal=self.i.response.send_modal.call_args.args[0];modal.priority._values=['urgente'];modal.reason._value='Nadie puede entrar'
   with patch('tickets.time.time',return_value=2000):await modal.on_submit(self.i)
   self.assertEqual(self.store.get(self.rid)['priority'],'urgente')
   self.channel.send.assert_awaited_once()
@@ -300,7 +332,7 @@ class FollowupTests(unittest.IsolatedAsyncioTestCase):
 
  async def test_priority_submission_rechecks_permissions_and_closed_state(self):
   self.use_staff();await self.system.action(self.i,self.rid,'priority')
-  modal=self.i.response.send_modal.call_args.args[0];modal.value._value='urgente: Revisar'
+  modal=self.i.response.send_modal.call_args.args[0];modal.priority._values=['urgente'];modal.reason._value='Revisar'
   self.i.user=self.owner
   await modal.on_submit(self.i)
   self.assertEqual(self.store.get(self.rid)['priority'],'normal');self.channel.send.assert_not_awaited()

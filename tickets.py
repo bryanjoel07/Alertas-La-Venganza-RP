@@ -21,7 +21,7 @@ import discord
 from discord import app_commands
 from ticket_forms import FORMS
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
-from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,RatingForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
+from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,PriorityForm,RatingForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
 
 log=logging.getLogger('LaVenganzaRP.tickets')
 PANEL_CHANNEL=1513423707467415642
@@ -733,11 +733,7 @@ class TicketSystem:
    return await i.response.send_modal(TextForm('Transferir caso','Motivo de la transferencia',transfer_form))
   if action=='people':return await reply(i,'Usa `/ticket participante` para añadir o retirar una persona. Cada cambio queda registrado. Los reportes contra staff solo permiten participantes que sean administradores.')
   if action=='priority':
-   async def change_priority(click,value):
-    parts=value.split(':',1)
-    if len(parts)!=2 or parts[0].strip() not in ('normal','alta','urgente') or not parts[1].strip():raise ValueError('Escribe normal, alta o urgente, seguido de dos puntos y un motivo.')
-    await self.change_priority(click,rid,parts[0].strip(),parts[1].strip())
-   return await i.response.send_modal(TextForm('Cambiar prioridad','Ejemplo: alta: problema de acceso',change_priority))
+   return await i.response.send_modal(PriorityForm(self,rid,row['priority']))
   if action=='rate':
    if i.user.id!=row['owner'] or row['status']!='cerrado':raise ValueError('Solo el jugador que abrió el ticket puede dejar su opinión cuando esté cerrado.')
    if row.get('deleted_at'):raise ValueError('Ese ticket ya fue eliminado.')
@@ -934,6 +930,12 @@ class TicketSystem:
   rating=RatingForm(self,0)
   rating_payload=rating.to_dict()['components']
   if len(rating_payload)!=2 or len(rating.stars.options)!=5 or rating.comment.required:raise RuntimeError('No se confirmó el formulario de estrellas')
+  priority=PriorityForm(self,0)
+  priority_payload=priority.to_dict()['components']
+  choices=[o['value'] for o in priority_payload[0]['component']['options']]
+  if len(priority_payload)!=2 or priority_payload[0]['component']['type']!=3 or choices!=['normal','alta','urgente'] or not priority.reason.required:
+   raise RuntimeError('No se confirmó el selector de prioridad y su campo de motivo')
+  log.info('TICKETS priority_form_verified choices=%s reason_separate=True fields=2 typed_format=False',choices)
   log.info('TICKETS followup_ready claim_reminders=unassigned_unanswered_only escalation_hours=24 normal_role_ids=%s reserved_admin_role_ids=%s overnight=00:00-08:00 timezone=America/Puerto_Rico dm_cooldown_minutes=15 rating_stars=1-5 optional_comment=True',
     [r.id for r in escalation_roles(guild,{'department':'soporte'},panel)],
     [r.id for r in escalation_roles(guild,{'department':'staff'},panel)])
