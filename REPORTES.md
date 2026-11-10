@@ -26,6 +26,8 @@ La tabla lv_bug_uploads conserva fuente, tamaño, revisión y estado. Dos prepar
 
 Los logs BUGS form_received y BUGS clip_prepared separan el tiempo de recepción del tiempo de descarga. La comprobación ordinaria aprovecha el miembro recibido en la interacción; los controles administrativos siguen leyendo al miembro y sus permisos actuales desde Discord.
 
+Una foto PNG/JPG de pocos MB sigue sin sustituir el video obligatorio. El formulario avisa «Adjuntaste una foto»; los rechazos por formato, archivo vacío y tamaño tienen textos diferentes. Si el video supera 60 MiB, el aviso muestra su tamaño. Los nombres largos se acortan conservando la extensión. Los logs BUGS clip_rejected indican la causa y los bytes, sin registrar el nombre ni el contenido del archivo.
+
 ## Publicación de clips grandes
 
 Los videos que caben en el límite del bot siguen adjuntándose al reporte. Los mayores se publican con «Ver el clip», un enlace HTTPS al original guardado en Railway; no se intenta enviarlos como adjuntos que Discord rechazaría. Una respuesta 413 de Discord también activa esta alternativa. La preparación del archivo tiene hasta 180 segundos y no retiene la confirmación inicial del formulario.

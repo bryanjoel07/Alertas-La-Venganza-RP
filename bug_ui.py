@@ -58,9 +58,18 @@ class BugForm(discord.ui.Modal):
             filename=None;attachment=None
             if self.file.values:
                 attachment=self.file.values[0]
-                filename=Path(attachment.filename).name[:100]
-                if not 0<attachment.size<=self.upload_limit or Path(filename).suffix.lower() not in ('.mp4','.webm','.mov','.m4v'):
-                    raise ValueError(f'Adjunta un video MP4, WEBM o MOV de hasta {self.upload_limit//(1024*1024)} MB. Si pesa más, pega su enlace.')
+                original=Path(attachment.filename).name
+                extension=Path(original).suffix.lower()
+                if extension not in ('.mp4','.webm','.mov','.m4v'):
+                    image=extension in ('.png','.jpg','.jpeg','.webp','.heic','.heif','.gif','.avif') or (getattr(attachment,'content_type',None) or '').startswith('image/')
+                    logging.getLogger('LaVenganzaRP.bugs').info('BUGS clip_rejected id=%s reason=%s bytes=%s',self.rid,'image_instead_of_video' if image else 'unsupported_format',attachment.size)
+                    raise ValueError(('Adjuntaste una foto. Aquí hace falta el video del error.' if image else 'Ese tipo de archivo no sirve como video del error.')+' Adjunta un MP4, WEBM, MOV o M4V, o pega el enlace del clip.')
+                if attachment.size<=0:
+                    raise ValueError('El archivo llegó vacío. Vuelve a adjuntar el video del error.')
+                if attachment.size>self.upload_limit:
+                    logging.getLogger('LaVenganzaRP.bugs').info('BUGS clip_rejected id=%s reason=too_large bytes=%s',self.rid,attachment.size)
+                    raise ValueError(f'El video pesa {attachment.size/(1024*1024):.1f} MB. El límite es {self.upload_limit//(1024*1024)} MB. Recórtalo o pega el enlace del clip.')
+                filename=original[:100-len(extension)]+extension
             member=await self.system.member(i)
             values['discord_username']=member.name
             if attachment is not None:

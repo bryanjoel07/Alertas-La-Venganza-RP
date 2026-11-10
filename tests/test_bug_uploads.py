@@ -130,3 +130,33 @@ class ResponsiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.system.store.upload_job(rid)['size'],MAX_CLIP_BYTES)
         self.assertIn('Datos guardados',self.i.edit_original_response.call_args.kwargs['content'])
         self.assertTrue(all(len(label.description or '')<=100 for label in form.children))
+    async def test_small_png_explains_photo_rejection_without_claiming_a_size_problem(self):
+        read=AsyncMock();rid,form=self.form(read)
+        form.file.values[0].filename='foto.png'
+        form.file.values[0].size=2_800_000
+        await form.on_submit(self.i)
+        message=self.i.followup.send.call_args.args[0]
+        self.assertIn('Adjuntaste una foto',message)
+        self.assertNotIn('pesa',message)
+        self.assertNotIn('límite',message)
+        read.assert_not_awaited()
+        self.assertIsNone(self.system.store.upload_job(rid))
+    async def test_video_above_60_mb_reports_its_actual_size_before_any_download(self):
+        read=AsyncMock();rid,form=self.form(read)
+        form.file.values[0].size=61*1024*1024
+        await form.on_submit(self.i)
+        message=self.i.followup.send.call_args.args[0]
+        self.assertIn('pesa 61.0 MB',message)
+        self.assertIn('límite es 60 MB',message)
+        read.assert_not_awaited()
+        self.assertIsNone(self.system.store.upload_job(rid))
+    async def test_long_video_filename_keeps_its_extension_and_can_publish(self):
+        rid,form=self.form(AsyncMock(return_value=b'clip'))
+        form.file.values[0].filename='video-'+'a'*120+'.MP4'
+        await form.on_submit(self.i)
+        await asyncio.gather(*list(self.system.clips.jobs.values()))
+        row=self.system.store.get(rid)
+        self.assertEqual(row['step'],2)
+        self.assertEqual(row['video'],b'clip')
+        self.assertLessEqual(len(row['filename']),100)
+        self.assertTrue(row['filename'].endswith('.mp4'))
