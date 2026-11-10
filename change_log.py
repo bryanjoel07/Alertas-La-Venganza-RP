@@ -14,9 +14,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bug-reports-official-panel-v4'
-SUMMARY='Reemplaza la plantilla manual por una nueva publicación del bot, organizada con instrucciones y botones en el mismo mensaje. El formulario único exige los cuatro apartados: descripción, cómo ocurrió, sistema afectado y frecuencia; identifica la cuenta de Discord automáticamente y mantiene el clip obligatorio. Antes de retirar la plantilla antigua autorizada, guarda y verifica una copia privada, comprueba el panel nuevo y conserva cualquier conversación o archivo ajeno. No modifica reportes reales, roles o permisos.'
-RESTORE=('Código anterior: 669520f42f138f6f040c8d8d87643ed284357b9c. Si ya se retiró la plantilla antigua, adaptar su constante GUIDE al ID guardado en lv_bug_config.official_guide_v4 antes de desplegar esa versión; el antiguo ID no se puede recrear. Conservar SQLite y sus tablas lv_bug_panel_backups, lv_bugs, videos y hashes. La copia privada de la plantilla permite reconstruir su texto con un ID nuevo si se solicita. No restaurar una base antigua, borrar reportes ni reactivar paneles duplicados.')
+RELEASE='bug-reports-fast-form-v5'
+SUMMARY='El formulario confirma los datos guardados sin esperar la descarga del video. Prepara el clip por separado y actualiza el mismo mensaje; Publicar permanece bloqueado hasta guardar el archivo íntegro. La fuente y revisión del clip quedan persistidas para recuperar interrupciones. Valida los apartados antes de descargar y aprovecha el miembro actual de la interacción para evitar lecturas REST repetidas; administración conserva comprobaciones frescas. Añade tiempos de recepción y preparación sin registrar URLs ni contenido del usuario.'
+RESTORE=('Código anterior: 34393e7c3be902d8961c7b6f8c03d303c1449343. Antes de revertir, completar las filas pendientes de lv_bug_uploads o conservarlas para recuperar sus archivos; la versión anterior no procesa esa cola. Conservar SQLite, lv_bugs, lv_bug_uploads, videos y hashes. No restaurar una base antigua ni reactivar o recrear la plantilla eliminada. Las cargas pendientes no autorizan publicar sin un archivo completo o un enlace válido.')
 
 
 class Journal:

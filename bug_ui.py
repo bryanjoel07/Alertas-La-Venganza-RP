@@ -1,10 +1,11 @@
 import logging
 import json
+import time
 from pathlib import Path
 import discord
 from feedback_ui import reply, NONE, RED
-from bug_store import STATES
-from bug_template import DETAILS_LIMIT,details_default
+from bug_store import STATES,clip_url
+from bug_template import DETAILS_LIMIT,details_default,parse_details
 
 async def failed(i,error):
     if isinstance(error,ValueError):return await reply(i,str(error))
@@ -45,22 +46,31 @@ class BugForm(discord.ui.Modal):
         self.add_item(discord.ui.Label(text='Clip obligatorio · Adjunta el video aquí',description=('Ya tienes un video guardado; puedes reemplazarlo.' if row.get('video') else f'Hasta {self.upload_limit//(1024*1024)} MB. Adjunta un video o pega un enlace abajo.'),component=self.file))
         self.add_item(discord.ui.Label(text='Enlace del clip si no adjuntas el video',description='Sin video ni enlace no se puede enviar el reporte.',component=self.clip))
     async def on_submit(self,i):
+        started=time.monotonic()
         await i.response.defer(ephemeral=True,thinking=True)
         try:
-            member=await self.system.member(i)
-            filename=video=None
+            from feedback import clean
+            values={key:clean(item.value) for key,item in self.inputs.items()};values['clip']=clip_url(self.clip.value)
+            parse_details(values['details'])
+            filename=None;attachment=None
             if self.file.values:
                 attachment=self.file.values[0]
                 filename=Path(attachment.filename).name[:100]
-                if attachment.size>self.upload_limit or Path(filename).suffix.lower() not in ('.mp4','.webm','.mov','.m4v'):
+                if not 0<attachment.size<=self.upload_limit or Path(filename).suffix.lower() not in ('.mp4','.webm','.mov','.m4v'):
                     raise ValueError(f'Adjunta un video MP4, WEBM o MOV de hasta {self.upload_limit//(1024*1024)} MB. Si pesa más, pega su enlace.')
-                video=await attachment.read()
-            from feedback import clean
-            values={key:clean(item.value) for key,item in self.inputs.items()};values['clip']=self.clip.value
+            member=await self.system.member(i)
             values['discord_username']=member.name
-            await self.system.call('save_full',self.rid,i.user.id,values,self.revision,filename,video)
-            row=await self.system.call('get',self.rid)
-            await reply(i,'**Revisa tu reporte. Se publicará en el foro para que lo vea la comunidad.**\nEvita contraseñas y datos personales.',embed=self.system.embed(row),view=buttons('publish','continue',rid=self.rid))
+            if attachment is not None:
+                source=dict(id=attachment.id,url=attachment.url,proxy_url=attachment.proxy_url)
+                revision=await self.system.call('prepare_upload',self.rid,i.user.id,values,self.revision,source,filename,attachment.size)
+                row=await self.system.call('get',self.rid)
+                try:await self.system.preview(i,row,processing=True)
+                finally:self.system.clips.launch(self.rid,revision,i,attachment)
+                logging.getLogger('LaVenganzaRP.bugs').info('BUGS form_received id=%s clip_bytes=%s receipt_seconds=%.2f clip_preparation=background',self.rid,attachment.size,time.monotonic()-started)
+            else:
+                await self.system.call('save_full',self.rid,i.user.id,values,self.revision)
+                await self.system.preview(i,await self.system.call('get',self.rid))
+                logging.getLogger('LaVenganzaRP.bugs').info('BUGS form_received id=%s clip_bytes=0 receipt_seconds=%.2f clip_preparation=not_needed',self.rid,time.monotonic()-started)
         except Exception as exc:await failed(i,exc)
     async def on_error(self,i,error):await failed(i,error)
 

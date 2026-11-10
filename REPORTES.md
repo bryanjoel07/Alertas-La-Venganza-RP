@@ -17,3 +17,11 @@ SQLite conserva lv_bugs, lv_bug_events y lv_bug_config. Los archivos del formula
 Para revertir el código, seguir RESTORE en change_log.py conservando SQLite, los videos y las publicaciones.
 
 La retirada de la plantilla antigua requiere una copia JSON con SHA256, un panel nuevo verificado y ausencia de reportes reales, archivos o respuestas de terceros en la publicación anterior. Si aparecen, se conserva archivada para revisión. La copia queda en lv_bug_panel_backups; el historial administrativo registra el reemplazo. No se eliminan otras publicaciones.
+
+## Recepción del formulario y preparación del clip
+
+Al enviar, primero se validan los apartados y se guardan los datos junto con la fuente del archivo de Discord. El mismo mensaje privado muestra «Datos guardados. Preparando el clip…», sin esperar a descargarlo. Publicar está deshabilitado y el servidor también bloquea su uso hasta que el archivo esté completo. Al terminar, el mensaje se convierte en la vista previa normal, sin una segunda publicación. Con enlace y sin archivo no hace falta preparar una descarga.
+
+La tabla lv_bug_uploads conserva fuente, tamaño, revisión y estado. Dos preparaciones pueden trabajar a la vez. Una interrupción del proceso conserva el trabajo pendiente para el siguiente arranque; un fallo de descarga conserva los datos y pide volver a adjuntar o usar un enlace. Un trabajo antiguo no puede sobrescribir un formulario editado después. No se almacenan tokens de interacción ni se registran enlaces privados en los logs.
+
+Los logs BUGS form_received y BUGS clip_prepared separan el tiempo de recepción del tiempo de descarga. La comprobación ordinaria aprovecha el miembro recibido en la interacción; los controles administrativos siguen leyendo al miembro y sus permisos actuales desde Discord.

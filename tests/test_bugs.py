@@ -112,10 +112,13 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         rid=self.system.store.begin(1);form=BugForm(self.system,self.system.store.get(rid))
         for key,value in dict(player_id='42',title='Inventario',details=DETAILS).items():form.inputs[key]._value=value
         form.clip._value=''
-        form.file._values=[SimpleNamespace(filename='clip.mp4',size=10,read=AsyncMock(return_value=b'clip-video'))]
+        form.file._values=[SimpleNamespace(id=900,filename='clip.mp4',size=10,url='https://cdn.discordapp.com/attachments/100/900/clip.mp4',proxy_url=None,read=AsyncMock(return_value=b'clip-video'))]
         self.i.response=SimpleNamespace(defer=AsyncMock(),is_done=lambda:True)
+        self.i.edit_original_response=AsyncMock()
         self.i.followup=SimpleNamespace(send=AsyncMock())
         await form.on_submit(self.i)
+        import asyncio
+        await asyncio.gather(*list(self.system.clips.jobs.values()))
         saved=self.system.store.get(rid)
         self.assertEqual(saved['step'],2);self.assertEqual(saved['video'],b'clip-video')
         data=json.loads(saved['data'])
@@ -124,7 +127,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['system'],'Inventario');self.assertEqual(data['frequency'],'Siempre')
         self.assertEqual(data['discord_username'],'usuario1')
         self.forum.create_thread.assert_not_called()
-        self.assertIn('Revisa tu reporte',self.i.followup.send.call_args.args[0])
+        self.assertIn('Datos guardados',self.i.edit_original_response.call_args_list[0].kwargs['content'])
+        self.assertIn('Revisa tu reporte',self.i.edit_original_response.call_args.kwargs['content'])
     async def test_publication_itself_refuses_a_forged_completed_draft_without_clip(self):
         rid=self.system.store.begin(1)
         with self.system.store.db() as db:db.execute("UPDATE lv_bugs SET status='publicando',step=2 WHERE id=?",(rid,))

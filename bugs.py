@@ -10,6 +10,7 @@ from bug_store import BugStore,STATES
 from bug_ui import BugAction,BugForm,StatePicker,buttons,failed
 from feedback_ui import reply,RED,NONE
 from tickets_store import PROTECTED
+from bug_uploads import ClipUploads
 
 FORUM=1556488595131466000
 GUIDE=1564719087798460466
@@ -23,6 +24,7 @@ class BugSystem:
     def __init__(self,bot,path,guild_id):
         self.bot,self.guild_id=bot,guild_id;self.store=BugStore(path)
         self.lock=asyncio.Lock();self.install_lock=asyncio.Lock();self.task=None
+        self.clips=ClipUploads(self)
         self.group=app_commands.Group(name='errores',description='Reportar errores y seguir su solución')
         self.register()
     async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
@@ -33,9 +35,10 @@ class BugSystem:
         if i.guild_id not in (None,self.guild_id):raise ValueError('Usa los reportes en La Venganza RP.')
         guild=self.bot.get_guild(self.guild_id)
         if not guild:raise ValueError('El bot se está conectando. Inténtalo en un momento.')
-        member=await guild.fetch_member(i.user.id)
+        member=i.user if not admin and i.guild_id==self.guild_id and isinstance(i.user,discord.Member) and i.user.guild.id==self.guild_id else await guild.fetch_member(i.user.id)
         if member.bot:raise ValueError('Los reportes son para jugadores.')
-        forum=await self.forum()
+        cached=guild.get_channel(FORUM) if not admin and hasattr(guild,'get_channel') else None
+        forum=cached if isinstance(cached,discord.ForumChannel) else await self.forum()
         if not forum.permissions_for(member).view_channel:raise ValueError('No tienes acceso al foro Reportes.')
         if admin and not (member.guild_permissions.administrator or {r.id for r in member.roles}&PROTECTED):
             raise ValueError('Solo Owner, Programador y administradores pueden gestionar estos reportes.')
@@ -61,9 +64,14 @@ class BugSystem:
         if data.get('details') and not structured:
             text=discord.utils.escape_markdown(data['details'])
             for start in range(0,len(text),1024):embed.add_field(name='Detalles del problema' if start==0 else 'Detalles (continúa)',value=text[start:start+1024],inline=False)
-        embed.add_field(name='🎥 Clip',value=data.get('clip') or ('Video adjunto al reporte' if row.get('video') else 'Falta adjuntar el clip'),inline=False)
+        embed.add_field(name='🎥 Clip',value='Preparando el video adjunto…' if data.get('upload_pending') else data.get('clip') or ('Video adjunto al reporte' if row.get('video') else 'Falta adjuntar el clip'),inline=False)
         embed.set_footer(text=f"lvbug:{row['id']} · La Venganza RP")
         return embed
+    async def preview(self,i,row,processing=False):
+        view=buttons('publish','continue',rid=row['id'])
+        if processing:
+            view.children[0].item.disabled=True;view.children[0].item.label='Preparando clip';view.children[0].item.emoji='⏳'
+        await i.edit_original_response(content=('**Datos guardados. Preparando el clip adjunto…**\nEste mensaje se actualizará cuando el video esté listo.' if processing else '**Revisa tu reporte. Se publicará en el foro para que lo vea la comunidad.**\nEvita contraseñas y datos personales.'),embed=self.embed(row),view=view,allowed_mentions=NONE)
     async def tracked(self,rid,title,request,operation):
         async def snapshot():
             row=await self.call('get',rid) if rid else None
@@ -171,7 +179,7 @@ class BugSystem:
     async def create(self,rid,recover=False):
         row=await self.call('get',rid);forum=await self.forum();thread=None
         if row['thread']:return
-        if row['status']!='publicando' or (not json.loads(row['data']).get('clip') and not row['video']):
+        if row['status']!='publicando' or json.loads(row['data']).get('upload_pending') or (not json.loads(row['data']).get('clip') and not row['video']):
             raise ValueError('El clip es obligatorio. No se puede publicar un reporte sin él.')
         if recover:
             for candidate in (await self.threads(forum)).values():
@@ -218,6 +226,7 @@ class BugSystem:
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
             try:
+                await self.clips.recover()
                 await self.ready()
                 async with self.lock:
                     for row in await self.call('rows',recovery=True):
