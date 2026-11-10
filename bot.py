@@ -48,7 +48,7 @@ from feedback import FeedbackSystem
 from channel_design import inspect_channel_design
 from bugs import BugSystem
 from suggestions import SuggestionSystem
-from rules_lookup import inspect_rules_source
+from rules_lookup import RulesLookup
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -239,6 +239,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.bugs.group, guild=GUILD)
         self.suggestions = SuggestionSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.suggestions.group, guild=GUILD)
+        self.rules = RulesLookup(self, GUILD_ID)
+        self.tree.add_command(self.rules.command, guild=GUILD)
         self.photos = PhotoSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.photos.group, guild=GUILD)
         self.settings_panel=SettingsPanel(self,DB_PATH,GUILD_ID,CONNECT_URL)
@@ -276,6 +278,7 @@ class LaVenganzaBot(discord.Client):
         await self.feedback.start()
         await self.bugs.start()
         await self.suggestions.start()
+        await self.rules.start()
         await self.photos.start()
         await self.recruitment.start()
         await self.minigames.start()
@@ -301,7 +304,7 @@ class LaVenganzaBot(discord.Client):
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
         await self.bugs.clips.close()
-        tasks = [task for task in (self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.rules.task, self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -1514,6 +1517,7 @@ async def on_thread_create(thread):
 
 @client.event
 async def on_message(message):
+    client.rules.invalidate(message.guild.id if message.guild else None, message.channel.id)
     try:
         await client.bugs.observe(message)
     except Exception:
@@ -1532,6 +1536,7 @@ async def on_message(message):
 
 @client.event
 async def on_raw_message_delete(payload):
+    client.rules.invalidate(payload.guild_id, payload.channel_id)
     try:
         await client.suggestions.deleted(payload.guild_id, payload.channel_id, [payload.message_id])
     except Exception:
@@ -1552,6 +1557,7 @@ async def on_raw_message_delete(payload):
 
 @client.event
 async def on_raw_message_edit(payload):
+    client.rules.invalidate(payload.guild_id, payload.channel_id)
     try:
         await client.photos.edited(payload)
     except Exception:
@@ -1572,6 +1578,7 @@ async def on_raw_message_edit(payload):
 
 @client.event
 async def on_raw_bulk_message_delete(payload):
+    client.rules.invalidate(payload.guild_id, payload.channel_id)
     try:
         await client.suggestions.deleted(payload.guild_id, payload.channel_id, payload.message_ids)
     except Exception:
@@ -1610,7 +1617,7 @@ async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
     try:
-        await inspect_rules_source(client, GUILD_ID)
+        await client.rules.ready()
     except Exception:
         log.exception('No se pudo leer la fuente oficial de normas')
     try:
