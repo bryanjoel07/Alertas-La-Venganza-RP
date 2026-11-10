@@ -71,13 +71,22 @@ class ReportPanel:
             await self.call('config','official_guide_v4',thread.id)
             await self.call('config','guide_buttons',thread.id)
             await self.call('config','panel_revision','6')
-        await self.system.tracked(None,'Publicar la nueva plantilla oficial del bot','official-panel-v4',publish)
+        async def snapshot():
+            if thread is None:return dict(guide=None)
+            current=await self.bot.fetch_channel(thread.id)
+            return dict(thread=thread_state(current),message=message_state(await current.fetch_message(current.id)),
+                panel_revision=await self.call('config','panel_revision'))
+        await self.bot.changes.tracked('BUG_REPORTS','Actualizar el panel de Reportes para clips de 60 MB',publish,
+            request_id='official-panel-v6',snapshot=snapshot)
         await self.verify(thread.id)
+        log.info('BUGS panel_verified guide=%s max_clip_mb=60 same_entry=True',thread.id)
         return await self.bot.fetch_channel(thread.id)
     async def verify(self,tid):
         thread=await self.bot.fetch_channel(tid);root=await thread.fetch_message(tid)
         if thread.parent_id!=FORUM or thread.owner_id!=self.bot.user.id or root.author.id!=self.bot.user.id or self.system.entry_controls(root)!=CONTROLS or not any(e.footer.text==MARKER for e in root.embeds):
             raise RuntimeError('Discord no confirmó la nueva plantilla del bot y sus botones.')
+        if not any('60 MB' in field.value for embed in root.embeds for field in embed.fields):
+            raise RuntimeError('Discord no confirmó el aviso de clips de hasta 60 MB.')
         return thread
     async def ready(self):
         forum=await self.system.forum()
