@@ -12,6 +12,7 @@ from feedback_ui import reply,RED,NONE,failed
 from tickets_store import PROTECTED
 
 FORUM=1556488595131466000
+GUIDE=1564719087798460466
 TAGS={'pendiente':1564715642911981718,'revision':1564715732309250078,'proceso':1564715806330192012,
       'solucionado':1564715869026648237,'cerrado':1564715973465079951,'info':1564718816959660062}
 PORTAL='🐛 REPORTAR UN ERROR | LA VENGANZA RP'
@@ -64,6 +65,7 @@ class BugSystem:
     async def ready(self):
         async with self.install_lock:
             forum=await self.forum();saved=await self.call('config','portal')
+            pin_limited=await self.call('config','pin_limited')=='1'
             thread=None
             if saved:
                 try:thread=await self.bot.fetch_channel(int(saved))
@@ -78,8 +80,14 @@ class BugSystem:
                     thread=result.thread
                 if thread.parent_id!=FORUM or thread.owner_id!=self.bot.user.id:raise ValueError('El panel guardado no pertenece a este bot en Reportes.')
                 await self.call('config','portal',thread.id)
-                if not thread.flags.pinned:await thread.edit(pinned=True,reason='Panel de reportes solicitado por el dueño')
-            if not thread or not thread.flags.pinned:
+                if not thread.flags.pinned:
+                    try:await thread.edit(pinned=True,reason='Panel de reportes solicitado por el dueño')
+                    except discord.HTTPException as exc:
+                        if exc.code!=30047:raise
+                        await self.guide_buttons()
+                        await self.call('config','pin_limited','1')
+                        log.info('BUGS existing_guide_pin_preserved guide=%s controls_added=True',GUIDE)
+            if not thread or (not thread.flags.pinned and not pin_limited):
                 await self.tracked(None,'Instalar panel de reportes de errores','portal-v1',install)
             verified=await self.bot.fetch_channel(thread.id)
             if not saved:await self.call('config','portal',thread.id)
@@ -87,6 +95,15 @@ class BugSystem:
             ids=[c.custom_id for r in starter.components for c in r.children if hasattr(c,'custom_id')]
             if ids!=['lvbug:new:0','lvbug:mine:0']:raise RuntimeError('No se confirmaron los botones de reportes.')
             log.info('BUGS ready forum=%s portal=%s original_template_preserved=True clip_upload=True admin_controls=True controls=%s',FORUM,thread.id,ids)
+    async def guide_buttons(self):
+        guide=await self.bot.fetch_channel(GUIDE)
+        if guide.parent_id!=FORUM:raise ValueError('La plantilla original ya no está en Reportes.')
+        async for message in guide.history(limit=100):
+            ids=[getattr(c,'custom_id',None) for row in message.components for c in row.children]
+            if message.author.id==self.bot.user.id and ids==['lvbug:new:0','lvbug:mine:0']:
+                await self.call('config','guide_buttons',message.id);return
+        message=await guide.send('🐛 **Ahora puedes enviar el reporte con el bot, bro.**\nPulsa **Reportar un error**, completa el formulario y adjunta el video o pega su enlace. El bot guardará tu borrador y lo publicará con su estado.',view=buttons('new','mine'),allowed_mentions=NONE)
+        await self.call('config','guide_buttons',message.id)
     async def form(self,i,rid=0):
         await self.member(i)
         rid=rid or await self.call('begin',i.user.id);row=await self.call('get',rid)

@@ -14,9 +14,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bug-reports-v1'
-SUMMARY='Reportes de errores integrados en el foro existente 1556488595131466000: panel fijado, formulario de dos pasos, borradores, video adjunto o enlace obligatorio, vista previa y publicación con Pendiente. Owner, Programador y administradores pueden tomar reportes y cambiar estados con motivo e historial. También registra nuevas publicaciones manuales y sincroniza etiquetas; conserva la plantilla oficial y los permisos existentes. Los videos del formulario se guardan en SQLite con hash antes de publicarse y las operaciones pendientes se recuperan.'
-RESTORE=('Para retirar este código, desplegar 303a4beb7cb6e61a40491b33417aea8039d1c752 conservando SQLite y /data. Antes de retirarlo, quitar solo los controles del panel propio identificado por lv_bug_config.portal y los mensajes propios lv_bugs.message. No borrar el foro, sus publicaciones, la plantilla oficial, etiquetas ni tablas lv_bugs/lv_bug_events; conservar videos, hashes y estados. No restaurar una base antigua. Las copias BUG_REPORTS conservan el estado previo a cada operación del bot. No cambiar roles o permisos ni reactivar solicitudes consumidas.')
+RELEASE='bug-reports-v1-pin-limit'
+SUMMARY='Reportes de errores integrados en el foro existente 1556488595131466000: panel y botones en la plantilla oficial fijada (Discord limita a un solo pin), formulario de dos pasos, borradores, video adjunto o enlace obligatorio, vista previa y publicación con Pendiente. Owner, Programador y administradores pueden tomar reportes y cambiar estados con motivo e historial. También registra nuevas publicaciones manuales y sincroniza etiquetas; conserva la plantilla oficial y los permisos existentes. Los videos del formulario se guardan en SQLite con hash antes de publicarse y las operaciones pendientes se recuperan.'
+RESTORE=('Para revertir la adaptación al límite de un hilo fijado, desplegar e6c1f7dc6c78d3c60a8c5eb5168504991d955410 conservando SQLite y /data; esa versión conserva el panel pero volverá a rechazar el segundo pin. Para retirar el sistema completo usar 303a4beb7cb6e61a40491b33417aea8039d1c752 y quitar solo los controles propios identificados por lv_bug_config.portal, lv_bug_config.guide_buttons y lv_bugs.message. Conservar la plantilla oficial, publicaciones, etiquetas y videos; no restaurar un SQLite antiguo ni cambiar roles o permisos.')
 
 
 class Journal:

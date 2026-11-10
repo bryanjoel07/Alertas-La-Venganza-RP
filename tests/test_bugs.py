@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock,MagicMock
 import discord
 from bug_store import BugStore,clip_url
 from bug_ui import BugForm
-from bugs import BugSystem,FORUM,TAGS
+from bugs import BugSystem,FORUM,TAGS,GUIDE
 from tickets_store import PROTECTED
 
 class StoreTests(unittest.TestCase):
@@ -117,3 +117,16 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.system.apply_state(rid)
         self.assertEqual([t.id for t in thread.edit.call_args.kwargs['applied_tags']],[999,TAGS['revision']])
         self.assertEqual(self.system.store.get(rid)['status'],'revision')
+    async def test_original_pinned_guide_keeps_its_text_and_gets_buttons_only_once(self):
+        original=SimpleNamespace(id=GUIDE,author=SimpleNamespace(id=99),components=[],content='PLANTILLA ORIGINAL',edit=AsyncMock())
+        messages=[original]
+        async def history(**kwargs):
+            for message in messages:yield message
+        async def send(content,**kwargs):
+            message=SimpleNamespace(id=888,author=self.bot.user,components=[SimpleNamespace(children=[SimpleNamespace(custom_id='lvbug:new:0'),SimpleNamespace(custom_id='lvbug:mine:0')])])
+            messages.append(message);return message
+        guide=SimpleNamespace(parent_id=FORUM,history=history,send=AsyncMock(side_effect=send))
+        self.bot.fetch_channel=AsyncMock(return_value=guide)
+        await self.system.guide_buttons();await self.system.guide_buttons()
+        guide.send.assert_awaited_once();original.edit.assert_not_awaited()
+        self.assertEqual(original.content,'PLANTILLA ORIGINAL')
