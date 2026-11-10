@@ -47,6 +47,7 @@ from citizen_cleanup import keep_citizen_roles
 from feedback import FeedbackSystem
 from channel_design import inspect_channel_design
 from bugs import BugSystem
+from suggestions import SuggestionSystem
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -235,6 +236,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.feedback.group, guild=GUILD)
         self.bugs = BugSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.bugs.group, guild=GUILD)
+        self.suggestions = SuggestionSystem(self, DB_PATH, GUILD_ID)
+        self.tree.add_command(self.suggestions.group, guild=GUILD)
         self.photos = PhotoSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.photos.group, guild=GUILD)
         self.settings_panel=SettingsPanel(self,DB_PATH,GUILD_ID,CONNECT_URL)
@@ -271,6 +274,7 @@ class LaVenganzaBot(discord.Client):
         await self.tickets.start()
         await self.feedback.start()
         await self.bugs.start()
+        await self.suggestions.start()
         await self.photos.start()
         await self.recruitment.start()
         await self.minigames.start()
@@ -296,7 +300,7 @@ class LaVenganzaBot(discord.Client):
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
         await self.bugs.clips.close()
-        tasks = [task for task in (self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -1528,6 +1532,10 @@ async def on_message(message):
 @client.event
 async def on_raw_message_delete(payload):
     try:
+        await client.suggestions.deleted(payload.guild_id, payload.channel_id, [payload.message_id])
+    except Exception:
+        log.exception('No se pudo retirar una sugerencia eliminada')
+    try:
         await client.feedback.deleted(payload.guild_id, payload.channel_id, [payload.message_id])
     except Exception:
         log.exception('No se pudo actualizar una opinión retirada de Feedback')
@@ -1564,6 +1572,10 @@ async def on_raw_message_edit(payload):
 @client.event
 async def on_raw_bulk_message_delete(payload):
     try:
+        await client.suggestions.deleted(payload.guild_id, payload.channel_id, payload.message_ids)
+    except Exception:
+        log.exception('No se pudieron retirar sugerencias eliminadas')
+    try:
         await client.feedback.deleted(payload.guild_id, payload.channel_id, payload.message_ids)
     except Exception:
         log.exception('No se pudieron actualizar opiniones retiradas de Feedback')
@@ -1577,9 +1589,29 @@ async def on_raw_bulk_message_delete(payload):
 
 
 @client.event
+async def on_raw_thread_delete(payload):
+    try:
+        await client.suggestions.deleted(payload.guild_id, payload.thread_id)
+    except Exception:
+        log.exception('No se pudo retirar una publicación eliminada de Sugerencias')
+
+
+@client.event
+async def on_guild_channel_delete(channel):
+    try:
+        await client.suggestions.deleted(channel.guild.id, channel.id)
+    except Exception:
+        log.exception('No se pudo actualizar el registro de Sugerencias del canal eliminado')
+
+
+@client.event
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    try:
+        await client.suggestions.ready()
+    except Exception:
+        log.exception('No se pudo preparar el panel de Sugerencias')
     log.info("SERVER_UP banner ready file=%s bytes=%s", SERVER_UP_BANNER.name, SERVER_UP_BANNER.stat().st_size)
     try:
         await client.bugs.ready()
