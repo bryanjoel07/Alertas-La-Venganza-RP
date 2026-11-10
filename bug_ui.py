@@ -2,8 +2,13 @@ import logging
 import json
 from pathlib import Path
 import discord
-from feedback_ui import reply, failed, NONE, RED
+from feedback_ui import reply, NONE, RED
 from bug_store import STATES
+
+async def failed(i,error):
+    if isinstance(error,ValueError):return await reply(i,str(error))
+    logging.getLogger('LaVenganzaRP.bugs').error('BUGS interaction_failed',exc_info=error)
+    await reply(i,'No pude completar esa acción, bro. Revisa «Mis reportes» antes de volver a enviarlo.')
 
 class BugAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lvbug:(?P<action>new|mine|continue|publish|claim|state|history):(?P<rid>[0-9]+)'):
     def __init__(self,action,rid=0):

@@ -7,8 +7,8 @@ import re
 import discord
 from discord import app_commands
 from bug_store import BugStore,STATES
-from bug_ui import BugAction,BugForm,StatePicker,buttons
-from feedback_ui import reply,RED,NONE,failed
+from bug_ui import BugAction,BugForm,StatePicker,buttons,failed
+from feedback_ui import reply,RED,NONE
 from tickets_store import PROTECTED
 
 FORUM=1556488595131466000
