@@ -1,6 +1,8 @@
 # Feedback de atención del staff
 
-Canal existente: **1539014594348064939 · ✨┊𝐅𝐞𝐞𝐝𝐛𝐚𝐜𝐤**. No se cambian sus permisos, mensajes anteriores, nombre ni categoría.
+Canal existente: **1539014594348064939 · ✨┊𝐅𝐞𝐞𝐝𝐛𝐚𝐜𝐤**. Por solicitud del dueño, el rol **Ciudadanos (1245009164070158409)** recibe Ver canal, Leer historial y Usar comandos de aplicaciones en este canal para acceder al panel. Se conserva exactamente su permiso anterior de escribir, sus demás bits, todos los permisos de otros roles y miembros y las definiciones de roles. No se cambian categoría, nombre, mensajes anteriores ni la privacidad de las opiniones.
+
+La configuración de acceso se ejecuta una sola vez, guarda el estado anterior y posterior en ChangeLog, lee de nuevo los permisos efectivos desde Discord y marca lv_feedback_config.citizen_panel_access_v1 como complete solo después de verificar. Reiniciar o actualizar el panel no vuelve a sobrescribir permisos decididos después por administración.
 
 El panel ofrece **Dejar feedback**, **Mis opiniones** y **Ver resultados**. Se puede valorar un ticket cerrado o elegir a quien ayudó por voz o fuera de tickets. El buscador usa la lista completa del servidor, incluidos los miembros desconectados. En el formulario se eligen 1–5 estrellas, un comentario opcional y si la opinión se publica o queda solo para administración. Fuera de tickets también se pregunta con qué ayudaron.
 

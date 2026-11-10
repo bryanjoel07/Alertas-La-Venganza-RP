@@ -149,6 +149,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             get_guild=lambda gid: self.guild, fetch_channel=AsyncMock(return_value=self.channel))
         self.bot.changes = ChangeLog(self.bot, self.path, 10); self.bot.changes.journal.initialize()
         self.system = FeedbackSystem(self.bot, self.path, 10); self.system.store.initialize()
+        # General feedback tests start after the separate, one-shot access grant.
+        self.system.store.config('citizen_panel_access_v1', 'complete')
         self.system.directory.load = AsyncMock(return_value=list(self.members.values()))
 
         async def send(*, embed, view, **kwargs):
@@ -177,7 +179,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.tickets.claim(rid,2); self.tickets.transition(rid,'cerrado',2,'SOLUCIÓN PRIVADA')
         return rid
 
-    async def test_panel_is_persistent_verified_and_never_edits_channel_permissions(self):
+    async def test_panel_is_persistent_and_does_not_repeat_a_completed_permission_grant(self):
         await self.system.ready(); await self.system.ready()
         self.assertTrue(self.system.prepared)
         self.channel.send.assert_awaited_once()

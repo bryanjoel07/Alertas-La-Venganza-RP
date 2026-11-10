@@ -15,6 +15,7 @@ from feedback_ui import (RED, NONE, controls, reply, EntryChoice, Picker, Feedba
 from obscenities import WORDS, PATTERNS
 from photo_members import MemberDirectory, DirectoryUnavailable
 from tickets import is_staff_role
+from feedback_access import enable_citizen_panel
 
 CHANNEL_ID = 1539014594348064939
 PANEL_MARKER = 'La Venganza RP · Feedback del staff · Panel'
@@ -248,6 +249,7 @@ class FeedbackSystem:
 
     async def ready(self):
         async with self.install_lock:
+            await enable_citizen_panel(self)
             channel = await self.channel()
             embed = await self.panel_embed()
             signature = json.dumps(embed.to_dict(), sort_keys=True)
