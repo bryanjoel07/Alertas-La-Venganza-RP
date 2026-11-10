@@ -18,6 +18,7 @@ from ticket_delete_backup import covers_ticket
 from discord_channels import fetch_channels
 from photo_members import MemberDirectory,DirectoryUnavailable
 from ticket_members import TicketMemberPicker
+from ticket_priority_repair import repair_requested_priority
 
 import discord
 from discord import app_commands
@@ -38,6 +39,9 @@ PLAYER_SEARCH_PAGE_SIZE=5
 NIGHT_NOTICE='🌙 Recibimos tu ticket, bro. El equipo te responde cuando esté disponible.'
 STATE_LABELS={'creando':'Preparando','nuevo':'Nuevo','en_atencion':'En atención','esperando_jugador':'Esperando al jugador',
  'resuelto':'Resuelto','cerrado':'Cerrado','fallido':'Creación fallida'}
+
+class PriorityPanelPending(Exception):
+ """Priority is durable, but the public panel has not been confirmed yet."""
 
 
 def is_staff_role(role):
@@ -141,6 +145,7 @@ class TicketSystem:
   self.lock=asyncio.Lock();self.ready_lock=asyncio.Lock();self.file_lock=asyncio.Semaphore(2)
   self.task=None;self.prepared=False
   self.case_locks={};self.deletion_backup_lock=asyncio.Lock();self.last_deletion_backup=None
+  self.panel_locks={}
   self.category_lock=asyncio.Lock()
   self.member_directory=MemberDirectory(bot,guild_id)
   self.group=app_commands.Group(name='ticket',description='Atención, gestión y seguimiento de tickets')
@@ -185,32 +190,48 @@ class TicketSystem:
   if row['department']=='staff':embed.add_field(name='Privacidad',value='Caso reservado. Los usuarios con Administrador en Discord conservan acceso técnico.',inline=False)
   embed.set_footer(text=f"Autor ID {row['owner']} · Usa los controles del ticket · No compartas contraseñas ni datos de tarjeta")
   return embed
- async def refresh(self,row):
+ async def refresh(self,row,*,verify_priority=False):
+  async with self.panel_locks.setdefault(row['id'],asyncio.Lock()):
+   return await self._refresh(row,verify_priority=verify_priority)
+ async def _refresh(self,row,*,verify_priority=False):
   row=self.store.get(row['id']) or row
   if row.get('deleted_at'):return
   channel=await self.channel(row)
   message=None
   if row['control_message']:
    with suppress(discord.NotFound):message=await channel.fetch_message(row['control_message'])
-  if message:await self.edit_control(row,channel,message)
+  if message:await self.edit_control(row,channel,message,audit_priority=verify_priority)
   else:
    async for old in channel.history(limit=100,oldest_first=True):
     if old.author.id==self.bot.user.id and any(e.title and e.title.startswith(f"{DEPARTMENTS[row['department']][0]} Ticket #{row['id']} ·") for e in old.embeds):
      message=old;break
-   if message:await self.edit_control(row,channel,message)
+   if message:await self.edit_control(row,channel,message,audit_priority=verify_priority)
    else:message=await channel.send(embed=self.embed(row),view=TicketControls.from_row(row),allowed_mentions=discord.AllowedMentions.none())
    await self.call('update',row['id'],control_message=message.id)
-  await self.sync_control_messages(row,channel,message.id)
- async def edit_control(self,row,channel,message):
+  if verify_priority:
+   confirmed=await channel.fetch_message(message.id)
+   latest=self.store.get(row['id'])
+   values=[str(field.value) for embed in confirmed.embeds for field in embed.fields if field.name=='Prioridad']
+   if confirmed.author.id!=self.bot.user.id or values!=[latest['priority']]:
+    raise PriorityPanelPending('Discord todavía no muestra la prioridad guardada.')
+   if not await self.call('acknowledge_priority_panel',row['id'],latest['priority']):
+    raise PriorityPanelPending('La prioridad cambió mientras se actualizaba el panel.')
+   log.info('TICKETS priority_panel_verified ticket=%s channel=%s message=%s stored=%s displayed=%s',row['id'],channel.id,message.id,latest['priority'],values[0])
+  else:await self.sync_control_messages(row,channel,message.id)
+  return message
+ async def edit_control(self,row,channel,message,*,audit_priority=False):
   async def edit():
-   return await message.edit(embed=self.embed(row),view=TicketControls.from_row(row))
+   latest=self.store.get(row['id']) or row
+   return await message.edit(embed=self.embed(latest),view=TicketControls.from_row(latest))
   ids=[getattr(c,'custom_id',None) for group in message.components for c in group.children]
   expected=[c.custom_id for c in TicketControls.from_row(row).children]
-  if row['status']!='cerrado' and ids!=expected:
+  displayed=[str(field.value) for embed in message.embeds for field in embed.fields if field.name=='Prioridad']
+  if row['status']!='cerrado' and (ids!=expected or (audit_priority and displayed!=[row['priority']])):
    async def snapshot():
     fresh=await channel.fetch_message(message.id)
     if fresh.author.id!=self.bot.user.id:raise ValueError('El mensaje de controles no pertenece a este bot.')
     return dict(ticket=row['id'],channel=channel.id,message=fresh.id,content=fresh.content,
+      saved_ticket=self.store.get(row['id']),
       embeds=[e.to_dict() for e in fresh.embeds],components=[c.to_dict() for c in fresh.components])
    return await self.bot.changes.tracked('TICKET_CONTROLS','Actualizar botones del ticket abierto',edit,
      request_id=f"{row['id']}:{message.id}:{time.time_ns()}",snapshot=snapshot)
@@ -813,8 +834,14 @@ class TicketSystem:
    if not row:raise ValueError('Ese ticket ya no está disponible.')
    self.authorize(i.user,row,staff=True)
    changed=await self.call('set_priority',rid,priority,i.user.id,reason)
-   await self.refresh(self.store.get(rid))
-  text='Prioridad guardada.' if changed else 'El ticket ya tiene esa prioridad.'
+   synchronized=True
+   try:await self.refresh(self.store.get(rid),verify_priority=True)
+   except (discord.HTTPException,PriorityPanelPending):
+    synchronized=False
+    log.warning('TICKETS priority_panel_pending ticket=%s priority=%s; retry_after_restart=True',rid,priority,exc_info=True)
+  label={'normal':'Normal','alta':'Alta','urgente':'Urgente'}[priority]
+  text=f'Prioridad guardada: **{label}**.' if changed else f'El ticket ya tiene prioridad **{label}**.'
+  text+=' El panel ya está actualizado.' if synchronized else ' Discord no actualizó el panel todavía; lo volveré a intentar automáticamente.'
   if priority=='urgente':
    try:
     if await self.notify_urgent(rid):text+=' Ya avisé a los encargados.'
@@ -1006,6 +1033,7 @@ class TicketSystem:
   log.info('TICKETS department_labels_verified labels=%s',labels)
   log.info('TICKETS closed_navigation_verified location=closed_category main_button_removed=True category=%s existing_closed_cases=%s',closed.id,sum(listed_ticket(r,{c.id:c for c in all_channels if isinstance(c,discord.TextChannel)},True) for r in self.store.list(limit=10000)))
   log.info('TICKETS panel_verified channel=%s message=%s closed_category=%s legacy_channels_untouched=True protected_roles_untouched=True',panel.id,message.id,closed.id)
+  await repair_requested_priority(self)
  async def ready(self):
   if not self.enabled():return
   async with self.ready_lock:
@@ -1077,6 +1105,12 @@ class TicketSystem:
  async def maintenance(self):
   now=int(time.time())
   for row in await self.call('list',limit=10000):
+   if not row.get('deleted_at') and row['status'] not in ('creando','fallido') and not json.loads(row['form']).get('selftest') and self.store.config(f"priority-panel:{row['id']}"):
+    try:
+     async with self.lock:
+      current=self.store.get(row['id'])
+      if not current.get('deleted_at'):await self.refresh(current,verify_priority=True)
+    except Exception:log.exception('TICKETS priority_panel_retry_pending ticket=%s; continuing other cases',row['id'])
    if row['status'] in ('creando','fallido','cerrado') or row.get('deleted_at') or json.loads(row['form']).get('selftest'):continue
    try:
     if row['priority']=='urgente':await self.notify_urgent(row['id'],now)

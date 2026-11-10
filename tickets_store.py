@@ -108,9 +108,17 @@ class TicketStore:
   with self.db() as db:
    row=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
    if not row or row['deleted_at'] or row['status'] in ('creando','fallido','cerrado'):raise ValueError('Solo puedes cambiar la prioridad de un ticket abierto.')
+   db.execute('INSERT INTO lv_ticket_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      (f'priority-panel:{rid}',priority))
    if row['priority']==priority:return False
    db.execute('UPDATE lv_tickets SET priority=?,updated=? WHERE id=?',(priority,int(time.time()),rid))
    self.event(db,rid,actor,'prioridad',f'{priority}: {reason.strip()}')
+   return True
+ def acknowledge_priority_panel(self,rid,priority):
+  with self.db() as db:
+   row=db.execute('SELECT priority FROM lv_tickets WHERE id=?',(rid,)).fetchone()
+   if not row or row['priority']!=priority:return False
+   db.execute('DELETE FROM lv_ticket_config WHERE key=? AND value=?',(f'priority-panel:{rid}',priority))
    return True
  def claim_creation(self,rid,now=None):
   stamp=int(time.time()) if now is None else now
