@@ -16,6 +16,8 @@ from zoneinfo import ZoneInfo
 from access_layout import merged_raw
 from ticket_delete_backup import covers_ticket
 from discord_channels import fetch_channels
+from photo_members import MemberDirectory,DirectoryUnavailable
+from ticket_members import TicketMemberPicker
 
 import discord
 from discord import app_commands
@@ -101,7 +103,9 @@ def channel_overwrites(guild,row,store,owner,people=(),staff=()):
     read_message_history=True,attach_files=write and not closed,embed_links=write and not closed,
     use_application_commands=True,create_public_threads=False,create_private_threads=False,send_messages_in_threads=False)
  access(owner)
- for member in people:access(member)
+ # Reserved guests already require Administrator; do not leave a lasting member grant.
+ for member in people:
+  if row['department']!='staff':access(member)
  for member in staff:access(member)
  for role in guild.roles:
   # The owner explicitly authorized view/history grants to all these ranks on closed normal cases.
@@ -138,6 +142,7 @@ class TicketSystem:
   self.task=None;self.prepared=False
   self.case_locks={};self.deletion_backup_lock=asyncio.Lock();self.last_deletion_backup=None
   self.category_lock=asyncio.Lock()
+  self.member_directory=MemberDirectory(bot,guild_id)
   self.group=app_commands.Group(name='ticket',description='Atención, gestión y seguimiento de tickets')
   self.register()
  async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
@@ -200,13 +205,14 @@ class TicketSystem:
   async def edit():
    return await message.edit(embed=self.embed(row),view=TicketControls.from_row(row))
   ids=[getattr(c,'custom_id',None) for group in message.components for c in group.children]
-  if row.get('assignee') and row['status']!='cerrado' and f"lv:ticket:case:{row['id']}:claim" in ids:
+  expected=[c.custom_id for c in TicketControls.from_row(row).children]
+  if row['status']!='cerrado' and ids!=expected:
    async def snapshot():
     fresh=await channel.fetch_message(message.id)
     if fresh.author.id!=self.bot.user.id:raise ValueError('El mensaje de controles no pertenece a este bot.')
     return dict(ticket=row['id'],channel=channel.id,message=fresh.id,content=fresh.content,
       embeds=[e.to_dict() for e in fresh.embeds],components=[c.to_dict() for c in fresh.components])
-   return await self.bot.changes.tracked('TICKET_CONTROLS','Retirar Reclamar de un ticket que ya tiene responsable',edit,
+   return await self.bot.changes.tracked('TICKET_CONTROLS','Actualizar botones del ticket abierto',edit,
      request_id=f"{row['id']}:{message.id}:{time.time_ns()}",snapshot=snapshot)
   return await edit()
  async def sync_control_messages(self,row,channel,control_id):
@@ -263,7 +269,7 @@ class TicketSystem:
   return category
  async def snapshot(self,row):
   current=self.store.get(row['id'])
-  value=dict(ticket=current)
+  value=dict(ticket=current,participants=self.store.people(row['id']))
   if current['channel'] and not current.get('deleted_at'):
    with suppress(discord.NotFound):
     c=await self.channel(current)
@@ -731,7 +737,15 @@ class TicketSystem:
     options=[discord.SelectOption(label=label,emoji=emoji,value=key) for key,(emoji,label,_) in DEPARTMENTS.items() if row['department']!='staff' or key=='staff']
     await reply(click,'Elige el departamento de destino.',view=ChoiceView(options,chosen,'Departamento de destino'))
    return await i.response.send_modal(TextForm('Transferir caso','Motivo de la transferencia',transfer_form))
-  if action=='people':return await reply(i,'Usa `/ticket participante` para añadir o retirar una persona. Cada cambio queda registrado. Los reportes contra staff solo permiten participantes que sean administradores.')
+  if action=='people':
+   self.member_ticket(i,rid)
+   await i.response.defer(ephemeral=True,thinking=True)
+   try:members=await self.member_directory.load(i.guild,force=True)
+   except DirectoryUnavailable:
+    return await reply(i,'No pude cargar la lista completa del servidor. Vuelve a intentarlo en un momento.')
+   self.member_ticket(i,rid)
+   picker=TicketMemberPicker(self,i.user.id,rid,members)
+   return await reply(i,picker.content(),view=picker)
   if action=='priority':
    return await i.response.send_modal(PriorityForm(self,rid,row['priority']))
   if action=='rate':
@@ -753,6 +767,45 @@ class TicketSystem:
    files=await self.call('files',rid)
    lines=[f"**{n+1}.** {discord.utils.escape_markdown(f['filename'])[:100]} · {f['state']} · ID `{f['attachment']}`" for n,f in enumerate(files)]
    return await reply(i,('\n'.join(lines)[:1700] or 'Todavía no hay archivos adjuntos.')+'\nDescarga una copia con `/ticket archivo` indicando el ID del archivo.')
+ def member_ticket(self,i,rid,actor=None):
+  if i.guild_id!=self.guild_id:raise ValueError('Usa Añadir miembro desde La Venganza RP.')
+  row=self.store.get(rid)
+  if (not row or row['status'] not in ('nuevo','en_atencion','esperando_jugador','resuelto')
+    or row.get('deleted_at') or row.get('deletion_requested') or json.loads(row['form']).get('selftest')):
+   raise ValueError('Solo puedes añadir miembros a un ticket abierto y disponible.')
+  self.authorize(actor or i.user,row,staff=True)
+  return row
+ async def add_ticket_member(self,i,rid,uid):
+  self.member_ticket(i,rid)
+  async with self.case_lock(rid):
+   async with self.lock:
+    guild=self.bot.get_guild(self.guild_id)
+    if not guild:raise ValueError('No pude encontrar el servidor. Vuelve a intentarlo.')
+    try:actor=await guild.fetch_member(i.user.id)
+    except discord.NotFound:raise ValueError('Ya no tienes acceso a este servidor.') from None
+    row=self.member_ticket(i,rid,actor)
+    try:member=await guild.fetch_member(uid)
+    except discord.NotFound:raise ValueError('Esa persona ya no está en el servidor.') from None
+    if member.guild.id!=self.guild_id or member.bot or member.id in (row['owner'],row.get('excluded')):
+     raise ValueError('No puedes añadir a esa persona a este ticket.')
+    if row['department']=='staff' and not member.guild_permissions.administrator:
+     raise ValueError('Los reportes contra staff solo permiten añadir administradores de Discord.')
+    if uid in self.store.people(rid):return False
+    channel=await self.channel(row)
+    grants=('view_channel','read_message_history','send_messages','attach_files','embed_links','use_application_commands')
+    overwrite=channel.overwrites_for(member)
+    for key in grants:setattr(overwrite,key,True)
+    async def add():
+     if not member.guild_permissions.administrator:
+      await channel.set_permissions(member,overwrite=overwrite,reason=f'Añadir miembro al ticket #{rid}; solicitado por {actor.id}')
+      verified=await self.channel(row)
+      actual=verified.overwrites_for(member)
+      if any(getattr(actual,key) is not True for key in grants):
+       raise ValueError('Discord no confirmó el acceso completo. Vuelve a intentarlo; el ticket sigue guardado.')
+     await self.call('participant',rid,uid,actor.id,True)
+    await self.tracked(row,f'Añadir miembro {uid} al ticket #{rid}',add)
+    log.info('TICKETS member_added ticket=%s member=%s actor=%s reserved=%s',rid,uid,actor.id,row['department']=='staff')
+    return True
  async def change_priority(self,i,rid,priority,reason):
   if i.guild_id!=self.guild_id:raise ValueError('Cambia la prioridad desde La Venganza RP.')
   async with self.lock:

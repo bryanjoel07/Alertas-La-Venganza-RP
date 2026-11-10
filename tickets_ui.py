@@ -81,7 +81,7 @@ class ClosedArchivePanel(SafeView):
 ACTIONS={'claim':('Reclamar','🙋'),'wait':('Solicitar pruebas','📎'),'resolve':('Resolver','✅'),
  'close':('Cerrar','🔒'),'reopen':('Reabrir','🔓'),'transcript':('Transcripción','📄'),
  'note':('Nota interna','📝'),'transfer':('Transferir','🔀'),'priority':('Prioridad','🚩'),
- 'people':('Participantes','👥'),'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️')}
+ 'people':('Añadir miembro','👥'),'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️')}
 class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticket:case:(?P<ticket>[0-9]+):(?P<action>[a-z]+)'):
  def __init__(self,rid,action):
   label,emoji=ACTIONS[action]
@@ -102,7 +102,7 @@ class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticke
 class TicketControls(discord.ui.View):
  def __init__(self,rid,closed=False,deleted=False,*,assigned=False):
   super().__init__(timeout=None)
-  actions=[] if deleted else ['rate','delete'] if closed else ['resolve','close','priority'] if assigned else ['claim','resolve','close','priority']
+  actions=[] if deleted else ['rate','delete'] if closed else ['resolve','close','priority','people'] if assigned else ['claim','resolve','close','priority','people']
   for n,action in enumerate(actions):
    item=TicketAction(rid,action)
    item.item.row=n//4
