@@ -62,6 +62,7 @@ CONFIRM_SECONDS = 90
 PANEL_MAX_AGE = 180
 DB_PATH = database_path()
 DATA_DIR = os.path.dirname(DB_PATH)
+SERVER_UP_BANNER = Path(__file__).parent / "assets" / "banners" / "server-up.gif"
 DRAFT_SECONDS = 1800
 DRAFTS = {}
 
@@ -359,8 +360,8 @@ async def enable_alert_mentions(channel):
 
 async def send_daily_up():
     embed=daily_up_embed(get_setting,CONNECT_URL)
-    banner = Path(__file__).parent / "assets" / "banners" / "server-up.jpg"
-    embed.set_image(url="attachment://server-up.jpg")
+    banner = SERVER_UP_BANNER
+    embed.set_image(url="attachment://" + banner.name)
     channel = daily_up_channel()
     message = await channel.send(content="@everyone", embed=embed, file=discord.File(banner, filename=banner.name),
                                  allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
@@ -1533,6 +1534,7 @@ async def on_raw_bulk_message_delete(payload):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    log.info("SERVER_UP banner ready file=%s bytes=%s", SERVER_UP_BANNER.name, SERVER_UP_BANNER.stat().st_size)
     try:
         await client.changes.tracked("REPAIR_STAFF_ACCESS_REQUEST_ID", "Restaurar accesos de Staff",
             lambda: repair_staff_command_access(client, GUILD_ID, DB_PATH))

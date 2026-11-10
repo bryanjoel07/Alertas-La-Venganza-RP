@@ -13,11 +13,11 @@ import discord
 from discord import app_commands
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='server-up-banner-v2'
-SUMMARY='Sustituye el banner del anuncio SERVER UP por el diseño enviado por el propietario, conservando el JPG recibido sin editarlo. El archivo recibido tiene un solo fotograma de 400×225, por lo que no contiene animación. Se aplica a los próximos anuncios diarios y manuales; conserva horario, color rojo, texto y menciones existentes, sin reenviar avisos.'
-RESTORE=('Para revertir el banner, restaurar únicamente assets/banners/server-up.jpg desde 9129707a1b750039b97d1b05537c5a057c941bd6 y desplegar, o volver a ese commit conservando SQLite y /data. No restaurar una base antigua ni reiniciar daily_server_up_slot o manual_server_up_request; no duplicar anuncios. '
-         'Conservar los turnos de minijuegos cada 12 horas, premios, compras, saldos, fotos, votos, tickets, solicitudes de staff y ajustes. Este cambio no modifica mensajes ya publicados, canales ni permisos. '
-         'Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
+RELEASE='server-up-gif-v1'
+SUMMARY='Usa el GIF original proporcionado por el propietario como banner del SERVER UP diario y manual. Conserva sus 150 fotogramas, 10 segundos y repetición en bucle, sin convertirlo en imagen fija. El archivo se incluye localmente para no depender de la caducidad del enlace de Discord. Mantiene horario, texto, rojo y @everyone existentes; no reenvía anuncios ni modifica mensajes antiguos.'
+RESTORE=('Para volver al banner fijo, desplegar 9ae1f8414127233c8e13d21d654ef1cb54542308 conservando SQLite y /data. También puede cambiarse SERVER_UP_BANNER y la referencia de adjunto a assets/banners/server-up.jpg, que se conserva en el repositorio. '
+         'No restaurar una base antigua ni reiniciar daily_server_up_slot o manual_server_up_request; no duplicar anuncios. Conservar turnos de minijuegos cada 12 horas, premios, compras, saldos, fotos, votos, tickets, solicitudes de staff y ajustes. '
+         'Este cambio no modifica canales ni permisos. Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
 
 
 class Journal:

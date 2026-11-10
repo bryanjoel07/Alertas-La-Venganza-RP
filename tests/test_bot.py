@@ -148,9 +148,9 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
             kwargs = daily.send.call_args.kwargs
             self.assertEqual(kwargs['content'], '@everyone')
             self.assertEqual(kwargs['allowed_mentions'].to_dict()['parse'], ['everyone'])
-            self.assertEqual(kwargs['embed'].image.url, 'attachment://server-up.jpg')
-            self.assertEqual(kwargs['file'].filename, 'server-up.jpg')
-            banner = Path(self.bot.__file__).parent / 'assets/banners/server-up.jpg'
+            self.assertEqual(kwargs['embed'].image.url, 'attachment://server-up.gif')
+            self.assertEqual(kwargs['file'].filename, 'server-up.gif')
+            banner = Path(self.bot.__file__).parent / 'assets/banners/server-up.gif'
             self.assertEqual(kwargs['file'].fp.read(), banner.read_bytes())
             kwargs['file'].close()
             for state in ('down', 'up'):
