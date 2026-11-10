@@ -199,6 +199,19 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.bot.get_setting('manual_server_up_request'), 'test-manual-1')
             self.assertEqual(self.bot.get_setting('daily_server_up_slot'), '')
 
+    async def test_daily_up_uses_stable_original_gif_without_a_second_attachment(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from server_up_media import ROUTE
+        daily=SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=99)),name='Server Up',id=123)
+        with patch.object(self.bot,'daily_up_channel',return_value=daily),patch.object(self.bot.client.bugs.media,'base_url','https://bot.example.com'),patch.object(self.bot.client.bugs.media,'runner',object()):
+            await self.bot.send_daily_up()
+        payload=daily.send.call_args.kwargs
+        self.assertEqual(payload['embed'].image.url,'https://bot.example.com'+ROUTE)
+        self.assertNotIn('file',payload)
+        self.assertEqual(payload['content'],'@everyone')
+        self.assertEqual(payload['allowed_mentions'].to_dict()['parse'],['everyone'])
+
     async def test_maintenance_webhook_mentions_everyone(self):
         from unittest.mock import MagicMock
         import discord

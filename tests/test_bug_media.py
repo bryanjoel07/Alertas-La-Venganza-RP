@@ -42,6 +42,19 @@ class MediaTests(unittest.IsolatedAsyncioTestCase):
         row=await self.system.media.share(rid)
         return urlsplit(self.system.media.url(row)).path
 
+    async def test_server_up_gif_has_a_stable_public_url_and_serves_the_exact_original(self):
+        from server_up_media import BANNER,DIGEST,ROUTE
+        response=await self.session.get(self.origin+ROUTE)
+        self.assertEqual(response.status,200)
+        self.assertEqual(response.headers['Content-Type'],'image/gif')
+        self.assertEqual(hashlib.sha256(await response.read()).hexdigest(),DIGEST)
+        head=await self.session.head(self.origin+ROUTE)
+        self.assertEqual(head.status,200)
+        self.assertEqual(int(head.headers['Content-Length']),BANNER.stat().st_size)
+        self.assertIn('immutable',head.headers['Cache-Control'])
+        missing=await self.session.get(self.origin+ROUTE.replace(DIGEST,'0'*64))
+        self.assertEqual(missing.status,404)
+
     async def test_120_mb_original_survives_restart_publishes_once_and_streams_intact(self):
         payload=b'x'*(MAX_CLIP_BYTES-4)+b'end!'
         digest=hashlib.sha256(payload).hexdigest()

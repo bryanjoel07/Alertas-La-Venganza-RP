@@ -33,6 +33,7 @@ from settings_panel import SettingsPanel
 from recruitment import RecruitmentSystem
 from minigames import MinigameSystem
 from daily_up import announce_daily_up,daily_up_embed
+from server_up_media import ServerUpBanner,banner_url
 from economy import Economy
 from profiles_hub import ProfileTree
 from server_audit import audit_server
@@ -252,6 +253,7 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.minigames.group,guild=GUILD)
         self.tree.add_command(self.minigames.play_command,guild=GUILD)
         self.lock = asyncio.Lock()
+        self.server_up_banner=ServerUpBanner(self,DB_PATH)
         self.citizen_cleanup_lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
@@ -384,10 +386,13 @@ async def enable_alert_mentions(channel):
 async def send_daily_up():
     embed=daily_up_embed(get_setting,CONNECT_URL)
     banner = SERVER_UP_BANNER
-    embed.set_image(url="attachment://" + banner.name)
+    stable_url=banner_url(client)
+    embed.set_image(url=stable_url or "attachment://" + banner.name)
     channel = daily_up_channel()
-    message = await channel.send(content="@everyone", embed=embed, file=discord.File(banner, filename=banner.name),
-                                 allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
+    payload=dict(content="@everyone", embed=embed,
+        allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
+    if not stable_url:payload['file']=discord.File(banner,filename=banner.name)
+    message = await channel.send(**payload)
     log.info("SERVER UP enviado: canal=%s (%s) mensaje=%s", channel.name, channel.id, message.id)
     return message
 
@@ -1627,6 +1632,10 @@ async def on_ready():
     except Exception:
         log.exception('No se pudo preparar el panel de Sugerencias')
     log.info("SERVER_UP banner ready file=%s bytes=%s", SERVER_UP_BANNER.name, SERVER_UP_BANNER.stat().st_size)
+    try:
+        await client.server_up_banner.repair()
+    except Exception:
+        log.exception('No se pudo reparar la imagen del aviso SERVER UP; mensaje conservado')
     try:
         await client.bugs.ready()
     except Exception:

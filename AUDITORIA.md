@@ -24,7 +24,7 @@ La auditoría inicial del repositorio de cuatro archivos se conserva en el histo
 | Dos rutas de arranque preparaban los mismos paneles con pocos segundos de diferencia. | Preparación coordinada y comprobación breve de Reportes. Cada ciclo continúa verificando el panel y puede repararlo si desaparece o cambia. Feedback conserva actualización inmediata después de una opinión. |
 | Varios `start()` podían crear otra tarea si se llamaban dos veces. | Inicio idempotente en Tickets, Fotos, Feedback, Reportes, Solicitudes y Sugerencias; también en los bucles de directos y su panel. |
 | El cierre cancelaba tres bucles de Discord sin esperar su finalización. | Se espera a que terminen las tareas antes de cerrar descargas y el servidor de archivos. Se cierra explícitamente la conexión de validación de la ruta de SQLite. |
-| El diagnóstico privado mostraba solo parte de las tareas. | `/bot estado` incluye los sistemas principales, el modo de diario y el tamaño del WAL. No expone credenciales. |
+| El diagnóstico privado mostraba solo parte de las tareas. | `/estado-bot` incluye los sistemas principales, el modo de diario y el tamaño del WAL. No expone credenciales. |
 
 ## Código retirado y conservado
 
@@ -63,6 +63,16 @@ Para revertir código, desplegar `ac09372d59020d6994aaf3ba1dd88728865c6ebe` cons
 
 ## Límites de la revisión
 
+Verificación operativa realizada a las **22:40 UTC**: commit `5617cb355bf3e99fc543725f4b21a98bbfc01031`, despliegue `97bf1260-5ef9-448d-adc9-7a972ad2e3aa` en `SUCCESS`, una réplica activa y ninguna caída o incidencia de Railway. `/health` devolvió `status=ok`, `discord_connected=true` y `release=5617cb355bf3`, manteniendo fotos, videos, diez archivos y 120 MB. El arranque verificó una copia de 42,369,024 bytes con integridad `ok` y SHA-256 `cf682edc03f2e43a007fd8743290374ce79c89475ea063a0ea48d32f0908e5f3`, seguida de WAL con durabilidad FULL. Se confirmaron los sistemas y comandos, incluido el ticket asignado #5 con sus cuatro controles. Reportes y Feedback se prepararon una sola vez; no aparecieron errores nuevos, reintentos pendientes ni bloqueos SQLite en la ventana revisada. Sigue el aviso previo de que el canal del ticket cerrado #6 ya no existe; se conserva su registro, sin inventar ni borrar historia.
+
 No se dispone de una consola SQL remota ni de una copia de producción para ejecutar pruebas destructivas; el cambio de diario exige y verifica su propia copia dentro del volumen. Los ensayos funcionales se hacen en bases temporales. La comprobación real del despliegue se realiza con Railway y el endpoint de salud, sin crear tickets de jugadores, gastar monedas ni publicar mensajes de prueba.
 
 La velocidad de Discord, las subidas del jugador y la disponibilidad del servidor de juego dependen también de servicios externos. Sigue siendo posible una respuesta ambigua cuando Discord acepta una operación y la conexión se pierde antes de confirmarla; se conservan las reservas, recibos y rutas de recuperación existentes. No se ha auditado todo el historial Git en busca de secretos ni se afirma haber reproducido cada condición de carga real.
+
+## Corrección posterior del GIF de SERVER UP — v22
+
+El propietario mostró la imagen rota del aviso `1569841663361417331`. El enlace firmado que había compartido venció el 10 de noviembre a las 12:06:30 UTC y devuelve HTTP 403. El GIF guardado en el proyecto sí se decodifica completo: 400 × 225, 150 fotogramas, diez segundos y 7,083,987 bytes, SHA-256 `69e8b6cba68d6824ba837ac8dbe0f3fe1ac588571f154ffd167e84fe1e484f23`. No se altera su contenido ni su animación.
+
+Se añade una ruta pública exacta para ese archivo en el servidor HTTP existente, con tipo `image/gif` y URL que incluye su huella. No permite listar archivos ni acceder a otras rutas. Los avisos nuevos usan esa dirección estable sin un segundo adjunto visible. Se conserva la alternativa de adjuntar el GIF si no está configurado el servidor de archivos.
+
+La reparación del aviso indicado verifica canal, autor, mensaje y adjuntos, guarda el estado previo con `ChangeLog.tracked` y edita solo la imagen en el mismo mensaje, sin nuevas menciones. Verifica tanto los bytes originales servidos como la respuesta del proxy de imágenes de Discord antes de registrar su finalización. La suite ampliada pasa **654 pruebas**, incluyendo preservación del GIF, ruta pública, aviso único, reparación con copia previa, permisos de menciones vacíos al editar y reintento de procesamiento de imágenes de Discord.

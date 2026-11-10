@@ -3,7 +3,11 @@
 Bot existente ampliado sin reemplazar los sistemas de alertas, mantenimiento ni eventos.
 
 El monitor publica un aviso **SERVER UP** diario a las **6:30 p. m. de Puerto Rico**
-(`America/Puerto_Rico`, 22:30 UTC), en el canal **Server-Up**, con el banner adjunto.
+(`America/Puerto_Rico`, 22:30 UTC), en el canal **Server-Up**, con su GIF original.
+La imagen usa una URL HTTPS estable en el servicio existente de archivos, sin depender de
+enlaces firmados que vencen. Se sirve únicamente el GIF público del banner, conservando
+sus 150 fotogramas y diez segundos de animación; no se publican directorios ni borradores.
+Si el servicio de archivos no está configurado, el aviso conserva la alternativa de adjuntarlo.
 Las alertas de caída y recuperación van al canal de alertas (`1567618111920807987`).
 El aviso diario busca un único canal de texto llamado Server-Up, ignorando emojis y separadores.
 Los avisos de caída, recuperación, mantenimiento y SERVER UP incluyen una mención real de `@everyone`.
