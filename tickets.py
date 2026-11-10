@@ -540,7 +540,11 @@ class TicketSystem:
   await self.sync_control_messages(row,channel,self.store.get(row['id'])['control_message'])
   owner=await self.member(channel.guild,row['owner'])
   if owner and not owner.bot:
-   with suppress(discord.HTTPException):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes dejar tu opinión con el botón ⭐ Valorar dentro del ticket.\n{ticket_link(self.guild_id,row)}",allowed_mentions=discord.AllowedMentions.none(),suppress_embeds=True)
+   feedback=getattr(self.bot,'feedback',None)
+   if getattr(feedback,'prepared',False) is True:
+    with suppress(discord.HTTPException):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\n¿Cómo te atendieron, bro? Deja tu opinión con el botón de abajo; funciona aunque se elimine el canal del ticket.",view=feedback.invite(row['id']),allowed_mentions=discord.AllowedMentions.none())
+   else:
+    with suppress(discord.HTTPException):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes dejar tu opinión con el botón ⭐ Valorar dentro del ticket.\n{ticket_link(self.guild_id,row)}",allowed_mentions=discord.AllowedMentions.none(),suppress_embeds=True)
   try:await self.prepare_deletion_backup(row['id'])
   except Exception:log.exception('TICKETS close_backup_pending id=%s; deletion_will_verify_again',row['id'])
  async def prepare_deletion_backup(self,rid):
@@ -669,6 +673,8 @@ class TicketSystem:
   await reply(i,f"Transcripción del ticket #{row['id']}. Respaldo de pruebas: {fresh['archive_state']}. Las notas internas están excluidas.",
     file=discord.File(io.BytesIO(data),filename=f'ticket-{row["id"]}.html'))
  async def action(self,i,rid,action):
+  feedback=getattr(self.bot,'feedback',None)
+  if action=='rate' and getattr(feedback,'prepared',False) is True:return await feedback.ticket_form(i,rid)
   row=await self.call('get',rid)
   if not row:raise ValueError('Ese ticket no existe.')
   if i.guild_id!=self.guild_id:raise ValueError('Usa los controles en La Venganza RP.')
@@ -747,6 +753,8 @@ class TicketSystem:
     text+=' No pude mandar el aviso ahora; volveré a intentarlo.'
   await reply(i,text)
  async def submit_rating(self,i,rid,score,comment):
+  feedback=getattr(self.bot,'feedback',None)
+  if getattr(feedback,'prepared',False) is True:return await feedback.submit(i,score,comment,'private',ticket=rid)
   async with self.lock:
    row=self.store.get(rid)
    if not row:raise ValueError('Ese ticket ya no está disponible.')

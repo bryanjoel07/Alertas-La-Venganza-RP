@@ -44,6 +44,7 @@ from tickets import TicketSystem
 from photos import PhotoSystem
 from channel_cleanup import clear_exclusive_log
 from citizen_cleanup import keep_citizen_roles
+from feedback import FeedbackSystem
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -228,6 +229,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.changes.group, guild=GUILD)
         self.tickets = TicketSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.tickets.group, guild=GUILD)
+        self.feedback = FeedbackSystem(self, DB_PATH, GUILD_ID)
+        self.tree.add_command(self.feedback.group, guild=GUILD)
         self.photos = PhotoSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.photos.group, guild=GUILD)
         self.settings_panel=SettingsPanel(self,DB_PATH,GUILD_ID,CONNECT_URL)
@@ -262,6 +265,7 @@ class LaVenganzaBot(discord.Client):
         await self.settings_panel.call('initialize')
         await self.economy.start()
         await self.tickets.start()
+        await self.feedback.start()
         await self.photos.start()
         await self.recruitment.start()
         await self.minigames.start()
@@ -286,7 +290,7 @@ class LaVenganzaBot(discord.Client):
         self.obscenity_filter.install.cancel()
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -1492,6 +1496,10 @@ async def on_message(message):
 @client.event
 async def on_raw_message_delete(payload):
     try:
+        await client.feedback.deleted(payload.guild_id, payload.channel_id, [payload.message_id])
+    except Exception:
+        log.exception('No se pudo actualizar una opinión retirada de Feedback')
+    try:
         await client.photos.deleted(payload.guild_id, payload.channel_id, [payload.message_id])
     except Exception:
         log.exception('No se pudo retirar una foto eliminada de la votación')
@@ -1524,6 +1532,10 @@ async def on_raw_message_edit(payload):
 @client.event
 async def on_raw_bulk_message_delete(payload):
     try:
+        await client.feedback.deleted(payload.guild_id, payload.channel_id, payload.message_ids)
+    except Exception:
+        log.exception('No se pudieron actualizar opiniones retiradas de Feedback')
+    try:
         await client.photos.deleted(payload.guild_id, payload.channel_id, payload.message_ids)
     except Exception:
         log.exception('No se pudieron retirar las fotos eliminadas de la votación')
@@ -1537,6 +1549,10 @@ async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
     log.info("SERVER_UP banner ready file=%s bytes=%s", SERVER_UP_BANNER.name, SERVER_UP_BANNER.stat().st_size)
+    try:
+        await client.feedback.ready()
+    except Exception:
+        log.exception('No se pudo preparar el panel de Feedback del staff')
     try:
         await keep_citizen_roles(client)
     except Exception:

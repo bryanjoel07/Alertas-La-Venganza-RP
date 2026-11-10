@@ -14,11 +14,11 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='owner-accounts-citizen-v2'
-SUMMARY='El dueño reitera que se retiren también Admin y Súper Admin de sus dos cuentas. El reintento usa los IDs y la lista de roles guardados en la solicitud original y consulta a Discord directamente para cada membresía pendiente. Registra el permiso Administrador real, la jerarquía y cualquier rechazo HTTP; no modifica roles ni su posición. Ciudadanos se conserva.'
-RESTORE=('Para retirar este reintento, desplegar 9a008ca02cd4194cd94deec99e079157ac906499 conservando SQLite y /data, y vaciar CITIZEN_CLEANUP_REQUEST_ID. Revertir código no devuelve roles. '
-         'Para devolver membresías, consultar el before del registro de esta solicitud y usar exclusivamente los IDs de esas dos cuentas y sus roles originales, con autorización del dueño y sin editar las definiciones de roles. El mismo registro guarda los slots color/titulo retirados para restaurarlos si se solicita. '
-         'No restaurar una base antigua ni repetir la solicitud completada. No cambiar otras cuentas, permisos de roles, canales o escritura de Ciudadanos.')
+RELEASE='staff-feedback-v1'
+SUMMARY='Sistema de Feedback del staff en 1539014594348064939: estrellas, comentario opcional, elección pública o privada, atención por ticket y fuera de tickets, buscador completo del staff, resultados e historial personal. Los tickets cerrados y eliminados pueden valorarse una sola vez; se conserva la valoración en el sistema de tickets. Los reportes contra staff y las opiniones antiguas siguen privados. Incluye respuesta del responsable, retirada con registro y recuperación de publicaciones sin duplicarlas. No modifica canales ni permisos.'
+RESTORE=('Para revertir el código, desplegar 0e1bcbbea6d911fb09a8171fde5697f93bb83d97 conservando SQLite y /data. No restaurar una base antigua ni borrar lv_feedback, sus eventos, las valoraciones de lv_tickets o el historial del canal. '
+         'Antes de retirar el sistema, quitar únicamente los componentes interactivos de los mensajes de este bot identificados por lv_feedback_config.panel_message y lv_feedback.message; conservar las opiniones y los mensajes anteriores del canal. Las copias de FEEDBACK_PANEL contienen el panel previo para restaurar su presentación. '
+         'Las opiniones privadas importadas no autorizan publicación. No cambiar permisos, categorías o roles ni reactivar solicitudes de limpieza o avisos consumidos.')
 
 
 class Journal:
