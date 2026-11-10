@@ -4,7 +4,7 @@ import io
 import hashlib
 import logging
 import re
-import sqlite3
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -31,19 +31,9 @@ class MeetingStore:
         self.path = path
 
     @contextmanager
-    def db(self):
-        db = sqlite3.connect(self.path, timeout=5)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA foreign_keys=ON")
-        try:
-            db.execute("BEGIN IMMEDIATE")
+    def db(self, *, readonly=False):
+        with transaction(self.path, readonly=readonly, foreign_keys=True, timeout=5) as db:
             yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
 
     def initialize(self):
         with self.db() as db:
@@ -61,7 +51,7 @@ class MeetingStore:
                 db.execute(sql)
 
     def get(self, meeting_id=None, message_id=None):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row = db.execute("SELECT * FROM meetings WHERE id=?" if meeting_id is not None else "SELECT * FROM meetings WHERE message_id=?", (meeting_id if meeting_id is not None else message_id,)).fetchone()
             return dict(row) if row else None
 
@@ -96,7 +86,7 @@ class MeetingStore:
             db.execute("INSERT INTO meeting_responses VALUES (?,?,?,?) ON CONFLICT(meeting_id,user_id) DO UPDATE SET response=excluded.response,updated_at=excluded.updated_at", (meeting_id, user_id, response, int(datetime.now(timezone.utc).timestamp())))
 
     def lists(self, meeting_id):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             responses = [dict(r) for r in db.execute("SELECT * FROM meeting_responses WHERE meeting_id=? ORDER BY updated_at", (meeting_id,))]
             attendance = [dict(r) for r in db.execute("SELECT * FROM meeting_attendance WHERE meeting_id=? ORDER BY recorded_at", (meeting_id,))]
             return responses, attendance
@@ -115,7 +105,7 @@ class MeetingStore:
                 raise ValueError("La reunión ya está cancelada o finalizada.")
 
     def active(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute("SELECT * FROM meetings WHERE status='scheduled' AND message_id IS NOT NULL")]
 
     def claim_reminder(self, meeting_id, now):
@@ -151,18 +141,18 @@ class MeetingStore:
                 db.execute("INSERT OR IGNORE INTO meeting_notice_messages(notice_id,meeting_id,starts,seconds) VALUES(?,?,?,?)",(notice_id,meeting_id,starts,seconds))
 
     def untracked_notices(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute("""SELECT m.*,r.seconds FROM meetings m JOIN meeting_reminders r ON r.meeting_id=m.id
                 WHERE r.state='sent' AND NOT EXISTS (SELECT 1 FROM meeting_notice_messages n
                 WHERE n.meeting_id=m.id AND n.starts=m.starts_at AND n.seconds=r.seconds) ORDER BY m.id""")]
 
     def live_notices(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute("""SELECT m.*, n.notice_id,n.seconds,n.starts,n.rendered FROM meeting_notice_messages n
                 JOIN meetings m ON m.id=n.meeting_id WHERE n.done=0""")]
 
     def published_staff_reports(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute("""SELECT m.*,s.message_id AS report_id FROM public_summaries s
                 JOIN meetings m ON m.id=s.entity_id WHERE s.kind='staff_report'
                 AND s.message_id IS NOT NULL AND m.status='finished'""")]

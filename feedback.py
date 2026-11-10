@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import re
+import time
 import unicodedata
 
 import discord
@@ -60,6 +61,7 @@ class FeedbackSystem:
         return await asyncio.to_thread(getattr(self.store, name), *args, **kwargs)
 
     async def start(self):
+        if self.task is not None and not self.task.done():return
         await self.call('initialize')
         self.bot.add_dynamic_items(FeedbackAction)
         self.task = asyncio.create_task(self.loop(), name='staff-feedback')
@@ -247,8 +249,10 @@ class FeedbackSystem:
         embed.set_footer(text=PANEL_MARKER)
         return embed
 
-    async def ready(self):
+    async def ready(self, *, force=False):
         async with self.install_lock:
+            checked=getattr(self,'panel_checked',None)
+            if not force and checked is not None and time.monotonic()-checked<60:return
             await enable_citizen_panel(self)
             channel = await self.channel()
             embed = await self.panel_embed()
@@ -299,12 +303,13 @@ class FeedbackSystem:
                 log.info('FEEDBACK directory_verified members=%s staff=%s offline_included=True source=%s forms=stars_comment_visibility_context reserved_private=True',
                          len(members), len(roster), self.directory.source)
             self.prepared = True
+            self.panel_checked=time.monotonic()
             log.info('FEEDBACK ready channel=%s name=%s panel=%s staff_only=True tickets=True outside=True privacy_choice=True existing_ratings_private=True controls=%s',
                      channel.id, channel.name, verified.id, ids)
 
     async def refresh_safely(self):
         try:
-            await self.ready()
+            await self.ready(force=True)
         except Exception:
             log.exception('FEEDBACK panel_refresh_pending')
 

@@ -180,7 +180,12 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         return rid
 
     async def test_panel_is_persistent_and_does_not_repeat_a_completed_permission_grant(self):
-        await self.system.ready(); await self.system.ready()
+        await self.system.ready()
+        reads=self.channel.fetch_message.await_count
+        await self.system.ready()
+        self.assertEqual(self.channel.fetch_message.await_count,reads)
+        await self.system.refresh_safely()
+        self.assertGreater(self.channel.fetch_message.await_count,reads)
         self.assertTrue(self.system.prepared)
         self.channel.send.assert_awaited_once()
         self.channel.set_permissions.assert_not_called()

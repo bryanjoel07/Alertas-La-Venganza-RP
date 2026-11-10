@@ -16,6 +16,7 @@ import discord
 from discord import app_commands
 from meetings import MeetingSystem, meeting_error
 from storage import database_path
+from sqlite_runtime import configure_database
 from summaries import SUMMARY_SCHEMA, SummaryMessages, event_summary
 from event_features import EventFeatures
 from player_cards import PlayerCard
@@ -45,7 +46,6 @@ from photos import PhotoSystem
 from channel_cleanup import clear_exclusive_log
 from citizen_cleanup import keep_citizen_roles
 from feedback import FeedbackSystem
-from channel_design import inspect_channel_design
 from bugs import BugSystem
 from suggestions import SuggestionSystem
 from rules_lookup import RulesLookup
@@ -104,6 +104,7 @@ def database():
 
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
+    configure_database(DB_PATH)
     with database() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -300,14 +301,15 @@ class LaVenganzaBot(discord.Client):
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
 
     async def close(self):
-        self.obscenity_filter.install.cancel()
-        self.streamer_panel.install.cancel()
-        self.live_alerts.poll.cancel()
-        await self.bugs.clips.close()
+        loops=(self.obscenity_filter.install,self.streamer_panel.install,self.live_alerts.poll)
+        loop_tasks=[loop.get_task() for loop in loops]
+        for loop in loops:loop.cancel()
         tasks = [task for task in (self.rules.task, self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks=list({task for task in [*tasks,*loop_tasks] if task is not None and task is not asyncio.current_task()})
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.bugs.clips.close()
         await self.bugs.media.close()
         await super().close()
 
@@ -1629,10 +1631,6 @@ async def on_ready():
         await client.bugs.ready()
     except Exception:
         log.exception('No se pudo preparar el sistema de reportes de errores')
-    try:
-        await inspect_channel_design(client, GUILD_ID)
-    except Exception:
-        log.exception('No se pudo leer el diseño del foro de referencia')
     try:
         await client.feedback.ready()
     except Exception:

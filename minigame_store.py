@@ -1,9 +1,9 @@
 """Atomic minigame answers and 25-coin payments in the existing economy."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
 from pathlib import Path
 import secrets
-import sqlite3
 import time
 import unicodedata
 
@@ -34,12 +34,9 @@ def normalize(text):
 class MinigameStore:
  def __init__(self,path):self.path=Path(path)
  @contextmanager
- def db(self):
-  db=sqlite3.connect(self.path,timeout=10);db.row_factory=sqlite3.Row
-  try:
-   db.execute('BEGIN IMMEDIATE');yield db;db.commit()
-  except Exception:db.rollback();raise
-  finally:db.close()
+ def db(self, *, readonly=False):
+     with transaction(self.path, readonly=readonly, foreign_keys=False, timeout=10) as db:
+         yield db
  def initialize(self,questions):
   with self.db() as db:
    statements=[
@@ -69,7 +66,7 @@ class MinigameStore:
     db.execute('INSERT INTO lv_game_questions VALUES (?,?,?,1) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,enabled=1',
      (q['id'],q['kind'],json.dumps(q,ensure_ascii=False)))
  def config(self,key,value=None):
-  with self.db() as db:
+  with self.db(readonly=value is None) as db:
    if value is not None:db.execute('INSERT INTO lv_game_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(value)))
    row=db.execute('SELECT value FROM lv_game_config WHERE key=?',(key,)).fetchone();return row[0] if row else ''
  @staticmethod
@@ -78,7 +75,7 @@ class MinigameStore:
   if not row:raise ValueError('Esa pregunta no es tuya. Abre tu propio minijuego en General.')
   return dict(row)
  def get(self,token,user):
-  with self.db() as db:return self._session(db,token,user)
+  with self.db(readonly=True) as db:return self._session(db,token,user)
  @staticmethod
  def _availability(db,user,stamp):
   row=db.execute('SELECT last_answer FROM lv_game_turns WHERE user=?',(user,)).fetchone()
@@ -86,7 +83,7 @@ class MinigameStore:
   return {'available':next_at is None or stamp>=next_at,'next_at':next_at,
    'last_answer':row['last_answer'] if row else None}
  def availability(self,user,now=None):
-  with self.db() as db:return self._availability(db,user,int(time.time()) if now is None else now)
+  with self.db(readonly=True) as db:return self._availability(db,user,int(time.time()) if now is None else now)
  def open(self,user,kind,previous=None,skip=False,now=None):
   if kind not in KINDS:raise ValueError('Elige fotos, roleplay o acertijos.')
   stamp=int(time.time()) if now is None else now
@@ -138,7 +135,7 @@ class MinigameStore:
    db.execute('INSERT INTO lv_game_attempts VALUES (?,?,?,?,?)',(op,user,token,json.dumps(result),stamp))
    return result
  def progress(self,user):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    kinds=[]
    for kind in KINDS:
     total=db.execute('SELECT COUNT(*) FROM lv_game_questions WHERE kind=? AND enabled=1',(kind,)).fetchone()[0]
@@ -149,9 +146,9 @@ class MinigameStore:
    return {'kinds':kinds,'coins':coins,'balance':balance[0] if balance else 0,
     'turn':self._availability(db,user,int(time.time()))}
  def ranking(self):
-  with self.db() as db:return [dict(r) for r in db.execute('SELECT user,COUNT(*) AS correct,SUM(coins) AS coins FROM lv_game_wins GROUP BY user ORDER BY correct DESC,MIN(created),user LIMIT 10')]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT user,COUNT(*) AS correct,SUM(coins) AS coins FROM lv_game_wins GROUP BY user ORDER BY correct DESC,MIN(created),user LIMIT 10')]
  def audit(self):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    invalid=db.execute('''SELECT COUNT(*) FROM lv_game_wins w LEFT JOIN eco_ledger l ON l.op=w.ledger_op
     WHERE l.op IS NULL OR l.user_id!=w.user OR l.amount!=w.coins''').fetchone()[0]
    return {'questions':dict(db.execute('SELECT kind,COUNT(*) FROM lv_game_questions WHERE enabled=1 GROUP BY kind').fetchall()),

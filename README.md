@@ -18,10 +18,12 @@ Zona horaria: `America/Puerto_Rico`. Datos: SQLite. Entrada: `python bot.py`.
 
 ## Estado de esta entrega
 
-Cambios probados fuera de producción y preparados para publicar en GitHub con autorización.
-La publicación en main puede activar Railway. No se ha ejecutado una migración ni una subida a Drive;
-el estado real del despliegue y de la base debe comprobarse por separado.
-Lee [AUDITORIA.md](AUDITORIA.md) y [DESPLIEGUE_IPHONE.md](DESPLIEGUE_IPHONE.md) antes de desplegar.
+El bot se mantiene en Railway desde `main`. La auditoría del 10 de noviembre de 2026
+optimiza lecturas SQLite, seguimiento de tickets y tareas de fondo, conservando los sistemas actuales.
+Antes de activar WAL en una base existente se exige una copia completa verificada; las escrituras
+mantienen durabilidad FULL. Los respaldos usan la API de SQLite e incluyen cambios que sigan en WAL.
+Conservar el volumen y los archivos SQLite/WAL/SHM al revertir código.
+Consulta [AUDITORIA.md](AUDITORIA.md) para evidencia, pruebas, mediciones y límites de la revisión.
 
 ## Archivos
 

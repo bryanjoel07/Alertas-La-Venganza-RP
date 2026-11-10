@@ -5,6 +5,7 @@ import json
 import logging
 from pathlib import Path
 import re
+import time
 import discord
 from discord import app_commands
 from bug_store import BugStore,STATES
@@ -27,12 +28,14 @@ class BugSystem:
     def __init__(self,bot,path,guild_id):
         self.bot,self.guild_id=bot,guild_id;self.store=BugStore(path)
         self.lock=asyncio.Lock();self.install_lock=asyncio.Lock();self.task=None
+        self.panel_checked=None;self.panel_id=None
         self.clips=ClipUploads(self)
         self.media=ReportMedia(self)
         self.group=app_commands.Group(name='errores',description='Reportar errores y seguir su solución')
         self.register()
     async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
     async def start(self):
+        if self.task is not None and not self.task.done():return
         await self.call('initialize');self.bot.add_dynamic_items(BugAction)
         await self.media.start()
         self.task=asyncio.create_task(self.loop(),name='bug-reports')
@@ -109,8 +112,19 @@ class BugSystem:
         return await self.bot.changes.tracked('BUG_REPORTS',title,operation,request_id=request,snapshot=snapshot)
     async def ready(self):
         async with self.install_lock:
+            if self.panel_checked is not None and time.monotonic()-self.panel_checked<60:return
             from bug_panel import ReportPanel
-            guide=await ReportPanel(self).ready()
+            panel=ReportPanel(self)
+            if self.panel_id is not None:
+                try:
+                    await panel.verify(self.panel_id)
+                except (discord.NotFound,RuntimeError):
+                    await self.call('config','panel_revision','')
+                    log.warning('BUGS panel_repair_pending guide=%s',self.panel_id)
+                else:
+                    self.panel_checked=time.monotonic()
+                    return
+            guide=await panel.ready()
             message=await guide.fetch_message(guide.id)
             if message.author.id!=self.bot.user.id or self.entry_controls(message)!=['lvbug:new:0','lvbug:mine:0']:
                 raise RuntimeError('No se confirmó el único panel de Reportes.')
@@ -118,6 +132,7 @@ class BugSystem:
             components=form.to_dict()['components']
             if len(components)!=5 or components[3]['component']['type']!=19:raise RuntimeError('El formulario único no incluye el archivo adjunto.')
             if components[3]['component']['max_values']!=MAX_REPORT_FILES:raise RuntimeError('El formulario no permite los diez archivos esperados.')
+            self.panel_id=guide.id;self.panel_checked=time.monotonic()
             log.info('BUGS ready forum=%s guide=%s entry_message=%s bot_owned_template=True single_entry=True single_form=True fields=5 detailed_sections=4 evidence_required=True photos=True videos=True max_files=10 weight_counter=True admin_controls=True legacy_removed=%s max_clip_mb=%s large_clip_links=%s',FORUM,guide.id,message.id,await self.call('config','legacy_guide_removed'),MAX_FILE_MB,bool(self.media.runner))
     @staticmethod
     def entry_controls(message):

@@ -1,6 +1,7 @@
 """Selección conservadora de SQLite. No migra ni crea bases automáticamente."""
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 
@@ -18,7 +19,7 @@ def database_path():
     if not target.is_file() and target != legacy and legacy.is_file():
         raise RuntimeError("Existe una base en /tmp. Migra y verifica sus datos antes de usar otra ruta.")
     if target.is_file() and os.getenv("ALLOW_EMPTY_DB", "0") != "1":
-        with sqlite3.connect(target.as_uri() + "?mode=ro", uri=True, timeout=5) as db:
+        with closing(sqlite3.connect(target.as_uri() + "?mode=ro", uri=True, timeout=5)) as db:
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if not {"settings", "events", "registrations"}.issubset(tables):
                 raise RuntimeError("La base seleccionada está vacía o no tiene el esquema esperado. Verifica el origen antes de iniciar.")

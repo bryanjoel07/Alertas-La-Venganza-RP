@@ -18,6 +18,7 @@ def read_database(path):
         with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True, timeout=1)) as db:
             db.execute('PRAGMA query_only=ON')
             checks = db.execute('PRAGMA quick_check(1)').fetchall()
+            journal_mode=db.execute('PRAGMA journal_mode').fetchone()[0]
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             missing = {'settings', 'events', 'registrations', 'meetings'} - tables
             settings = dict(db.execute("SELECT key,value FROM settings WHERE key IN ('last_state','maintenance_active')")) if 'settings' in tables else {}
@@ -25,7 +26,10 @@ def read_database(path):
             for table in ('events', 'registrations', 'meetings', 'meeting_voice_visits'):
                 if table in tables:
                     counts[table] = db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
-        return dict(ok=checks == [('ok',)] and not missing, integrity=checks == [('ok',)], incomplete=bool(missing), size_bytes=source.stat().st_size, mounted=os.path.ismount(source.parent), settings=settings, counts=counts)
+        wal=Path(str(source)+'-wal')
+        try:wal_bytes=wal.stat().st_size
+        except FileNotFoundError:wal_bytes=0
+        return dict(ok=checks == [('ok',)] and not missing, integrity=checks == [('ok',)], incomplete=bool(missing), size_bytes=source.stat().st_size, wal_bytes=wal_bytes,journal_mode=journal_mode,mounted=os.path.ismount(source.parent), settings=settings, counts=counts)
     except (OSError, sqlite3.Error):
         return dict(ok=False, reason='No se pudo leer la base o está ocupada. Consulta Railway.')
 
@@ -66,6 +70,9 @@ def status_embed(bot, path, database, backup, automation=None):
         monitor += f"\nCambio en confirmación: {states[tracker.pending]} · {wait}/90 s"
     embed.add_field(name='📡 Monitor FiveM', value=monitor, inline=False)
     tasks = f"Monitor: {task_state(bot.monitor_task)}\nReuniones: {task_state(bot.meetings.task)}\nEventos: {task_state(bot.event_features.task)}\nÚltimo ciclo de reuniones: {at(bot.meetings.last_check_at)}\nÚltimo ciclo de eventos: {at(bot.event_features.last_check_at)}"
+    for name,label in (('economy','Tienda'),('tickets','Tickets'),('feedback','Feedback'),('bugs','Reportes'),('suggestions','Sugerencias'),('rules','Normas'),('photos','Fotos'),('recruitment','Solicitudes de staff'),('backups','Respaldos')):
+        system=getattr(bot,name,None)
+        if system is not None:tasks+=f'\n{label}: {task_state(system.task)}'
     embed.add_field(name='🔄 Tareas automáticas', value=tasks, inline=False)
     location = discord.utils.escape_markdown(str(path)).replace('@', '@\u200b')[:350]
     if 'reason' in database:
@@ -74,6 +81,8 @@ def status_embed(bot, path, database, backup, automation=None):
         counts = database['counts']
         db_text = f"Ruta: {location}\nLectura/esquema: {'✅ Correctos' if database['ok'] else '❌ Revisar'}\nSQLite quick_check: {'ok' if database['integrity'] else 'error'}\nArchivo base: {database['size_bytes'] / 1048576:.2f} MB\nMontaje detectado en directorio: {'Sí' if database['mounted'] else 'No confirmado'}\nEventos: {counts.get('events', 0)} · Inscripciones: {counts.get('registrations', 0)}\nReuniones: {counts.get('meetings', 0)} · Presencias de voz: {counts.get('meeting_voice_visits', 0)}"
     embed.add_field(name='💾 SQLite activa', value=db_text, inline=False)
+    if database.get('journal_mode'):
+        embed.add_field(name='🔧 Base de datos',value=f"Diario: {database['journal_mode'].upper()} · Cambios en WAL: {database.get('wal_bytes',0)/1048576:.2f} MB",inline=False)
     if not backup['known']:
         backup_text = '⚪ ' + backup['reason'] + '\nEl volumen no sustituye un respaldo externo.'
     else:

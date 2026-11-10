@@ -1,13 +1,11 @@
 import asyncio
 import json
-import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock,patch
+from unittest.mock import AsyncMock
 
 import discord
 
-from ticket_priority_repair import repair_requested_priority,REQUEST_KEY
 from tickets import TicketSystem
 from tickets_store import TicketStore
 from tickets_ui import TicketControls,PriorityForm
@@ -102,22 +100,3 @@ class PriorityPanelTests(unittest.IsolatedAsyncioTestCase):
   self.assertFalse(self.system.store.acknowledge_priority_panel(self.rid,'alta'))
   restart=TicketStore(self.system.store.path);restart.initialize()
   self.assertEqual(restart.config(f'priority-panel:{self.rid}'),'urgente')
- async def test_requested_correction_is_backed_up_verified_and_never_repeated(self):
-  with patch.multiple('ticket_priority_repair',GUILD_ID=10,BOT_ID=99,TICKET_ID=self.rid,CHANNEL_ID=100,REQUEST_CUTOFF=int(time.time())+60):
-   await repair_requested_priority(self.system)
-   self.assertEqual(self.system.store.get(self.rid)['priority'],'alta');self.assertEqual(self.displayed(),'alta')
-   self.assertEqual(self.system.store.config(REQUEST_KEY),'complete')
-   repair=next(r for r in self.bot.changes.journal.rows() if 'Corregir la prioridad' in r['title'])
-   self.assertEqual(json.loads(repair['before_json'])['ticket']['priority'],'urgente')
-   self.assertEqual(json.loads(repair['after_json'])['ticket']['priority'],'alta')
-   await self.system.change_priority(self.i,self.rid,'normal','Ya puede esperar')
-   count=self.message.edit.await_count
-   await repair_requested_priority(self.system)
-   self.assertEqual(self.system.store.get(self.rid)['priority'],'normal')
-   self.assertEqual(self.message.edit.await_count,count)
- async def test_requested_correction_preserves_staff_changes_after_the_request_cutoff(self):
-  self.system.store.set_priority(self.rid,'normal',5,'Revisado hace un momento')
-  with patch.multiple('ticket_priority_repair',GUILD_ID=10,BOT_ID=99,TICKET_ID=self.rid,CHANNEL_ID=100,REQUEST_CUTOFF=int(time.time())-60):
-   await repair_requested_priority(self.system)
-  self.assertEqual(self.system.store.get(self.rid)['priority'],'normal');self.assertEqual(self.displayed(),'normal')
-  self.assertEqual(self.system.store.config(REQUEST_KEY),'complete')

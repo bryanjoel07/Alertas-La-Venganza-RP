@@ -1,6 +1,5 @@
 """Weekly challenges, private fitting room and the persistent bot guide."""
 import asyncio
-import hashlib
 import json
 import logging
 from pathlib import Path

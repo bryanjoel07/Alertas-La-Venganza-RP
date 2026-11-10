@@ -18,7 +18,6 @@ from ticket_delete_backup import covers_ticket
 from discord_channels import fetch_channels
 from photo_members import MemberDirectory,DirectoryUnavailable
 from ticket_members import TicketMemberPicker
-from ticket_priority_repair import repair_requested_priority
 
 import discord
 from discord import app_commands
@@ -152,6 +151,7 @@ class TicketSystem:
   self.register()
  async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
  async def start(self):
+  if self.task is not None and not self.task.done():return
   await self.call('initialize');self.bot.add_view(TicketPanel(self));self.bot.add_view(ClosedArchivePanel(self));self.bot.add_dynamic_items(TicketAction)
   self.task=asyncio.create_task(self.loop(),name='advanced-tickets')
  def enabled(self):return os.getenv('TICKETS_ENABLED')=='1'
@@ -1033,7 +1033,6 @@ class TicketSystem:
   log.info('TICKETS department_labels_verified labels=%s',labels)
   log.info('TICKETS closed_navigation_verified location=closed_category main_button_removed=True category=%s existing_closed_cases=%s',closed.id,sum(listed_ticket(r,{c.id:c for c in all_channels if isinstance(c,discord.TextChannel)},True) for r in self.store.list(limit=10000)))
   log.info('TICKETS panel_verified channel=%s message=%s closed_category=%s legacy_channels_untouched=True protected_roles_untouched=True',panel.id,message.id,closed.id)
-  await repair_requested_priority(self)
  async def ready(self):
   if not self.enabled():return
   async with self.ready_lock:
@@ -1052,8 +1051,9 @@ class TicketSystem:
     log.info('TICKETS ready panel=%s active_category=%s closed_category=%s persistent_controls=True',PANEL_CHANNEL,self.store.config('active_category'),self.store.config('closed_category'))
  async def recover(self,rid=None,create_missing=True):
   guild=self.bot.get_guild(self.guild_id)
-  channels=await fetch_channels(guild)
-  rows=[self.store.get(rid)] if rid else self.store.list(limit=10000)
+  rows=[await self.call('get',rid)] if rid else await self.call('recovery_candidates')
+  if not rows:return
+  channels=None
   for row in rows:
    if not row:continue
    if row.get('deleted_at'):continue
@@ -1064,6 +1064,7 @@ class TicketSystem:
      continue
    if row['status']=='creando' or (row['status']=='fallido' and row['channel']):
     if self.store.creation_pending(row['id']):continue
+    if channels is None:channels=await fetch_channels(guild)
     matches=[c for c in channels if isinstance(c,discord.TextChannel) and c.topic==f"lv-ticket:{row['id']}"]
     if len(matches)==1:
      self.store.update(row['id'],channel=matches[0].id,status='nuevo')
@@ -1104,14 +1105,14 @@ class TicketSystem:
     except discord.HTTPException:log.exception('TICKETS recovery_pending id=%s',row['id'])
  async def maintenance(self):
   now=int(time.time())
-  for row in await self.call('list',limit=10000):
-   if not row.get('deleted_at') and row['status'] not in ('creando','fallido') and not json.loads(row['form']).get('selftest') and self.store.config(f"priority-panel:{row['id']}"):
+  for row in await self.call('followup_candidates'):
+   if not json.loads(row['form']).get('selftest') and row['priority_pending']:
     try:
      async with self.lock:
       current=self.store.get(row['id'])
       if not current.get('deleted_at'):await self.refresh(current,verify_priority=True)
     except Exception:log.exception('TICKETS priority_panel_retry_pending ticket=%s; continuing other cases',row['id'])
-   if row['status'] in ('creando','fallido','cerrado') or row.get('deleted_at') or json.loads(row['form']).get('selftest'):continue
+   if row['status']=='cerrado' or json.loads(row['form']).get('selftest'):continue
    try:
     if row['priority']=='urgente':await self.notify_urgent(row['id'],now)
     await self.escalate(row['id'],now)

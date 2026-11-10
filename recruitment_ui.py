@@ -2,7 +2,7 @@
 import json
 import logging
 import discord
-from recruitment_store import QUESTIONS,LABELS,ACTIVE
+from recruitment_store import QUESTIONS, LABELS
 
 log=logging.getLogger('LaVenganzaRP.recruitment')
 RED=0xC52232

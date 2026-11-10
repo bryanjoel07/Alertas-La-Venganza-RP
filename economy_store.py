@@ -8,6 +8,7 @@ import sqlite3
 import time
 import unicodedata
 import uuid
+from sqlite_runtime import transaction
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -282,19 +283,9 @@ class EconomyStore:
         self.path = str(path)
 
     @contextmanager
-    def db(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        try:
-            db.execute("PRAGMA foreign_keys=ON")
-            db.execute("BEGIN IMMEDIATE")
+    def db(self, *, readonly=False):
+        with transaction(self.path, readonly=readonly, foreign_keys=True, timeout=10) as db:
             yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
 
     def initialize(self):
         with closing(sqlite3.connect(self.path)) as db:
@@ -340,7 +331,7 @@ class EconomyStore:
         db.execute("INSERT OR REPLACE INTO eco_config VALUES (?,?)", (key, str(value)))
 
     def config(self, key, value=None, actor=0):
-        with self.db() as db:
+        with self.db(readonly=value is None) as db:
             if value is not None:
                 self.set(db, key, value)
                 self.audit(db, actor, f"Configuración {key} actualizada")
@@ -379,7 +370,7 @@ class EconomyStore:
                 self.audit(db, actor, f"Ajuste {amount:+} a {user}: {reason}")
 
     def account(self, user):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row = db.execute(
                 "SELECT balance FROM eco_accounts WHERE user_id=?", (user,)
             ).fetchone()
@@ -455,10 +446,10 @@ class EconomyStore:
             return r
 
     def photo_rewards(self,now=None):
-        with self.db() as db:return photo_rewards_in(db,photo_week(now))
+        with self.db(readonly=True) as db:return photo_rewards_in(db,photo_week(now))
 
     def daily_schedule(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             if not db.execute("SELECT 1 FROM sqlite_master WHERE name='settings'").fetchone():return '18:30'
             row=db.execute("SELECT value FROM settings WHERE key='daily_server_up_time'").fetchone()
             return row[0] if row else '18:30'
@@ -517,7 +508,7 @@ class EconomyStore:
         return p
 
     def products(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [
                 dict(r)
                 for r in db.execute(
@@ -526,7 +517,7 @@ class EconomyStore:
             ]
 
     def showcase(self, user, purchase):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             wins = [
                 dict(r)
                 for r in db.execute(
@@ -731,7 +722,7 @@ class EconomyStore:
             )
 
     def inventory(self, user):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [
                 dict(r)
                 for r in db.execute(
@@ -741,7 +732,7 @@ class EconomyStore:
             ]
 
     def purchase(self, key, user=None):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             p = db.execute("SELECT * FROM eco_purchases WHERE id=?", (key,)).fetchone()
             if not p or (user is not None and p["recipient"] != user):
                 raise ValueError("Artículo no encontrado en tu inventario.")
@@ -779,7 +770,7 @@ class EconomyStore:
             self.set(db, key, value)
 
     def equipped(self, user):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [
                 dict(r)
                 for r in db.execute(
@@ -971,7 +962,8 @@ class EconomyStore:
             return result
 
     def rows(self, query, args=()):
-        with self.db() as db:
+        words=query.lstrip().split(None,1)
+        with self.db(readonly=bool(words) and words[0].upper()=='SELECT') as db:
             return [dict(r) for r in db.execute(query, args)]
 
     def preferences(self, user, sku, action):

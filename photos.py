@@ -177,6 +177,7 @@ class PhotoSystem:
         return await asyncio.to_thread(getattr(self.store, method), *args, **kwargs)
 
     async def start(self):
+        if self.task is not None and not self.task.done():return
         await self.call('initialize')
         self.bot.add_dynamic_items(PhotoButton,UploadButton)
         self.task = asyncio.create_task(self.loop(), name='photo-of-the-week')

@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import re
 import discord
-from navigation import key
 
 log = logging.getLogger('LaVenganzaRP.access')
 STAFF = {1245008186440683530,1245010156576833536,1300619682486947931,

@@ -1,10 +1,10 @@
 """Validated settings and receipts in the bot's existing SQLite database."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 from datetime import datetime,timedelta
 import json
 from pathlib import Path
 import re
-import sqlite3
 from string import Formatter
 import time
 from zoneinfo import ZoneInfo
@@ -110,12 +110,9 @@ class SettingsStore:
     def __init__(self,path):self.path=Path(path)
 
     @contextmanager
-    def db(self):
-        db=sqlite3.connect(self.path,timeout=10);db.row_factory=sqlite3.Row
-        try:
-            db.execute('BEGIN IMMEDIATE');yield db;db.commit()
-        except Exception:db.rollback();raise
-        finally:db.close()
+    def db(self, *, readonly=False):
+        with transaction(self.path, readonly=readonly, foreign_keys=False, timeout=10) as db:
+            yield db
 
     def initialize(self):
         with self.db() as db:ensure_settings_schema(db)
@@ -133,10 +130,10 @@ class SettingsStore:
             daily_slot=self.get_in(db,'daily_server_up_slot',''))
 
     def snapshot(self,now=None):
-        with self.db() as db:return self.snapshot_in(db,int(time.time()) if now is None else now)
+        with self.db(readonly=True) as db:return self.snapshot_in(db,int(time.time()) if now is None else now)
 
     def receipt(self,op):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row=db.execute('SELECT * FROM bot_setting_ops WHERE op=?',(op,)).fetchone()
             return dict(row) if row else None
 

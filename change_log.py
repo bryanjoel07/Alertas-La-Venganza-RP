@@ -5,7 +5,6 @@ import io
 import json
 import logging
 import os
-from pathlib import Path
 import sqlite3
 import time
 
@@ -14,9 +13,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='rules-ck-pkt-explanations-v20'
-SUMMARY='Añade las explicaciones de CK y PKT solicitadas por el propietario a sus propios temas de /regla y al autocompletado. CK explica la muerte definitiva, la pérdida del progreso y bienes del personaje dentro del rol y el inicio de otra historia. PKT explica que conserva su cuerpo y nombre, sigue vivo y olvida por completo lo relacionado con el conflicto o etapa acordados, con un ejemplo sencillo. Ambas incluyen el canal de tickets para que administración revise el caso y sus condiciones. Se presentan como explicaciones de administración y enlazan al reglamento como contexto, sin atribuir ese texto nuevo a los mensajes originales. PK conserva su búsqueda de normas y no se confunde con PKT; CL no se convierte en CK. Las respuestas siguen siendo privadas y requieren acceso al canal de normas. No modifica normas publicadas, roles, permisos, saldos ni datos del juego.'
-RESTORE=('Código anterior: 677af48b274cd644faeab7b003b9ae0f94f70a43. Desplegar ese commit conservando SQLite y el volumen actual. Volver a esa versión retira las explicaciones añadidas y la opción PKT del autocompletado si no figura en el canal, mientras CK vuelve a mostrar el apartado oficial donde se menciona. No requiere migración ni restaurar contenido de Discord: las explicaciones se guardan en rule_topics.py y no se editan los mensajes originales. Conservar sugerencias, votos, tickets, archivos, saldos y eliminaciones actuales; no restaurar una base antigua ni cambiar roles o permisos.')
+RELEASE='bot-runtime-audit-v21'
+SUMMARY='Optimiza las lecturas de tickets, tienda, perfiles, fotos, feedback, reportes, solicitudes, minijuegos, sugerencias, ajustes y reuniones para que no reserven el bloqueo de escritura. Activa SQLite WAL con durabilidad FULL después de una copia completa verificada. El seguimiento de tickets consulta solo casos activos y paneles pendientes; la recuperación evita descargar todos los canales cuando no hace falta. Añade índices para historiales, evita repetir tareas e instalaciones de paneles y espera su cierre antes de cerrar archivos y conexiones. Retira dos herramientas temporales ya completadas y sus importaciones sin uso. Mantiene comandos, botones, privacidad, roles, permisos, premios, saldos y archivos. Incluye auditoría y medición reproducible con datos de prueba.'
+RESTORE=('Código anterior: ac09372d59020d6994aaf3ba1dd88728865c6ebe. Desplegar ese commit conservando SQLite y el volumen actual. El código anterior también puede abrir SQLite en WAL y admite los índices añadidos; no hace falta cambiar el diario ni borrar índices para revertir el código. Conservar siempre los archivos lavenganza.sqlite3, lavenganza.sqlite3-wal y lavenganza.sqlite3-shm juntos; nunca borrar los archivos WAL/SHM mientras el servicio está activo ni copiar solamente el archivo principal. Para respaldar usar la API SQLite de backup.py. La copia before-wal-*.sqlite3 y su manifiesto verificado están en /data/backups y corresponden al instante anterior a esta optimización; no restaurarlos para revertir el código porque se perderían cambios posteriores. No modificar roles, permisos, saldos, premios ni mensajes de Discord. Las herramientas temporales retiradas conservan su historial en Git y sus registros en SQLite.')
 
 
 class Journal:

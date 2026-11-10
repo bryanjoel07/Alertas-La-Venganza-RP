@@ -2,7 +2,6 @@
 import asyncio
 from contextlib import closing
 from datetime import datetime
-import hashlib
 import json
 import logging
 import sqlite3
@@ -11,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
-from recruitment_store import RecruitmentStore,ACTIVE,FINAL,LABELS
+from recruitment_store import RecruitmentStore, ACTIVE, LABELS
 from recruitment_survey import RecruitmentSource,survey_recruitment
 from recruitment_ui import (RecruitPanel,RecruitAction,ApplicationForm,TextForm,InterviewForm,
  Confirm,Pages,controls,reply,summary,detail_pages,RED)
@@ -51,6 +50,7 @@ class RecruitmentSystem:
   self.register()
  async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
  async def start(self):
+  if self.task is not None and not self.task.done():return
   await self.call('initialize');self.bot.add_view(RecruitPanel(self));self.bot.add_dynamic_items(RecruitAction)
   self.task=asyncio.create_task(self.loop(),name='staff-recruitment')
  async def member(self,i):

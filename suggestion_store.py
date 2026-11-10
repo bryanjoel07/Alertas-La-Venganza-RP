@@ -1,9 +1,9 @@
 """Atomic community suggestions, votes and decisions in the existing SQLite backup."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
-import sqlite3
 import time
 import unicodedata
 
@@ -15,13 +15,9 @@ CLOSED={'hecha','rechazada'}
 class SuggestionStore:
  def __init__(self,path):self.path=Path(path)
  @contextmanager
- def db(self):
-  db=sqlite3.connect(self.path,timeout=10);db.row_factory=sqlite3.Row
-  db.execute('PRAGMA foreign_keys=ON')
-  try:
-   db.execute('BEGIN IMMEDIATE');yield db;db.commit()
-  except Exception:db.rollback();raise
-  finally:db.close()
+ def db(self, *, readonly=False):
+     with transaction(self.path, readonly=readonly, foreign_keys=True, timeout=10) as db:
+         yield db
  def initialize(self):
   with self.db() as db:
    db.execute('''CREATE TABLE IF NOT EXISTS lv_suggestions(
@@ -42,7 +38,7 @@ class SuggestionStore:
    last=db.execute('SELECT COALESCE(MAX(id),0) FROM lv_suggestions').fetchone()[0]
    db.execute("INSERT INTO lv_suggestion_config VALUES ('last_id',?) ON CONFLICT(key) DO UPDATE SET value=CAST(MAX(CAST(value AS INTEGER),CAST(excluded.value AS INTEGER)) AS TEXT)",(str(last),))
  def config(self,key,value=None):
-  with self.db() as db:
+  with self.db(readonly=value is None) as db:
    if value is not None:db.execute('INSERT INTO lv_suggestion_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(value)))
    row=db.execute('SELECT value FROM lv_suggestion_config WHERE key=?',(key,)).fetchone()
    return row[0] if row else ''
@@ -69,19 +65,19 @@ class SuggestionStore:
    db.execute("INSERT INTO lv_suggestion_config VALUES ('last_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(rid),))
    return rid
  def get(self,rid):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    row=db.execute('''SELECT s.*,
      (SELECT COUNT(*) FROM lv_suggestion_votes WHERE suggestion=s.id AND value=1) AS up,
      (SELECT COUNT(*) FROM lv_suggestion_votes WHERE suggestion=s.id AND value=-1) AS down
      FROM lv_suggestions s WHERE s.id=?''',(rid,)).fetchone()
    return dict(row) if row else None
  def list(self,owner=None,limit=10,offset=0):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    where="publication NOT IN ('missing','deleting')"+(' AND owner=?' if owner is not None else '')
    args=([owner] if owner is not None else [])+[limit,offset]
    return [dict(r) for r in db.execute('SELECT * FROM lv_suggestions WHERE '+where+' ORDER BY id DESC LIMIT ? OFFSET ?',args)]
  def pending(self):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    return [r[0] for r in db.execute("SELECT id FROM lv_suggestions WHERE publication IN ('pending','publishing') OR (publication='published' AND revision!=rendered) ORDER BY id")]
  def acquire(self,rid,now=None):
   stamp=int(time.time()) if now is None else now
@@ -121,13 +117,13 @@ class SuggestionStore:
    db.execute('UPDATE lv_suggestions SET status=?,reason=?,decided_by=?,updated=?,revision=revision+1,status_version=status_version+1 WHERE id=?',(status,reason,actor,stamp,rid))
    return True
  def events(self,rid):
-  with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_suggestion_events WHERE suggestion=? ORDER BY id',(rid,))]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT * FROM lv_suggestion_events WHERE suggestion=? ORDER BY id',(rid,))]
  def votes(self,rid):
-  with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_suggestion_votes WHERE suggestion=? ORDER BY user',(rid,))]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT * FROM lv_suggestion_votes WHERE suggestion=? ORDER BY user',(rid,))]
  def published(self):
-  with self.db() as db:return [r[0] for r in db.execute("SELECT id FROM lv_suggestions WHERE publication='published' ORDER BY id")]
+  with self.db(readonly=True) as db:return [r[0] for r in db.execute("SELECT id FROM lv_suggestions WHERE publication='published' ORDER BY id")]
  def pending_deletions(self):
-  with self.db() as db:return [r[0] for r in db.execute("SELECT id FROM lv_suggestions WHERE publication='deleting' ORDER BY id")]
+  with self.db(readonly=True) as db:return [r[0] for r in db.execute("SELECT id FROM lv_suggestions WHERE publication='deleting' ORDER BY id")]
  def deletion(self,rid):
   value=self.config(f'deletion:{rid}')
   return json.loads(value) if value else None

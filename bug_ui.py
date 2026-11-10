@@ -3,7 +3,7 @@ import json
 import time
 from pathlib import Path
 import discord
-from feedback_ui import reply, NONE, RED
+from feedback_ui import reply
 from bug_store import STATES,clip_url
 from bug_template import DETAILS_LIMIT,details_default,parse_details
 from bug_limits import MAX_CLIP_BYTES,MAX_REPORT_FILES,FILE_TYPES,MAX_FILE_MB,BYTES_PER_MB

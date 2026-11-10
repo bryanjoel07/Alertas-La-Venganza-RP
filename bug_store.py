@@ -1,9 +1,9 @@
 """Durable bug reports, evidence and audit trail in the bot's existing SQLite."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 import hashlib
 import json
 import secrets
-import sqlite3
 import time
 from urllib.parse import urlsplit
 from bug_template import DETAILS_LIMIT,parse_details
@@ -27,12 +27,9 @@ def clip_url(value):
 class BugStore(ReportFiles):
     def __init__(self,path):self.path=path
     @contextmanager
-    def db(self):
-        db=sqlite3.connect(self.path,timeout=10);db.row_factory=sqlite3.Row
-        try:
-            db.execute('BEGIN IMMEDIATE');yield db;db.commit()
-        except Exception:db.rollback();raise
-        finally:db.close()
+    def db(self, *, readonly=False):
+        with transaction(self.path, readonly=readonly, foreign_keys=False, timeout=10) as db:
+            yield db
     def initialize(self):
         with self.db() as db:
             db.execute('''CREATE TABLE IF NOT EXISTS lv_bugs(id INTEGER PRIMARY KEY,owner INTEGER NOT NULL,
@@ -51,7 +48,7 @@ class BugStore(ReportFiles):
                 sha256 TEXT NOT NULL,token TEXT NOT NULL UNIQUE,created INTEGER NOT NULL)''')
             self.initialize_files(db)
     def panel_backup(self,source,payload=None):
-        with self.db() as db:
+        with self.db(readonly=payload is None) as db:
             if payload is not None:
                 encoded=json.dumps(payload,ensure_ascii=False,sort_keys=True)
                 db.execute('INSERT OR IGNORE INTO lv_bug_panel_backups VALUES (?,?,?)',(source,encoded,hashlib.sha256(encoded.encode()).hexdigest()))
@@ -60,11 +57,11 @@ class BugStore(ReportFiles):
             if hashlib.sha256(row['payload'].encode()).hexdigest()!=row['sha256']:raise ValueError('La copia de la plantilla anterior no pasó la verificación.')
             return json.loads(row['payload'])
     def config(self,key,value=None):
-        with self.db() as db:
+        with self.db(readonly=value is None) as db:
             if value is not None:db.execute('INSERT INTO lv_bug_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(value)))
             row=db.execute('SELECT value FROM lv_bug_config WHERE key=?',(key,)).fetchone();return row[0] if row else ''
     def get(self,rid,include_video=True):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             columns=f'*,length(video) AS video_size,{FILE_COUNT}' if include_video else METADATA
             row=db.execute(f'SELECT {columns} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row:return None
@@ -96,7 +93,7 @@ class BugStore(ReportFiles):
                 raise ValueError('Ya tienes 3 reportes pendientes. Continúa en esos, bro.')
             now=int(time.time());return db.execute('INSERT INTO lv_bugs(owner,created,updated) VALUES (?,?,?)',(owner,now,now)).lastrowid
     def by_thread(self,thread):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row=db.execute(f'SELECT {METADATA} FROM lv_bugs WHERE thread=?',(thread,)).fetchone()
             return dict(row) if row else None
     def save(self,rid,owner,step,values,revision,filename=None,video=None):
@@ -171,9 +168,9 @@ class BugStore(ReportFiles):
             db.execute("INSERT OR REPLACE INTO lv_bug_uploads VALUES (?,?,?,?,?,'pending',?,NULL)",(rid,revision+1,json.dumps(source),filename,size,int(time.time())))
             return revision+1
     def pending_uploads(self):
-        with self.db() as db:return [dict(r) for r in db.execute("SELECT * FROM lv_bug_uploads WHERE state='pending' ORDER BY created")]
+        with self.db(readonly=True) as db:return [dict(r) for r in db.execute("SELECT * FROM lv_bug_uploads WHERE state='pending' ORDER BY created")]
     def upload_job(self,rid):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row=db.execute('SELECT * FROM lv_bug_uploads WHERE report=?',(rid,)).fetchone()
             return dict(row) if row else None
     def complete_upload(self,rid,revision,data):
@@ -210,7 +207,7 @@ class BugStore(ReportFiles):
     def controls(self,rid,message):
         with self.db() as db:db.execute('UPDATE lv_bugs SET message=? WHERE id=?',(message,rid))
     def rows(self,owner=None,recovery=False):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             if recovery:sql=f"SELECT {METADATA} FROM lv_bugs WHERE status='publicando' OR pending IS NOT NULL OR (thread IS NOT NULL AND message IS NULL)";args=()
             else:sql=f'SELECT {METADATA} FROM lv_bugs'+(' WHERE owner=?' if owner is not None else '')+' ORDER BY id DESC LIMIT 25';args=(owner,) if owner is not None else ()
             return [dict(r) for r in db.execute(sql,args)]
@@ -239,7 +236,7 @@ class BugStore(ReportFiles):
             pending=json.loads(row['pending']);self.event(db,rid,pending['actor'],pending['state'],pending['reason'])
             db.execute('UPDATE lv_bugs SET status=?,pending=NULL,updated=? WHERE id=?',(pending['state'],int(time.time()),rid))
     def events(self,rid):
-        with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_bug_events WHERE report=? ORDER BY id',(rid,))]
+        with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT * FROM lv_bug_events WHERE report=? ORDER BY id',(rid,))]
     def external_state(self,rid,state):
         if state not in STATES:return False
         with self.db() as db:

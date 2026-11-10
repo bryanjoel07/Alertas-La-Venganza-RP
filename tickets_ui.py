@@ -1,9 +1,7 @@
 """Persistent ticket controls; every callback is authorized again by the service."""
 import json
-from contextlib import suppress
 import logging
 import discord
-from discord import app_commands
 from tickets_store import DEPARTMENTS
 from ticket_forms import FORMS,submission
 

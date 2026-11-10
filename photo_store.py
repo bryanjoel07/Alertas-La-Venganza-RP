@@ -1,8 +1,8 @@
 """Weekly photo entries and votes, kept in the bot's existing SQLite backups."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
 from pathlib import Path
-import sqlite3
 import time
 
 from economy_store import SLOTS, EconomyStore
@@ -17,19 +17,9 @@ class PhotoStore:
         self.path = Path(path)
 
     @contextmanager
-    def db(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        db.execute('PRAGMA foreign_keys=ON')
-        try:
-            db.execute('BEGIN IMMEDIATE')
+    def db(self, *, readonly=False):
+        with transaction(self.path, readonly=readonly, foreign_keys=True, timeout=10) as db:
             yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
 
     def initialize(self, now=None):
         now = int(time.time()) if now is None else now
@@ -78,7 +68,7 @@ class PhotoStore:
             db.execute('INSERT OR IGNORE INTO lv_photo_config VALUES (?,?)', ('coins_since', str(week_bounds(now)[1])))
 
     def config(self, key, value=None):
-        with self.db() as db:
+        with self.db(readonly=value is None) as db:
             if value is not None:
                 db.execute('INSERT INTO lv_photo_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, str(value)))
             row = db.execute('SELECT value FROM lv_photo_config WHERE key=?', (key,)).fetchone()
@@ -178,7 +168,7 @@ class PhotoStore:
             db.execute('UPDATE lv_photo_entries SET retired_control=NULL WHERE id=?', (entry,))
 
     def pending_posts(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [r[0] for r in db.execute("SELECT id FROM lv_photo_entries WHERE (post_mode='pending' AND active=1) OR retired_control IS NOT NULL")]
 
     @staticmethod
@@ -187,12 +177,12 @@ class PhotoStore:
             JOIN lv_photo_weeks w ON w.week=e.week LEFT JOIN lv_photo_votes v ON v.entry=e.id'''
 
     def entry(self, entry):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row = db.execute(self.query() + ' WHERE e.id=? GROUP BY e.id', (entry,)).fetchone()
             return dict(row) if row else None
 
     def entries(self, week=None):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             query = self.query() + (' WHERE e.week=?' if week is not None else '') + ' GROUP BY e.id ORDER BY votes DESC,e.created,e.attachment,e.id'
             return [dict(r) for r in db.execute(query, (week,) if week is not None else ())]
 
@@ -220,7 +210,7 @@ class PhotoStore:
         return bool(since and week['starts']>=int(since[0]))
 
     def ranking(self,week):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             current=db.execute('SELECT * FROM lv_photo_weeks WHERE week=?',(week,)).fetchone()
             if not current:return []
             if current['podium_closed'] is not None:return self.podium_in(db,week)
@@ -229,7 +219,7 @@ class PhotoStore:
                 for n,row in enumerate(self.leaders_in(db,week),1)]
 
     def reward_rates(self,week):
-        with self.db() as db:return photo_rewards_in(db,week)
+        with self.db(readonly=True) as db:return photo_rewards_in(db,week)
 
     def reward_podium(self,week,bot_id,expected=None,now=None,media=None):
         """Commit the final podium and all shop credits in one SQLite transaction."""
@@ -269,7 +259,7 @@ class PhotoStore:
             return self.podium_in(db,week)
 
     def reward_status(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             invalid=db.execute('''SELECT COUNT(*) FROM lv_photo_podium p LEFT JOIN eco_ledger l ON l.op=p.ledger_op
                 WHERE l.id IS NULL OR l.user_id!=p.author OR l.amount!=p.coins''').fetchone()[0]
             if invalid:raise RuntimeError('Hay premios de Fotos que no coinciden con sus movimientos de monedas.')
@@ -277,7 +267,7 @@ class PhotoStore:
                 paid_positions=db.execute('SELECT COUNT(*) FROM lv_photo_podium').fetchone()[0])
 
     def refresh_entries(self, now):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute(self.query() + " WHERE (w.state='open' AND w.ends>?) OR e.rendered_closed!=1 GROUP BY e.id", (now,))]
 
     def control_started(self, entry, now):
@@ -325,7 +315,7 @@ class PhotoStore:
 
     def due(self, now=None):
         now = int(time.time()) if now is None else now
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute("SELECT * FROM lv_photo_weeks WHERE ends<=? AND state!='published' ORDER BY starts", (now,))]
 
     def freeze(self, week, now=None):
@@ -356,12 +346,12 @@ class PhotoStore:
             db.execute("UPDATE lv_photo_weeks SET state='published',announcement=?,image=NULL,image_url=COALESCE(?,image_url) WHERE week=?", (message, url, week))
 
     def week(self, week):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row = db.execute('SELECT * FROM lv_photo_weeks WHERE week=?', (week,)).fetchone()
             return dict(row) if row else None
 
     def announced_winner(self, message):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row = db.execute("SELECT * FROM lv_photo_weeks WHERE announcement=? AND state='published' AND winner IS NOT NULL", (message,)).fetchone()
             return dict(row) if row else None
 
@@ -406,5 +396,5 @@ class PhotoStore:
             db.execute('UPDATE lv_photo_weeks SET prize_error=? WHERE week=?', (str(error), week))
 
     def pending_prizes(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute("SELECT * FROM lv_photo_weeks WHERE state='published' AND winner IS NOT NULL AND prize_sku IS NOT NULL AND prize_receipt IS NULL")]

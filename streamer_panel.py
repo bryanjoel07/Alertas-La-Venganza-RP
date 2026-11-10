@@ -109,6 +109,7 @@ class StreamerPanel:
         self.published = False
 
     def start(self):
+        if self.install.is_running():return
         with self.streamers.db() as db:
             db.execute("CREATE TABLE IF NOT EXISTS streamer_panel(channel INTEGER PRIMARY KEY,message INTEGER,colored INTEGER DEFAULT 0)")
             db.execute("INSERT OR IGNORE INTO streamer_panel(channel) VALUES(?)", (CHANNEL_ID,))

@@ -1,8 +1,8 @@
 """Durable staff applications, decisions and notification receipts."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
 from pathlib import Path
-import sqlite3
 import time
 
 ACTIVE={'borrador','enviada','revision','esperando','entrevista'}
@@ -24,12 +24,9 @@ QUESTIONS=(
 class RecruitmentStore:
  def __init__(self,path):self.path=Path(path)
  @contextmanager
- def db(self):
-  db=sqlite3.connect(self.path,timeout=10);db.row_factory=sqlite3.Row
-  try:
-   db.execute('BEGIN IMMEDIATE');yield db;db.commit()
-  except Exception:db.rollback();raise
-  finally:db.close()
+ def db(self, *, readonly=False):
+     with transaction(self.path, readonly=readonly, foreign_keys=False, timeout=10) as db:
+         yield db
  def initialize(self):
   with self.db() as db:
    db.execute('''CREATE TABLE IF NOT EXISTS lv_recruit_cases(id INTEGER PRIMARY KEY,owner INTEGER NOT NULL,
@@ -49,7 +46,7 @@ class RecruitmentStore:
     before_json TEXT NOT NULL,after_json TEXT NOT NULL,expires INTEGER NOT NULL,state TEXT NOT NULL)''')
    db.execute("INSERT OR IGNORE INTO lv_recruit_config VALUES ('open','1')")
  def config(self,key,value=None):
-  with self.db() as db:
+  with self.db(readonly=value is None) as db:
    if value is not None:db.execute('INSERT INTO lv_recruit_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(value)))
    row=db.execute('SELECT value FROM lv_recruit_config WHERE key=?',(key,)).fetchone();return row[0] if row else ''
  def _event(self,db,row,actor,action,text='',private=False):
@@ -67,13 +64,13 @@ class RecruitmentStore:
  def _touch(self,db,rid,**fields):
   db.execute('UPDATE lv_recruit_cases SET '+','.join(k+'=?' for k in fields)+',updated=?,revision=revision+1 WHERE id=?',(*fields.values(),int(time.time()),rid))
  def get(self,rid):
-  with self.db() as db:return dict(self._row(db,rid))
+  with self.db(readonly=True) as db:return dict(self._row(db,rid))
  def rows(self,owner=None,active=False,limit=25,offset=0,submitted=False):
   terms=[];args=[]
   if owner is not None:terms.append('owner=?');args.append(owner)
   if submitted:terms.append('submitted IS NOT NULL')
   if active:terms.append("status IN ('enviada','revision','esperando','entrevista')")
-  with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_recruit_cases'+(' WHERE '+' AND '.join(terms) if terms else '')+' ORDER BY id DESC LIMIT ? OFFSET ?',(*args,limit,offset))]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT * FROM lv_recruit_cases'+(' WHERE '+' AND '.join(terms) if terms else '')+' ORDER BY id DESC LIMIT ? OFFSET ?',(*args,limit,offset))]
  def begin(self,owner):
   with self.db() as db:
    row=db.execute("SELECT * FROM lv_recruit_cases WHERE owner=? AND status IN ('borrador','enviada','revision','esperando','entrevista')",(owner,)).fetchone()
@@ -158,12 +155,12 @@ class RecruitmentStore:
    if row['owner']!=owner or row['status'] not in ACTIVE:raise ValueError('Solo puedes retirar una solicitud tuya que siga abierta.')
    self._touch(db,rid,status='retirada');self._event(db,row,owner,'retirada')
  def events(self,rid,private=False):
-  with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_recruit_events WHERE application=?'+('' if private else ' AND private=0')+' ORDER BY id',(rid,))]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT * FROM lv_recruit_events WHERE application=?'+('' if private else ' AND private=0')+' ORDER BY id',(rid,))]
  def receipt(self,rid,field,message,revision):
   if field not in {'review','interview'}:raise ValueError('Recibo incorrecto.')
   with self.db() as db:db.execute(f'UPDATE lv_recruit_cases SET {field}_message=?,{field}_revision=? WHERE id=?',(message,revision,rid))
  def pending(self):
-  with self.db() as db:return [dict(r) for r in db.execute("SELECT * FROM lv_recruit_notices WHERE state='pending' ORDER BY id LIMIT 30")]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute("SELECT * FROM lv_recruit_notices WHERE state='pending' ORDER BY id LIMIT 30")]
  def notice_done(self,nid,state,message=None):
   if state not in {'sent','blocked'}:raise ValueError('Recibo incorrecto.')
   with self.db() as db:db.execute("UPDATE lv_recruit_notices SET state=?,message=? WHERE id=? AND state='pending'",(state,message,nid))
@@ -174,7 +171,7 @@ class RecruitmentStore:
     text=f'Recuerda tu entrevista para el staff: <t:{row["interview_at"]}:F> (<t:{row["interview_at"]}:R>).'
     self._notice(db,row,f'recordatorio:{row["interview_at"]}',text)
  def voice(self,rid=None):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    rows=db.execute('SELECT * FROM lv_recruit_voice'+(' WHERE application=?' if rid is not None else ''),(rid,) if rid is not None else ()).fetchall()
    return [dict(r) for r in rows]
  def voice_save(self,rid,user,before,after,expires):

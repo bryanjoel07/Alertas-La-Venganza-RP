@@ -73,13 +73,13 @@ class ReportFiles:
             return revision+1
 
     def file_jobs(self,rid,revision):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row=db.execute('SELECT status,revision,data FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row or row['status']!='borrador' or row['revision']!=revision or not json.loads(row['data']).get('upload_pending'):return []
             return [dict(r) for r in db.execute(f"SELECT {FILE_FIELDS},source FROM lv_bug_files WHERE report=? AND revision=? ORDER BY position",(rid,revision))]
 
     def pending_file_groups(self):
-        with self.db() as db:return [dict(r) for r in db.execute('''SELECT DISTINCT f.report,f.revision FROM lv_bug_files f
+        with self.db(readonly=True) as db:return [dict(r) for r in db.execute('''SELECT DISTINCT f.report,f.revision FROM lv_bug_files f
             JOIN lv_bugs b ON b.id=f.report AND b.revision=f.revision
             WHERE b.status='borrador' AND json_extract(b.data,'$.upload_pending')=1 AND f.state='pending'
             AND NOT EXISTS(SELECT 1 FROM lv_bug_files other WHERE other.report=f.report AND other.revision=f.revision AND other.state='failed')''')]

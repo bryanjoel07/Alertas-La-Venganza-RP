@@ -1,9 +1,7 @@
 """La Venganza RP minigames. No role, permission or channel mutations."""
 import asyncio
-import hashlib
 import json
 import logging
-from pathlib import Path
 from typing import Literal
 
 import discord

@@ -39,6 +39,7 @@ class SuggestionSystem:
  async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
  def lock(self,rid):return self.locks.setdefault(rid,asyncio.Lock())
  async def start(self):
+  if self.task is not None and not self.task.done():return
   await self.call('initialize');self.bot.add_dynamic_items(SuggestionAction)
   self.task=asyncio.create_task(self.loop(),name='community-suggestions')
  async def target(self):

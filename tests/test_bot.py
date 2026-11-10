@@ -134,6 +134,31 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.bot.DATA_DIR = self.temp.name
         self.bot.init_db()
 
+    async def test_shutdown_waits_for_discord_loops_before_closing_uploads_and_media(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        client=self.bot.LaVenganzaBot()
+        finished=[]
+        async def worker(name):
+            try:await asyncio.Event().wait()
+            finally:
+                await asyncio.sleep(0)
+                finished.append(name)
+        tasks=[asyncio.create_task(worker(name)) for name in ('filter','stream-panel','live','bugs')]
+        await asyncio.sleep(0)
+        def loop(task):return SimpleNamespace(get_task=lambda:task,cancel=task.cancel)
+        client.obscenity_filter=SimpleNamespace(install=loop(tasks[0]))
+        client.streamer_panel=SimpleNamespace(install=loop(tasks[1]))
+        client.live_alerts=SimpleNamespace(poll=loop(tasks[2]))
+        client.bugs.task=tasks[3]
+        async def close_resource():self.assertEqual(set(finished),{'filter','stream-panel','live','bugs'})
+        client.bugs.clips.close=AsyncMock(side_effect=close_resource)
+        client.bugs.media.close=AsyncMock(side_effect=close_resource)
+        with patch('discord.Client.close',AsyncMock()) as close_discord:
+            await client.close()
+        close_discord.assert_awaited_once()
+        self.assertTrue(all(task.cancelled() for task in tasks))
+
     async def test_daily_up_banner_and_outage_alerts_use_separate_channels(self):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock

@@ -205,8 +205,16 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.system.retire_duplicate_portal=AsyncMock()
         async def tracked(rid,title,request,operation):return await operation()
         self.system.tracked=tracked;self.system.store.config('guide_buttons',888)
-        with patch('bug_panel.ReportPanel.ready',AsyncMock(return_value=guide)):
+        with patch('bug_panel.ReportPanel.ready',AsyncMock(return_value=guide)) as install, patch('bug_panel.ReportPanel.verify',AsyncMock(return_value=guide)) as verify:
             await self.system.ready();await self.system.ready()
+            install.assert_awaited_once();verify.assert_not_awaited()
+            self.system.panel_checked-=61
+            await self.system.ready()
+            install.assert_awaited_once();verify.assert_awaited_once_with(888)
+            self.system.panel_checked-=61
+            verify.side_effect=discord.NotFound(SimpleNamespace(status=404,reason='Not Found'),'gone')
+            await self.system.ready()
+            self.assertEqual(install.await_count,2)
         self.forum.create_thread.assert_not_called()
     async def test_cleanup_refuses_a_real_report_even_if_it_has_the_old_portal_id(self):
         self.system.store.adopt(OLD_PORTAL,1,'Reporte real','Datos','https://example.com/video')

@@ -40,6 +40,7 @@ class LiveAlerts:
                 PRIMARY KEY(platform,session))""")
 
     def start(self):
+        if self.poll.is_running():return
         self.init_db()
         self.poll.start()
 

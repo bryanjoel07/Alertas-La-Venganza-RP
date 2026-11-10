@@ -1,7 +1,7 @@
 """Staff feedback; ticket ownership and duplicate checks share one SQLite transaction."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
-import sqlite3
 import time
 
 
@@ -10,18 +10,9 @@ class FeedbackStore:
         self.path = path
 
     @contextmanager
-    def db(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        try:
-            db.execute('BEGIN IMMEDIATE')
+    def db(self, *, readonly=False):
+        with transaction(self.path, readonly=readonly, foreign_keys=False, timeout=10) as db:
             yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
 
     def initialize(self):
         with self.db() as db:
@@ -48,7 +39,7 @@ class FeedbackStore:
                     (row['owner'], row['assignee'], row['id'], row['rating'], row['rating_comment'] or '', row['closed'] or row['updated']))
 
     def config(self, key, value=None):
-        with self.db() as db:
+        with self.db(readonly=value is None) as db:
             if value is not None:
                 db.execute('INSERT INTO lv_feedback_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, str(value)))
             row = db.execute('SELECT value FROM lv_feedback_config WHERE key=?', (key,)).fetchone()
@@ -60,7 +51,7 @@ class FeedbackStore:
                    (rid, actor, action, detail, int(time.time())))
 
     def get(self, rid):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             row = db.execute('SELECT * FROM lv_feedback WHERE id=?', (rid,)).fetchone()
             return dict(row) if row else None
 
@@ -76,11 +67,11 @@ class FeedbackStore:
         return dict(row)
 
     def ticket(self, rid, owner):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return self.ticket_row(db, rid, owner)
 
     def tickets(self, owner):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             rows = db.execute("SELECT * FROM lv_tickets WHERE owner=? AND status='cerrado' AND rating IS NULL ORDER BY closed DESC,id DESC", (owner,)).fetchall()
             return [dict(r) for r in rows if not json.loads(r['form']).get('selftest') and r['assignee'] != owner]
 
@@ -131,7 +122,7 @@ class FeedbackStore:
         if pending:
             where.append("publish_state IN ('pending','sending')")
         sql = 'SELECT * FROM lv_feedback' + (' WHERE ' + ' AND '.join(where) if where else '')
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute(sql + ' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?', (*args, limit, offset))]
 
     def summary(self, *, public=True, staff=None, days=None):
@@ -142,7 +133,7 @@ class FeedbackStore:
             where.append('staff=?'); args.append(staff)
         if days is not None:
             where.append('created>=?'); args.append(int(time.time()) - days * 86400)
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             rows = db.execute('SELECT score,COUNT(*) AS n FROM lv_feedback WHERE ' + ' AND '.join(where) + ' GROUP BY score', args).fetchall()
             counts = {r['score']: r['n'] for r in rows}
             total = sum(counts.values())
@@ -173,7 +164,7 @@ class FeedbackStore:
                 self.event(db, rid, actor, 'retirar', reason[:1000])
 
     def removals(self):
-        with self.db() as db:
+        with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute("SELECT * FROM lv_feedback WHERE hidden_at IS NOT NULL AND publish_state='removing' ORDER BY id LIMIT 10")]
 
     def publication(self, rid, state, message=None):

@@ -1,8 +1,8 @@
 """Transactional ticket state. Independent tables; never edits roles or economy balances."""
+from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
 from pathlib import Path
-import sqlite3
 import time
 
 STATES={'nuevo','en_atencion','esperando_jugador','resuelto','cerrado'}
@@ -24,13 +24,9 @@ DEFAULTS={'max_open':3,'remind_hours':6,'inactive_hours':72,'close_warning_hours
 class TicketStore:
  def __init__(self,path):self.path=Path(path)
  @contextmanager
- def db(self):
-  db=sqlite3.connect(self.path,timeout=10);db.row_factory=sqlite3.Row
-  db.execute('PRAGMA foreign_keys=ON')
-  try:
-   db.execute('BEGIN IMMEDIATE');yield db;db.commit()
-  except Exception:db.rollback();raise
-  finally:db.close()
+ def db(self, *, readonly=False):
+     with transaction(self.path, readonly=readonly, foreign_keys=True, timeout=10) as db:
+         yield db
  def initialize(self):
   with self.db() as db:
    for sql in [
@@ -68,9 +64,13 @@ class TicketStore:
      if column=='staff_wait_since':
       db.execute('''UPDATE lv_tickets SET staff_wait_since=CASE WHEN last_staff IS NULL THEN created
          WHEN last_user>last_staff THEN last_user ELSE NULL END WHERE status IN ('nuevo','en_atencion','creando')''')
+   db.execute("CREATE INDEX IF NOT EXISTS lv_ticket_followup ON lv_tickets(id DESC) WHERE status NOT IN ('creando','fallido','cerrado')")
+   db.execute('CREATE INDEX IF NOT EXISTS lv_ticket_event_history ON lv_ticket_events(ticket,id)')
+   db.execute('CREATE INDEX IF NOT EXISTS lv_ticket_note_history ON lv_ticket_notes(ticket,id)')
+   db.execute('CREATE INDEX IF NOT EXISTS lv_ticket_version_history ON lv_ticket_message_versions(ticket,id)')
    for key,value in DEFAULTS.items():db.execute('INSERT OR IGNORE INTO lv_ticket_config VALUES (?,?)',(key,str(value)))
  def config(self,key,value=None):
-  with self.db() as db:
+  with self.db(readonly=value is None) as db:
    if value is not None:db.execute('INSERT INTO lv_ticket_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(value)))
    r=db.execute('SELECT value FROM lv_ticket_config WHERE key=?',(key,)).fetchone()
    return r[0] if r else ''
@@ -91,14 +91,30 @@ class TicketStore:
    self.event(db,rid,user,'crear',department)
    return rid
  def get(self,rid=None,channel=None):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    row=db.execute('SELECT * FROM lv_tickets WHERE '+('id=?' if rid is not None else 'channel=?'),(rid if rid is not None else channel,)).fetchone()
    return dict(row) if row else None
  def list(self,owner=None,status=None,limit=25,offset=0):
   clauses=[];args=[]
   if owner is not None:clauses.append('owner=?');args.append(owner)
   if status is not None:clauses.append('status=?');args.append(status)
-  with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_tickets'+(' WHERE '+' AND '.join(clauses) if clauses else '')+' ORDER BY id DESC LIMIT ? OFFSET ?',(*args,limit,offset))]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT * FROM lv_tickets'+(' WHERE '+' AND '.join(clauses) if clauses else '')+' ORDER BY id DESC LIMIT ? OFFSET ?',(*args,limit,offset))]
+ def followup_candidates(self):
+  """Only active metadata and closed panels waiting for a priority readback."""
+  columns='id,status,priority,form'
+  with self.db(readonly=True) as db:
+   pending={int(r[0].split(':',1)[1]) for r in db.execute("SELECT key FROM lv_ticket_config WHERE key GLOB 'priority-panel:*' AND value<>''") if r[0].split(':',1)[1].isdigit()}
+   rows={r['id']:dict(r) for r in db.execute(f"SELECT {columns} FROM lv_tickets WHERE deleted_at IS NULL AND status NOT IN ('creando','fallido','cerrado') ORDER BY id DESC")}
+   for rid in pending-rows.keys():
+    row=db.execute(f"SELECT {columns} FROM lv_tickets WHERE id=? AND deleted_at IS NULL AND status='cerrado'",(rid,)).fetchone()
+    if row:rows[rid]=dict(row)
+   return [dict(row,priority_pending=rid in pending) for rid,row in sorted(rows.items(),reverse=True)]
+ def recovery_candidates(self):
+  with self.db(readonly=True) as db:
+   return [dict(r) for r in db.execute("""SELECT * FROM lv_tickets WHERE deleted_at IS NULL AND (
+     status='creando' OR (status='fallido' AND channel IS NOT NULL) OR deletion_requested IS NOT NULL OR
+     (channel IS NOT NULL AND control_message IS NULL AND status IN ('nuevo','en_atencion','esperando_jugador','resuelto')) OR
+     (status='cerrado' AND archive_state IN ('pendiente','pendiente_actualizacion'))) ORDER BY id DESC""")]
  def update(self,rid,**fields):
   allowed={'channel','control_message','status','assignee','priority','resolution','warning_at','reminded_at','closed','transcript','archive_state','department','deletion_requested','deletion_actor'}
   if not fields or not set(fields)<=allowed:raise ValueError('Actualización no válida')
@@ -132,15 +148,15 @@ class TicketStore:
    return True
  def creation_pending(self,rid,now=None):
   stamp=int(time.time()) if now is None else now
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    row=db.execute('SELECT value FROM lv_ticket_config WHERE key=?',(f'creation-lease:{rid}',)).fetchone()
    return bool(row and int(row[0])>stamp)
  def priority_event(self,rid):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    row=db.execute("SELECT * FROM lv_ticket_events WHERE ticket=? AND action='prioridad' ORDER BY id DESC LIMIT 1",(rid,)).fetchone()
    return dict(row) if row else None
  def attended_by(self,rid,bot_id):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    row=db.execute('SELECT owner,last_staff_message FROM lv_tickets WHERE id=?',(rid,)).fetchone()
    if not row:return None
    message=db.execute('SELECT author FROM lv_ticket_messages WHERE ticket=? AND message=? AND author NOT IN (?,?)',
@@ -217,13 +233,13 @@ class TicketStore:
   with self.db() as db:db.execute('UPDATE lv_ticket_notices SET state=?,message=? WHERE ticket=? AND kind=? AND episode=?',
       (state,message,rid,kind,str(episode)))
  def notice(self,rid,kind):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    row=db.execute('SELECT * FROM lv_ticket_notices WHERE ticket=? AND kind=?',(rid,kind)).fetchone()
    return dict(row) if row else None
  def has_message(self,rid,message):
-  with self.db() as db:return db.execute('SELECT 1 FROM lv_ticket_messages WHERE ticket=? AND message=?',(rid,message)).fetchone() is not None
+  with self.db(readonly=True) as db:return db.execute('SELECT 1 FROM lv_ticket_messages WHERE ticket=? AND message=?',(rid,message)).fetchone() is not None
  def people(self,rid):
-  with self.db() as db:return [r[0] for r in db.execute('SELECT user FROM lv_ticket_people WHERE ticket=?',(rid,))]
+  with self.db(readonly=True) as db:return [r[0] for r in db.execute('SELECT user FROM lv_ticket_people WHERE ticket=?',(rid,))]
  def participant(self,rid,user,actor,add=True):
   with self.db() as db:
    if add:db.execute('INSERT OR IGNORE INTO lv_ticket_people VALUES (?,?)',(rid,user))
@@ -234,7 +250,7 @@ class TicketStore:
    db.execute('INSERT INTO lv_ticket_notes(ticket,actor,text,created) VALUES (?,?,?,?)',(rid,actor,text,int(time.time())))
    self.event(db,rid,actor,'nota_interna','Nota privada guardada')
  def events(self,rid,notes=False):
-  with self.db() as db:return [dict(r) for r in db.execute(('SELECT * FROM lv_ticket_notes' if notes else 'SELECT * FROM lv_ticket_events')+' WHERE ticket=? ORDER BY id',(rid,))]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute(('SELECT * FROM lv_ticket_notes' if notes else 'SELECT * FROM lv_ticket_events')+' WHERE ticket=? ORDER BY id',(rid,))]
  def rate(self,rid,user,score,comment):
   if score not in range(1,6):raise ValueError('Elige una valoración de 1 a 5.')
   with self.db() as db:
@@ -244,13 +260,13 @@ class TicketStore:
    db.execute('UPDATE lv_tickets SET rating=?,rating_comment=? WHERE id=?',(score,comment[:1000],rid))
    self.event(db,rid,user,'valorar',str(score))
  def files(self,rid):
-  with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_ticket_files WHERE ticket=?',(rid,))]
+  with self.db(readonly=True) as db:return [dict(r) for r in db.execute('SELECT * FROM lv_ticket_files WHERE ticket=?',(rid,))]
  def file(self,rid,message,attachment,name,url,size,path=None,state='pendiente',sha=None):
   with self.db() as db:db.execute('''INSERT INTO lv_ticket_files VALUES (?,?,?,?,?,?,?,?,?)
     ON CONFLICT(ticket,attachment) DO UPDATE SET path=COALESCE(excluded.path,lv_ticket_files.path),state=CASE WHEN lv_ticket_files.state='guardado' THEN 'guardado' ELSE excluded.state END,sha256=COALESCE(excluded.sha256,lv_ticket_files.sha256)''',
     (rid,message,attachment,name,url,path,state,size,sha))
  def stats(self):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    return dict(states=dict(db.execute('SELECT status,COUNT(*) FROM lv_tickets GROUP BY status')),
      unclaimed=db.execute("SELECT COUNT(*) FROM lv_tickets WHERE assignee IS NULL AND status NOT IN ('cerrado','fallido','creando')").fetchone()[0],
      response_seconds=db.execute('SELECT AVG(first_response-created) FROM lv_tickets WHERE first_response IS NOT NULL').fetchone()[0],
@@ -272,7 +288,7 @@ class TicketStore:
  def deleted(self,channel,message):
   with self.db() as db:db.execute('UPDATE lv_ticket_messages SET deleted=1 WHERE message=? AND ticket IN (SELECT id FROM lv_tickets WHERE channel=?)',(message,channel))
  def messages(self,rid):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    current=[dict(r) for r in db.execute('SELECT * FROM lv_ticket_messages WHERE ticket=? ORDER BY message',(rid,))]
    deleted={r['message']:r['deleted'] for r in current}
    versions=[]
@@ -295,7 +311,7 @@ class TicketStore:
    db.execute('INSERT INTO lv_ticket_blobs VALUES (?,?,?)',(rid,attachment,data))
    db.execute("UPDATE lv_ticket_files SET state='guardado',sha256=? WHERE ticket=? AND attachment=?",(hashlib.sha256(data).hexdigest(),rid,attachment))
  def blob(self,rid,attachment):
-  with self.db() as db:
+  with self.db(readonly=True) as db:
    r=db.execute('SELECT data FROM lv_ticket_blobs WHERE ticket=? AND attachment=?',(rid,attachment)).fetchone()
    return r[0] if r else None
 
