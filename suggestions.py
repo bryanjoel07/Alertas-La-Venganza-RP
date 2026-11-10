@@ -8,7 +8,8 @@ import discord
 from discord import app_commands
 
 from suggestion_store import SuggestionStore,STATES,CLOSED
-from suggestion_ui import SuggestionAction,IdeaForm,StateForm,MyIdeas,panel_controls,idea_controls,reply,failed,NONE
+from suggestion_ui import SuggestionAction,IdeaForm,StateForm,MyIdeas,DeleteIdea,panel_controls,idea_controls,reply,failed,NONE
+import suggestion_delete
 from tickets_store import PROTECTED
 
 CHANNEL_ID=1539013973947588759
@@ -56,7 +57,7 @@ class SuggestionSystem:
   if not base.permissions_for(member).view_channel or not base.permissions_for(member).read_message_history:
    raise ValueError('Necesitas acceso al canal de Sugerencias para usar este sistema.')
   if admin and not (member.guild_permissions.administrator or {r.id for r in member.roles}&PROTECTED):
-   raise ValueError('Solo Owner, Programador y administradores pueden cambiar el estado de las ideas.')
+   raise ValueError('Solo Owner, Programador y administradores pueden gestionar las ideas.')
   return member
  def embed(self,row):
   emoji,label=STATES[row['status']]
@@ -76,7 +77,8 @@ class SuggestionSystem:
     '**Así funciona**\n'
     '• Cada idea se publica con tu nombre y sus botones de votos.\n'
     '• Puedes votar a favor o en contra, cambiar tu voto o quitarlo.\n'
-    '• Administración revisa las ideas y deja una respuesta para que todos sepan cómo van.\n\n'
+    '• Administración revisa las ideas y deja una respuesta para que todos sepan cómo van.\n'
+    '• Solo administración puede eliminar una idea; siempre se pide confirmación.\n\n'
     '**Estados**\n🕓 Pendiente · ✅ Aceptada · 🛠️ En proceso · 🎉 Hecha · ❌ Rechazada\n\n'
     'Los votos ayudan a decidir. Al quedar hecha o rechazada, se cierra su votación. '
     'Envía una idea por formulario y revisa las que ya están para evitar repetirlas.').set_footer(text=PORTAL_MARKER)
@@ -86,12 +88,16 @@ class SuggestionSystem:
   if channel.guild.id!=self.guild_id or not valid or not isinstance(channel,(discord.TextChannel,discord.Thread)):
    raise ValueError('La publicación no pertenece al canal de Sugerencias.')
   return channel
- async def card(self,row):
-  if row['publication']!='published' or not row['message']:raise ValueError('La idea todavía se está publicando.')
+ async def card(self,row,*,allow_deleting=False):
+  if not row or row['publication'] not in (('published','missing','deleting') if allow_deleting else ('published',)) or not row['message']:
+   raise ValueError('La idea todavía se está publicando o ya no está disponible.')
   channel=await self.location(row['channel']);message=await channel.fetch_message(row['message'])
   if message.author.id!=self.bot.user.id or not marker(message).startswith(idea_marker(row['id'])):
    raise ValueError('Esta publicación no pertenece al sistema de sugerencias del bot.')
   return channel,message
+ async def find_idea(self,row):
+  base=await self.target()
+  return await self.find(base,idea_marker(row['id']),row['created'],row['id'])
  async def snapshot(self,rid=None):
   value=dict(channel=CHANNEL_ID,portal_channel=self.store.config('portal_channel'),portal_message=self.store.config('portal_message'))
   if rid:
@@ -186,15 +192,30 @@ class SuggestionSystem:
     raise RuntimeError('Discord no confirmó el panel de Sugerencias y sus botones.')
    form=IdeaForm(self);state=StateForm(self,dict(id=0,status='pendiente',reason='',status_version=0))
    if len(form.to_dict()['components'])!=3 or len(state.to_dict()['components'])!=2:raise RuntimeError('No se confirmaron los formularios de Sugerencias.')
+   await self.upgrade_delete_controls()
    self.prepared=True
    citizens=base.guild.get_role(1245009164070158409)
    log.info('SUGGESTIONS ready channel=%s type=%s panel_channel=%s panel_message=%s controls=%s forms=idea:3,state:2 states=%s citizen_view=%s citizen_history=%s admin_roles=%s protected_roles_unchanged=True citizen_write_unchanged=True legacy_messages_preserved=True',
      base.id,str(base.type),location.id,message.id,ids,list(STATES),base.permissions_for(citizens).view_channel if citizens else None,
      base.permissions_for(citizens).read_message_history if citizens else None,sorted(PROTECTED))
+   log.info('SUGGESTIONS deletion_ready admin_only=True confirmation=True hard_delete_tables=3 source_ids_never_reused=True persistent_retry=True command=/sugerencias eliminar')
+ async def upgrade_delete_controls(self):
+  if self.store.config('delete_controls_version')=='1':return
+  for rid in await self.call('published'):
+   async with self.lock(rid):
+    row=self.store.get(rid)
+    if not row or row['publication']!='published':continue
+    async def update():return await self.render(rid)
+    try:
+     await self.tracked(rid,f'Añadir Eliminar idea a la sugerencia #{rid}',update)
+     log.info('SUGGESTIONS delete_controls_verified id=%s admin_only=True',rid)
+    except discord.NotFound:await self.call('missing',row['channel'],[row['message']])
+  self.store.config('delete_controls_version','1')
  async def publish(self,rid):
   row=self.store.get(rid)
+  if not row:return None
   if row['publication']=='published':return await self.render(rid)
-  if row['publication']=='missing' or not await self.call('acquire',rid):return None
+  if row['publication'] in ('missing','deleting') or not await self.call('acquire',rid):return None
   base=await self.target()
   found=await self.find(base,idea_marker(rid),row['created'],rid)
   async def publish():
@@ -281,20 +302,32 @@ class SuggestionSystem:
    if not row or row['publication']!='published':raise ValueError('Esa idea ya no está disponible.')
    return await i.response.send_modal(StateForm(self,row))
   await i.response.defer(ephemeral=True,thinking=True)
+  if action=='delete':return await self.prepare_delete(i,rid)
   if action=='mine':return await self.mine(i)
   await self.vote(i,rid,{'up':1,'down':-1,'clear':0}[action])
+ async def prepare_delete(self,i,rid):
+  await self.member(i,admin=True)
+  row=self.store.get(rid)
+  if not row:raise ValueError('Esa idea ya fue eliminada o no existe.')
+  message=(f"¿Eliminar la idea **#{rid} · {text(row['title'])}**?\n"
+    'Se borrará su publicación de Discord y la idea con sus votos y respuestas de administración del sistema. '
+    'No se puede deshacer desde este panel. Se conservará una copia interna de respaldo.')
+  if row['channel'] and row['channel']==row['message']:message+=' También se borrarán los comentarios de esa publicación.'
+  await reply(i,message,embed=self.embed(row),view=DeleteIdea(self,i.user.id,row))
+ async def delete_idea(self,i,expected):return await suggestion_delete.delete(self,i,expected)
  async def deleted(self,guild,channel,messages=None):
   if guild!=self.guild_id:return
   await self.call('missing',channel,messages)
   if (messages is None and str(channel)==self.store.config('portal_channel')) or (messages and str(channel)==self.store.config('portal_channel') and int(self.store.config('portal_message') or 0) in messages):
    self.prepared=False
  async def maintenance(self):
+  await suggestion_delete.recover(self)
   for rid in await self.call('pending'):
    try:
     async with self.lock(rid):await self.publish(rid)
    except discord.NotFound:
     row=self.store.get(rid)
-    if row['publication']=='published':await self.call('missing',row['channel'],[row['message']])
+    if row and row['publication']=='published':await self.call('missing',row['channel'],[row['message']])
     log.warning('SUGGESTIONS missing_publication id=%s; record preserved',rid)
    except Exception:log.exception('SUGGESTIONS retry_pending id=%s; continuing other ideas',rid)
  async def loop(self):
@@ -312,7 +345,9 @@ class SuggestionSystem:
   async def show(i,numero:app_commands.Range[int,1]):
    await i.response.defer(ephemeral=True,thinking=True);await self.member(i)
    row=self.store.get(numero)
-   if not row or row['publication']=='missing':raise ValueError('Esa idea no está disponible.')
+   if not row or row['publication'] in ('missing','deleting'):raise ValueError('Esa idea no está disponible.')
    await reply(i,self.link(row) or 'La idea está guardada y preparando su publicación.',embed=self.embed(row))
+  @self.group.command(name='eliminar',description='Solo administración: eliminar una idea del sistema y de Discord')
+  async def remove(i,numero:app_commands.Range[int,1]):await self.handle(i,'delete',numero)
   @self.group.error
   async def error(i,exc):await failed(i,getattr(exc,'original',exc))

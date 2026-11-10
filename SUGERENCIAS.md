@@ -6,7 +6,7 @@ Canal solicitado: `1539013973947588759`. El panel del bot contiene **Proponer un
 
 El formulario pide un título (3–100 caracteres), la idea (10–2000) y, opcionalmente, en qué ayudaría (hasta 700). La publicación muestra quién la propuso. Un clic repetido sobre el mismo envío no crea otra idea. Las ideas idénticas del mismo jugador que siguen abiertas se detectan y se indica su número; entre formularios distintos hay una espera de un minuto.
 
-Cada idea tiene **A favor**, **En contra**, **Quitar voto** y **Estado**. Cada persona tiene un solo voto por idea y puede cambiarlo o retirarlo. El autor puede participar igual que los demás. Los recuentos se calculan a partir de los votos guardados, sin sumar clics repetidos. No se entregan monedas por votar.
+Cada idea tiene **A favor**, **En contra**, **Quitar voto**, **Estado** y **Eliminar idea** (solo administración). Cada persona tiene un solo voto por idea y puede cambiarlo o retirarlo. El autor puede participar igual que los demás. Los recuentos se calculan a partir de los votos guardados, sin sumar clics repetidos. No se entregan monedas por votar.
 
 **Mis ideas** muestra únicamente las propuestas del jugador, con su estado y un enlace a cada publicación. La lista es privada y tiene páginas de diez ideas. Las publicaciones eliminadas se retiran de la lista sin borrar sus datos internos.
 
@@ -15,6 +15,7 @@ Comandos disponibles dentro del servidor:
 - `/sugerencias proponer`: abre el mismo formulario.
 - `/sugerencias mis`: consulta las ideas propias.
 - `/sugerencias ver numero`: consulta una idea y el enlace a su publicación.
+- `/sugerencias eliminar numero`: solo administración; permite eliminar una idea publicada, pendiente o cuyo mensaje ya falta, después de confirmar.
 
 ## Administración
 
@@ -31,3 +32,15 @@ Los botones siguen funcionando después de reiniciar. Las sugerencias, votos y d
 Una publicación incompleta conserva una reserva de tres minutos. Al recuperarla, el bot busca primero su propia publicación por el número de idea para evitar duplicarla si Discord aceptó el envío y se perdió la respuesta. Los votos y estados cuya edición falló permanecen pendientes y se reintentan cada minuto. Antes de marcar una actualización como terminada, el bot vuelve a leer la publicación y comprueba texto, estado, votos y botones. Las publicaciones eliminadas no se recrean; se conservan sus datos y su historial.
 
 Para volver al código anterior, seguir `RESTORE` de la versión en `change_log.py`, conservando la base actual. No restaurar una base antigua ni eliminar mensajes para revertir el código.
+
+## Eliminar una idea
+
+**Eliminar idea** abre una confirmación privada con el título y los datos actuales. Solo el administrador que la abrió puede confirmarla o cancelarla. El bot vuelve a consultar sus roles al confirmar; Ciudadanos, Soporte y Moderador no pueden eliminar ideas salvo que el miembro tenga el permiso real Administrador. Se mantienen los mismos roles administrativos autorizados para decidir estados.
+
+Antes de actuar se guarda una copia privada de la idea, cada voto, sus decisiones y la publicación de Discord. La confirmación informa de este respaldo. Si se trata de una entrada propia del foro, la copia también incluye el texto y los metadatos de los comentarios y sus adjuntos; borrar esa entrada borra sus comentarios. No se eliminan mensajes ni hilos de otros autores o sistemas.
+
+El bot comprueba el autor, el número de idea y los IDs de la publicación. Primero la elimina en Discord y vuelve a consultar su existencia. Solo tras confirmar que ya no existe borra en una transacción la fila de `lv_suggestions`, sus filas de `lv_suggestion_votes`, sus filas de `lv_suggestion_events` y la solicitud pendiente de eliminación. Desaparece de Mis ideas y de las consultas. El registro privado y los respaldos anteriores no se purgan; la eliminación no es un borrado físico de todas las copias históricas.
+
+Si Discord o SQLite fallan durante la operación, el intento confirmado se conserva y se completa automáticamente tras recuperarse o reiniciar. Mientras tanto, esa idea no admite votos ni nuevas decisiones y no se vuelve a publicar. Una creación incierta espera a que venza su reserva antes de descartarse, buscando primero cualquier publicación aceptada por Discord. Los números eliminados no se reutilizan; las confirmaciones antiguas se rechazan si cambió la identidad o hubo una decisión administrativa posterior. Los votos nuevos no cambian la identidad de la idea.
+
+Instalar esta versión solo actualiza los controles de las publicaciones propias existentes. No borra ninguna idea hasta que administración lo confirme.

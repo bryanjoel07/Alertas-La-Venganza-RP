@@ -1,6 +1,7 @@
 """Atomic community suggestions, votes and decisions in the existing SQLite backup."""
 from contextlib import contextmanager
 import hashlib
+import json
 from pathlib import Path
 import sqlite3
 import time
@@ -38,6 +39,8 @@ class SuggestionStore:
      previous TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,created INTEGER NOT NULL)''')
    db.execute('CREATE TABLE IF NOT EXISTS lv_suggestion_config(key TEXT PRIMARY KEY,value TEXT NOT NULL)')
    db.execute('CREATE INDEX IF NOT EXISTS lv_suggestion_owner ON lv_suggestions(owner,id DESC)')
+   last=db.execute('SELECT COALESCE(MAX(id),0) FROM lv_suggestions').fetchone()[0]
+   db.execute("INSERT INTO lv_suggestion_config VALUES ('last_id',?) ON CONFLICT(key) DO UPDATE SET value=CAST(MAX(CAST(value AS INTEGER),CAST(excluded.value AS INTEGER)) AS TEXT)",(str(last),))
  def config(self,key,value=None):
   with self.db() as db:
    if value is not None:db.execute('INSERT INTO lv_suggestion_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(value)))
@@ -59,8 +62,12 @@ class SuggestionStore:
    if duplicate:raise ValueError(f"Ya enviaste esa idea, bro. Es la sugerencia #{duplicate['id']}.")
    recent=db.execute('SELECT MAX(created) FROM lv_suggestions WHERE owner=?',(owner,)).fetchone()[0]
    if recent is not None and stamp-recent<60:raise ValueError('Dale un minuto antes de enviar otra idea, bro.')
-   return db.execute('INSERT INTO lv_suggestions(request,owner,title,description,benefit,fingerprint,created,updated) VALUES (?,?,?,?,?,?,?,?)',
-     (request,owner,title,description,benefit,fingerprint,stamp,stamp)).lastrowid
+   counter=db.execute("SELECT value FROM lv_suggestion_config WHERE key='last_id'").fetchone()
+   rid=max(int(counter[0]) if counter else 0,db.execute('SELECT COALESCE(MAX(id),0) FROM lv_suggestions').fetchone()[0])+1
+   db.execute('INSERT INTO lv_suggestions(id,request,owner,title,description,benefit,fingerprint,created,updated) VALUES (?,?,?,?,?,?,?,?,?)',
+     (rid,request,owner,title,description,benefit,fingerprint,stamp,stamp))
+   db.execute("INSERT INTO lv_suggestion_config VALUES ('last_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(rid),))
+   return rid
  def get(self,rid):
   with self.db() as db:
    row=db.execute('''SELECT s.*,
@@ -70,7 +77,7 @@ class SuggestionStore:
    return dict(row) if row else None
  def list(self,owner=None,limit=10,offset=0):
   with self.db() as db:
-   where="publication!='missing'"+(' AND owner=?' if owner is not None else '')
+   where="publication NOT IN ('missing','deleting')"+(' AND owner=?' if owner is not None else '')
    args=([owner] if owner is not None else [])+[limit,offset]
    return [dict(r) for r in db.execute('SELECT * FROM lv_suggestions WHERE '+where+' ORDER BY id DESC LIMIT ? OFFSET ?',args)]
  def pending(self):
@@ -83,7 +90,7 @@ class SuggestionStore:
  def bind(self,rid,channel,message):
   with self.db() as db:
    row=db.execute('SELECT publication,message FROM lv_suggestions WHERE id=?',(rid,)).fetchone()
-   if not row or row['publication']=='missing':raise ValueError('Esa sugerencia ya no está disponible.')
+   if not row or row['publication'] in ('missing','deleting'):raise ValueError('Esa sugerencia ya no está disponible.')
    if row['message'] and row['message']!=message:raise ValueError('La sugerencia ya tiene otra publicación. Se conservarán ambas para revisión.')
    db.execute("UPDATE lv_suggestions SET channel=?,message=?,publication='published',lease_until=0 WHERE id=?",(channel,message,rid))
  def acknowledge(self,rid,revision):
@@ -115,8 +122,43 @@ class SuggestionStore:
    return True
  def events(self,rid):
   with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_suggestion_events WHERE suggestion=? ORDER BY id',(rid,))]
+ def votes(self,rid):
+  with self.db() as db:return [dict(r) for r in db.execute('SELECT * FROM lv_suggestion_votes WHERE suggestion=? ORDER BY user',(rid,))]
+ def published(self):
+  with self.db() as db:return [r[0] for r in db.execute("SELECT id FROM lv_suggestions WHERE publication='published' ORDER BY id")]
+ def pending_deletions(self):
+  with self.db() as db:return [r[0] for r in db.execute("SELECT id FROM lv_suggestions WHERE publication='deleting' ORDER BY id")]
+ def deletion(self,rid):
+  value=self.config(f'deletion:{rid}')
+  return json.loads(value) if value else None
+ def queue_deletion(self,rid,actor,expected):
+  with self.db() as db:
+   row=db.execute('SELECT * FROM lv_suggestions WHERE id=?',(rid,)).fetchone()
+   if not row:return False
+   keys=('request','channel','message','status_version')
+   if any(row[key]!=expected[key] for key in keys):raise ValueError('La idea cambió desde que abriste la confirmación. Revisa la idea y vuelve a pulsar Eliminar.')
+   if row['publication']=='deleting':return True
+   job=dict(actor=actor,request=row['request'],not_before=row['lease_until'] if row['publication']=='publishing' and not row['message'] else 0)
+   db.execute('INSERT INTO lv_suggestion_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(f'deletion:{rid}',json.dumps(job)))
+   db.execute("UPDATE lv_suggestions SET publication='deleting',lease_until=0 WHERE id=?",(rid,))
+   return True
+ def deletion_target(self,rid,channel,message):
+  with self.db() as db:
+   row=db.execute('SELECT * FROM lv_suggestions WHERE id=?',(rid,)).fetchone()
+   if not row or row['publication']!='deleting' or row['message'] not in (None,message):raise ValueError('Cambió la publicación de esa idea; no se eliminará otra.')
+   db.execute('UPDATE lv_suggestions SET channel=?,message=? WHERE id=?',(channel,message,rid))
+ def purge(self,rid,request):
+  with self.db() as db:
+   row=db.execute('SELECT * FROM lv_suggestions WHERE id=?',(rid,)).fetchone()
+   if not row:return False
+   if row['request']!=request or row['publication']!='deleting':raise ValueError('La idea no tiene una eliminación confirmada.')
+   db.execute('DELETE FROM lv_suggestion_votes WHERE suggestion=?',(rid,))
+   db.execute('DELETE FROM lv_suggestion_events WHERE suggestion=?',(rid,))
+   db.execute('DELETE FROM lv_suggestions WHERE id=?',(rid,))
+   db.execute('DELETE FROM lv_suggestion_config WHERE key=?',(f'deletion:{rid}',))
+   return True
  def missing(self,channel,messages=None):
   with self.db() as db:
-   if messages is None:db.execute("UPDATE lv_suggestions SET publication='missing' WHERE channel=?",(channel,))
+   if messages is None:db.execute("UPDATE lv_suggestions SET publication='missing' WHERE channel=? AND publication!='deleting'",(channel,))
    else:
-    for message in messages:db.execute("UPDATE lv_suggestions SET publication='missing' WHERE channel=? AND message=?",(channel,message))
+    for message in messages:db.execute("UPDATE lv_suggestions SET publication='missing' WHERE channel=? AND message=? AND publication!='deleting'",(channel,message))

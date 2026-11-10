@@ -174,7 +174,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
   await form.on_submit(self.i)
   row=self.system.store.get(1);message=self.messages[row['message']]
   self.assertIn('<@1>',message.embeds[0].description);self.assertEqual(row['rendered'],row['revision'])
-  self.assertEqual([c.custom_id for group in message.components for c in group.children],['lvsug:up:1','lvsug:down:1','lvsug:clear:1','lvsug:state:1'])
+  self.assertEqual([c.custom_id for group in message.components for c in group.children],['lvsug:up:1','lvsug:down:1','lvsug:clear:1','lvsug:state:1','lvsug:delete:1'])
   self.bind_interaction(self.i,1)
   for action,up,down in [('up',1,0),('up',1,0),('down',0,1),('clear',0,0)]:
    await self.system.handle(self.i,action,1);row=self.system.store.get(1)

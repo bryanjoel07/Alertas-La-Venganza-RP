@@ -15,13 +15,13 @@ async def failed(i,error):
  log.error('SUGGESTIONS interaction_failed',exc_info=error)
  await reply(i,'Discord no completó la acción, bro. Revisa Mis ideas antes de enviarla otra vez.')
 
-class SuggestionAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lvsug:(?P<action>new|mine|up|down|clear|state):(?P<rid>[0-9]+)'):
+class SuggestionAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lvsug:(?P<action>new|mine|up|down|clear|state|delete):(?P<rid>[0-9]+)'):
  def __init__(self,action,rid=0,*,count=0,closed=False):
   label,emoji={'new':('Proponer una idea','💡'),'mine':('Mis ideas','📋'),'up':(f'A favor · {count}','👍'),
-    'down':(f'En contra · {count}','👎'),'clear':('Quitar voto','↩️'),'state':('Estado','🛠️')}[action]
+    'down':(f'En contra · {count}','👎'),'clear':('Quitar voto','↩️'),'state':('Estado','🛠️'),'delete':('Eliminar idea','🗑️')}[action]
   super().__init__(discord.ui.Button(label=label,emoji=emoji,custom_id=f'lvsug:{action}:{rid}',
     disabled=closed and action in ('up','down','clear'),
-    style=discord.ButtonStyle.primary if action=='new' else discord.ButtonStyle.secondary))
+    style=discord.ButtonStyle.primary if action=='new' else discord.ButtonStyle.danger if action=='delete' else discord.ButtonStyle.secondary))
   self.action,self.rid=action,rid
  @classmethod
  async def from_custom_id(cls,i,item,match):return cls(match['action'],int(match['rid']))
@@ -36,7 +36,7 @@ def panel_controls():
 
 def idea_controls(row):
  view=discord.ui.View(timeout=None)
- for action in ('up','down','clear','state'):
+ for action in ('up','down','clear','state','delete'):
   view.add_item(SuggestionAction(action,row['id'],count=row['up'] if action=='up' else row['down'] if action=='down' else 0,closed=row['status'] in CLOSED))
  return view
 
@@ -89,3 +89,26 @@ class MyIdeas(discord.ui.View):
  @discord.ui.button(label='Siguiente')
  async def next(self,i,button):
   await i.response.defer();await self.system.mine(i,self.page+1,edit=True)
+
+class DeleteIdea(discord.ui.View):
+ def __init__(self,system,owner,row):
+  super().__init__(timeout=90)
+  self.system,self.owner,self.expected=system,owner,dict(row)
+ async def interaction_check(self,i):
+  if i.user.id==self.owner and i.guild_id==self.system.guild_id:return True
+  await reply(i,'Esta confirmación pertenece al administrador que la abrió.');return False
+ async def on_error(self,i,error,item):await failed(i,error)
+ @discord.ui.button(label='Confirmar eliminación',emoji='🗑️',style=discord.ButtonStyle.danger)
+ async def confirm(self,i,button):
+  if not await self.interaction_check(i):return
+  await i.response.edit_message(content='Eliminando la idea…',embed=None,view=None,allowed_mentions=NONE)
+  self.stop()
+  try:
+   complete=await self.system.delete_idea(i,self.expected)
+   await i.edit_original_response(content='La idea, sus votos y las respuestas de administración ya se eliminaron del sistema y de Discord.' if complete
+     else 'La eliminación quedó confirmada. Discord está tardando; el bot volverá a intentarlo automáticamente.',view=None,allowed_mentions=NONE)
+  except Exception as error:await failed(i,error)
+ @discord.ui.button(label='Cancelar',style=discord.ButtonStyle.secondary)
+ async def cancel(self,i,button):
+  if not await self.interaction_check(i):return
+  self.stop();await i.response.edit_message(content='Eliminación cancelada.',embed=None,view=None,allowed_mentions=NONE)
