@@ -8,10 +8,11 @@ import time
 from urllib.parse import urlsplit
 from bug_template import DETAILS_LIMIT,parse_details
 from bug_limits import MAX_CLIP_BYTES,MAX_STORED_CLIP_BYTES
+from bug_files import ReportFiles,FILE_COUNT
 
-METADATA="""id,owner,data,step,status,thread,message,assignee,created,updated,filename,
+METADATA=f"""id,owner,data,step,status,thread,message,assignee,created,updated,filename,
     sha256,pending,revision,video IS NOT NULL AS video,length(video) AS video_size,
-    (SELECT token FROM lv_bug_media WHERE report=lv_bugs.id AND sha256=lv_bugs.sha256) AS media_token"""
+    (SELECT token FROM lv_bug_media WHERE report=lv_bugs.id AND sha256=lv_bugs.sha256) AS media_token,{FILE_COUNT}"""
 
 STATES = {'pendiente':'🔴 Pendiente','revision':'🟠 En revisión','proceso':'🔵 En proceso','solucionado':'🟢 Solucionado','cerrado':'⚫ Cerrado'}
 
@@ -20,10 +21,10 @@ def clip_url(value):
     if value:
         parsed=urlsplit(value)
         if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or len(value)>1000:
-            raise ValueError('El enlace del clip debe empezar con https://.')
+            raise ValueError('El enlace de las pruebas debe empezar con https://.')
     return value
 
-class BugStore:
+class BugStore(ReportFiles):
     def __init__(self,path):self.path=path
     @contextmanager
     def db(self):
@@ -48,6 +49,7 @@ class BugStore:
                 created INTEGER NOT NULL,error TEXT)''')
             db.execute('''CREATE TABLE IF NOT EXISTS lv_bug_media(report INTEGER PRIMARY KEY,
                 sha256 TEXT NOT NULL,token TEXT NOT NULL UNIQUE,created INTEGER NOT NULL)''')
+            self.initialize_files(db)
     def panel_backup(self,source,payload=None):
         with self.db() as db:
             if payload is not None:
@@ -63,9 +65,11 @@ class BugStore:
             row=db.execute('SELECT value FROM lv_bug_config WHERE key=?',(key,)).fetchone();return row[0] if row else ''
     def get(self,rid,include_video=True):
         with self.db() as db:
-            columns='*,length(video) AS video_size' if include_video else METADATA
+            columns=f'*,length(video) AS video_size,{FILE_COUNT}' if include_video else METADATA
             row=db.execute(f'SELECT {columns} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
-            return dict(row) if row else None
+            if not row:return None
+            result=dict(row);result['files']=self.file_rows(db,rid,json.loads(row['data']).get('files_revision'))
+            return result
     def media_token(self,rid):
         with self.db() as db:
             row=db.execute(f'SELECT {METADATA} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
@@ -79,8 +83,10 @@ class BugStore:
     def check_capacity(db,rid,size):
         stored=db.execute('SELECT COALESCE(SUM(length(video)),0) FROM lv_bugs WHERE id!=?',(rid,)).fetchone()[0]
         queued=db.execute("SELECT COALESCE(SUM(size),0) FROM lv_bug_uploads WHERE report!=? AND state='pending'",(rid,)).fetchone()[0]
+        stored+=db.execute('SELECT COALESCE(SUM(length(content)),0) FROM lv_bug_files WHERE report!=?',(rid,)).fetchone()[0]
+        queued+=db.execute("SELECT COALESCE(SUM(f.size),0) FROM lv_bug_files f JOIN lv_bugs b ON b.id=f.report AND b.revision=f.revision WHERE f.report!=? AND b.status='borrador' AND f.state='pending'",(rid,)).fetchone()[0]
         if stored+queued+size>MAX_STORED_CLIP_BYTES:
-            raise ValueError('No queda espacio para más archivos ahora. Pega el enlace del clip.')
+            raise ValueError('No queda espacio para más archivos ahora. Pega el enlace de las pruebas.')
     def begin(self,owner):
         with self.db() as db:
             row=db.execute("SELECT id FROM lv_bugs WHERE owner=? AND status='borrador'",(owner,)).fetchone()
@@ -106,8 +112,8 @@ class BugStore:
                 if row['step']<1:raise ValueError('Completa primero los datos del error.')
                 if values.get('frequency') not in ('Siempre','A veces','Una sola vez'):raise ValueError('Elige con qué frecuencia pasa.')
                 data.update(frequency=values['frequency'],clip=clip_url(values.get('clip','')))
-                if not data['clip'] and not video and not row['video']:raise ValueError('Falta el clip, bro. Adjunta el video o pega su enlace.')
-                if video is not None and (not video or len(video)>MAX_CLIP_BYTES):raise ValueError('El video debe pesar hasta 60 MB.')
+                if not data['clip'] and not video and not row['video'] and not row['file_count']:raise ValueError('Faltan las pruebas, bro. Adjunta una foto o un video, o pega su enlace.')
+                if video is not None and (not video or len(video)>MAX_CLIP_BYTES):raise ValueError('El archivo debe pesar hasta 60 MB.')
                 if video:self.check_capacity(db,rid,len(video))
             else:raise ValueError('Paso desconocido.')
             db.execute('''UPDATE lv_bugs SET data=?,step=?,updated=?,revision=revision+1,
@@ -119,10 +125,10 @@ class BugStore:
             if not row or row['owner']!=owner:raise ValueError('Ese reporte no es tuyo.')
             if row['thread']:return
             if row['status']=='publicando':raise ValueError('Ese reporte ya se está publicando. Lo recuperaré si Discord tarda.')
-            if json.loads(row['data']).get('upload_pending'):raise ValueError('El clip todavía se está preparando. Espera a que aparezca «Publicar reporte».')
+            if json.loads(row['data']).get('upload_pending'):raise ValueError('Los archivos todavía se están preparando. Espera a que aparezca «Publicar reporte».')
             if row['step']!=2:raise ValueError('Completa el formulario primero.')
             data=json.loads(row['data'])
-            if not data.get('clip') and not row['video']:raise ValueError('Falta el clip del error.')
+            if not data.get('clip') and not row['video'] and not row['file_count']:raise ValueError('Faltan las pruebas del error.')
             db.execute("UPDATE lv_bugs SET status='publicando' WHERE id=?",(rid,))
     def save_full(self,rid,owner,values,revision,filename=None,video=None):
         limits={'player_id':30,'title':100,'details':DETAILS_LIMIT}
@@ -133,10 +139,10 @@ class BugStore:
             row=db.execute(f'SELECT {METADATA} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row or row['owner']!=owner or row['status']!='borrador' or row['revision']!=revision:
                 raise ValueError('El formulario cambió. Abre tu borrador otra vez.')
-            if not clip and not video and not row['video']:raise ValueError('El clip es obligatorio, bro. Adjunta el video o pega su enlace; el reporte no se envió.')
+            if not clip and not video and not row['video'] and not row['file_count']:raise ValueError('Faltan las pruebas, bro. Adjunta una foto o un video, o pega su enlace; el reporte no se envió.')
             sections=parse_details(values['details'])
             if video is not None:
-                if not video or len(video)>MAX_CLIP_BYTES or not filename:raise ValueError('Adjunta un video válido de hasta 60 MB.')
+                if not video or len(video)>MAX_CLIP_BYTES or not filename:raise ValueError('Adjunta un archivo válido de hasta 60 MB.')
                 self.check_capacity(db,rid,len(video))
             data=json.loads(row['data']);data.update({key:values[key].strip() for key in limits});data['clip']=clip
             data.update(sections,report_schema=4,discord_username=values.get('discord_username',''))
@@ -145,20 +151,21 @@ class BugStore:
                 filename=COALESCE(?,filename),video=COALESCE(?,video),sha256=COALESCE(?,sha256) WHERE id=?''',
                 (json.dumps(data,ensure_ascii=False),int(time.time()),filename,video,hashlib.sha256(video).hexdigest() if video else None,rid))
             db.execute('DELETE FROM lv_bug_uploads WHERE report=?',(rid,))
+            self.discard_inactive_files(db,rid,data.get('files_revision'))
     def prepare_upload(self,rid,owner,values,revision,source,filename,size):
         from bug_uploads import validate_source
         validate_source(source)
         for key,limit in {'player_id':30,'title':100,'details':DETAILS_LIMIT}.items():
             if not values.get(key,'').strip() or len(values[key])>limit:raise ValueError('Completa el ID, el título y los detalles del problema.')
         sections=parse_details(values['details']);clip=clip_url(values.get('clip',''))
-        if not filename or not 0<size<=MAX_CLIP_BYTES:raise ValueError('El video debe pesar hasta 60 MB.')
+        if not filename or not 0<size<=MAX_CLIP_BYTES:raise ValueError('El archivo debe pesar hasta 60 MB.')
         with self.db() as db:
             row=db.execute(f'SELECT {METADATA} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row or row['owner']!=owner or row['status']!='borrador' or row['revision']!=revision:
                 raise ValueError('El formulario cambió. Abre tu borrador otra vez.')
             self.check_capacity(db,rid,size)
             data=json.loads(row['data']);data.update({k:values[k].strip() for k in ('player_id','title','details')})
-            data.update(sections,clip=clip,report_schema=4,discord_username=values.get('discord_username',''),upload_pending=True)
+            data.update(sections,clip=clip,report_schema=4,discord_username=values.get('discord_username',''),upload_pending=True,files_total=1,files_done=0)
             db.execute('UPDATE lv_bugs SET data=?,step=1,revision=revision+1,updated=? WHERE id=?',(json.dumps(data,ensure_ascii=False),int(time.time()),rid))
             db.execute("INSERT OR REPLACE INTO lv_bug_uploads VALUES (?,?,?,?,?,'pending',?,NULL)",(rid,revision+1,json.dumps(source),filename,size,int(time.time())))
             return revision+1
@@ -173,9 +180,11 @@ class BugStore:
             job=db.execute('SELECT * FROM lv_bug_uploads WHERE report=?',(rid,)).fetchone()
             row=db.execute(f'SELECT {METADATA} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not job or job['state']!='pending' or job['revision']!=revision or not row or row['revision']!=revision or row['status']!='borrador':return False
-            if not data or len(data)!=job['size'] or len(data)>MAX_CLIP_BYTES:raise ValueError('El video no se descargó completo. Vuelve a adjuntarlo o pega el enlace.')
+            if not data or len(data)!=job['size'] or len(data)>MAX_CLIP_BYTES:raise ValueError('El archivo no se descargó completo. Vuelve a adjuntarlo o pega el enlace.')
             self.check_capacity(db,rid,len(data))
             digest=hashlib.sha256(data).hexdigest();values=json.loads(row['data']);values['upload_pending']=False
+            for key in ('files_revision','files_total','files_done'):values.pop(key,None)
+            db.execute('DELETE FROM lv_bug_files WHERE report=?',(rid,))
             db.execute('UPDATE lv_bugs SET data=?,step=2,filename=?,video=?,sha256=?,updated=? WHERE id=?',(json.dumps(values,ensure_ascii=False),job['filename'],data,digest,int(time.time()),rid))
             db.execute("UPDATE lv_bug_uploads SET state='complete',error=NULL WHERE report=?",(rid,))
             return True
@@ -215,8 +224,8 @@ class BugStore:
         with self.db() as db:
             row=db.execute(f'SELECT {METADATA} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row or not row['thread']:raise ValueError('Reporte no encontrado.')
-            if state!='cerrado' and not json.loads(row['data']).get('clip') and not row['video']:
-                raise ValueError('Falta el clip del error. El jugador debe adjuntarlo antes de continuar.')
+            if state!='cerrado' and not json.loads(row['data']).get('clip') and not row['video'] and not row['file_count']:
+                raise ValueError('Faltan las pruebas del error. El jugador debe adjuntar una foto o un video antes de continuar.')
             if row['pending']:raise ValueError('Ese reporte está terminando otro cambio. Espera un momento.')
             db.execute('UPDATE lv_bugs SET pending=? WHERE id=?',(json.dumps(dict(actor=actor,state=state,reason=reason[:1500])),rid))
     @staticmethod

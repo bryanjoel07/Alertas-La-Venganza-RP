@@ -30,7 +30,7 @@ class TemplateTests(unittest.TestCase):
         self.assertIn('Cómo ocurrió:',value);self.assertIn('Frecuencia:',value)
     def test_new_instructions_include_old_template_requirements(self):
         embed=panel_embed();text=json.dumps(embed.to_dict(),ensure_ascii=False)
-        for term in ('Discord','ID dentro del servidor','Descripción','Cómo ocurrió','Sistema afectado','Frecuencia','Sin clip'):
+        for term in ('Discord','ID dentro del servidor','Descripción','Cómo ocurrió','Sistema afectado','Frecuencia','10 archivos','60 MB','fotos','videos'):
             self.assertIn(term,text)
         self.assertLess(len(embed),6000)
 

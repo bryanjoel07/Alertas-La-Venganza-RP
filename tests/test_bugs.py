@@ -58,7 +58,7 @@ class StoreTests(unittest.TestCase):
     def test_full_form_cannot_be_saved_or_published_without_any_clip(self):
         rid=self.store.begin(1)
         values=dict(player_id='42',title='Error',details='Dónde pasa y cómo repetirlo',clip='')
-        with self.assertRaisesRegex(ValueError,'clip es obligatorio'):self.store.save_full(rid,1,values,0)
+        with self.assertRaisesRegex(ValueError,'Faltan las pruebas'):self.store.save_full(rid,1,values,0)
         self.assertEqual(self.store.get(rid)['step'],0)
         with self.assertRaises(ValueError):self.store.reserve(rid,1)
     def test_full_form_accepts_link_or_file_and_preserves_both_across_restart(self):
@@ -132,7 +132,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_publication_itself_refuses_a_forged_completed_draft_without_clip(self):
         rid=self.system.store.begin(1)
         with self.system.store.db() as db:db.execute("UPDATE lv_bugs SET status='publicando',step=2 WHERE id=?",(rid,))
-        with self.assertRaisesRegex(ValueError,'clip es obligatorio'):await self.system.create(rid)
+        with self.assertRaisesRegex(ValueError,'Faltan las pruebas'):await self.system.create(rid)
         self.forum.create_thread.assert_not_called()
     async def test_video_is_stored_before_discord_and_double_publish_does_not_create_two_threads(self):
         rid=self.system.store.begin(1)

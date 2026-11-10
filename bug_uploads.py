@@ -25,12 +25,16 @@ class ClipUploads:
     def __init__(self,system):
         self.system=system;self.jobs={};self.slots=asyncio.Semaphore(2);self.closed=False
     def launch(self,rid,revision,i=None,attachment=None):
+        return self._launch(rid,revision,lambda:self.run(rid,revision,i,attachment))
+    def launch_files(self,rid,revision,i=None,attachments=None):
+        return self._launch(rid,revision,lambda:self.run_files(rid,revision,i,attachments))
+    def _launch(self,rid,revision,run):
         key=(rid,revision)
         if self.closed:return None
         if key in self.jobs and not self.jobs[key].done():return self.jobs[key]
         for previous,task in list(self.jobs.items()):
             if previous[0]==rid and previous!=key:task.cancel()
-        task=asyncio.create_task(self.run(rid,revision,i,attachment),name=f'bug-clip-{rid}')
+        task=asyncio.create_task(run(),name=f'bug-evidence-{rid}')
         self.jobs[key]=task
         def finished(done):
             if self.jobs.get(key) is done:self.jobs.pop(key,None)
@@ -65,10 +69,43 @@ class ClipUploads:
             if i is not None:
                 from bug_ui import buttons
                 from feedback_ui import NONE
-                try:await i.edit_original_response(content='Los datos están guardados, pero no pude preparar el video. Vuelve a adjuntarlo o pega el enlace del clip.',embed=None,view=buttons('continue',rid=rid),allowed_mentions=NONE)
+                try:await i.edit_original_response(content='Los datos están guardados, pero no pude preparar el archivo. Vuelve a adjuntarlo o pega su enlace.',embed=None,view=buttons('continue',rid=rid),allowed_mentions=NONE)
+                except discord.HTTPException:pass
+    async def run_files(self,rid,revision,i=None,attachments=None):
+        started=time.monotonic();attached={str(a.id):a for a in (attachments or [])}
+        try:
+            async with self.slots:
+                jobs=await self.system.call('file_jobs',rid,revision)
+                if not jobs or any(job['state']=='failed' for job in jobs):return
+                for job in jobs:
+                    if job['state']=='complete':continue
+                    source=json.loads(job['source']);validate_source(source)
+                    attachment=attached.get(str(source['id']))
+                    async def read():
+                        if attachment is not None:return await attachment.read()
+                        return await self.system.bot.http.get_from_cdn(source['url'])
+                    data=await asyncio.wait_for(read(),timeout=180)
+                    size=len(data)
+                    if not await self.system.call('complete_file',rid,revision,job['id'],data):return
+                    del data
+                    if i is not None:
+                        row=await self.system.call('get',rid,include_video=False)
+                        try:await self.system.preview(i,row,processing=json.loads(row['data']).get('upload_pending',False))
+                        except discord.HTTPException:log.info('BUGS files_preview_unavailable id=%s draft_preserved=True',rid)
+                    log.info('BUGS file_prepared id=%s file=%s bytes=%s',rid,job['id'],size)
+            log.info('BUGS files_prepared id=%s count=%s seconds=%.2f',rid,len(jobs),time.monotonic()-started)
+        except asyncio.CancelledError:raise
+        except Exception as error:
+            await self.system.call('fail_files',rid,revision,type(error).__name__)
+            log.warning('BUGS files_prepare_failed id=%s error=%s',rid,type(error).__name__)
+            if i is not None:
+                from bug_ui import buttons
+                from feedback_ui import NONE
+                try:await i.edit_original_response(content='Los datos están guardados, pero faltó preparar un archivo. Vuelve a adjuntar las pruebas o pega su enlace.',embed=None,view=buttons('continue',rid=rid),allowed_mentions=NONE)
                 except discord.HTTPException:pass
     async def recover(self):
         for row in await self.system.call('pending_uploads'):self.launch(row['report'],row['revision'])
+        for row in await self.system.call('pending_file_groups'):self.launch_files(row['report'],row['revision'])
     async def close(self):
         self.closed=True
         tasks=list(self.jobs.values())

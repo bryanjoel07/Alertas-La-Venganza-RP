@@ -6,7 +6,7 @@ import discord
 from feedback_ui import reply, NONE, RED
 from bug_store import STATES,clip_url
 from bug_template import DETAILS_LIMIT,details_default,parse_details
-from bug_limits import MAX_CLIP_BYTES
+from bug_limits import MAX_CLIP_BYTES,MAX_REPORT_FILES,FILE_TYPES
 
 async def failed(i,error):
     if isinstance(error,ValueError):return await reply(i,str(error))
@@ -44,10 +44,11 @@ class BugForm(discord.ui.Modal):
                 style=discord.TextStyle.paragraph if paragraph else discord.TextStyle.short)
             self.inputs[key]=item
             self.add_item(discord.ui.Label(text=label,description='Completa los cuatro apartados. Conserva sus títulos y reemplaza los textos entre corchetes.' if paragraph else None,component=item))
-        self.file=discord.ui.FileUpload(custom_id='clip_file',required=False,min_values=0,max_values=1)
+        self.file=discord.ui.FileUpload(custom_id='clip_file',required=False,min_values=0,max_values=MAX_REPORT_FILES)
         self.clip=discord.ui.TextInput(custom_id='clip_link',required=False,max_length=1000,placeholder='https://…',default=data.get('clip') or None)
-        self.add_item(discord.ui.Label(text='Clip obligatorio · Adjunta el video aquí',description=('Ya hay un video guardado. ' if row.get('video') else '')+f'Hasta {self.upload_limit//(1024*1024)} MB. Si Discord no te deja adjuntarlo, pega el enlace abajo.',component=self.file))
-        self.add_item(discord.ui.Label(text='Enlace del clip si no adjuntas el video',description='Sin video ni enlace no se puede enviar el reporte.',component=self.clip))
+        saved=row.get('video') or row.get('file_count')
+        self.add_item(discord.ui.Label(text='Pruebas · Fotos y videos',description=('Ya hay pruebas guardadas. Subir otras las reemplaza. Hasta 10 archivos de 60 MB cada uno.' if saved else 'Hasta 10 fotos o videos de 60 MB cada uno. Puedes mezclarlos en el mismo reporte.'),component=self.file))
+        self.add_item(discord.ui.Label(text='Enlace de las pruebas (opcional)',description='Si no adjuntas archivos, pega el enlace de la foto o del video. Hace falta una prueba.',component=self.clip))
     async def on_submit(self,i):
         started=time.monotonic()
         await i.response.defer(ephemeral=True,thinking=True)
@@ -55,30 +56,33 @@ class BugForm(discord.ui.Modal):
             from feedback import clean
             values={key:clean(item.value) for key,item in self.inputs.items()};values['clip']=clip_url(self.clip.value)
             parse_details(values['details'])
-            filename=None;attachment=None
-            if self.file.values:
-                attachment=self.file.values[0]
+            selected=list(self.file.values);files=[]
+            if len(selected)>MAX_REPORT_FILES:raise ValueError('Puedes adjuntar hasta 10 archivos por reporte.')
+            for attachment in selected:
                 original=Path(attachment.filename).name
                 extension=Path(original).suffix.lower()
-                if extension not in ('.mp4','.webm','.mov','.m4v'):
-                    image=extension in ('.png','.jpg','.jpeg','.webp','.heic','.heif','.gif','.avif') or (getattr(attachment,'content_type',None) or '').startswith('image/')
-                    logging.getLogger('LaVenganzaRP.bugs').info('BUGS clip_rejected id=%s reason=%s bytes=%s',self.rid,'image_instead_of_video' if image else 'unsupported_format',attachment.size)
-                    raise ValueError(('Adjuntaste una foto. Aquí hace falta el video del error.' if image else 'Ese tipo de archivo no sirve como video del error.')+' Adjunta un MP4, WEBM, MOV o M4V, o pega el enlace del clip.')
+                if extension not in FILE_TYPES:
+                    raise ValueError('Ese tipo de archivo no es compatible. Sube fotos PNG, JPG, WEBP, GIF, HEIC o AVIF, o videos MP4, WEBM, MOV o M4V.')
                 if attachment.size<=0:
-                    raise ValueError('El archivo llegó vacío. Vuelve a adjuntar el video del error.')
+                    raise ValueError('Uno de los archivos llegó vacío. Vuelve a adjuntarlo.')
                 if attachment.size>self.upload_limit:
                     logging.getLogger('LaVenganzaRP.bugs').info('BUGS clip_rejected id=%s reason=too_large bytes=%s',self.rid,attachment.size)
-                    raise ValueError(f'El video pesa {attachment.size/(1024*1024):.1f} MB. El límite es {self.upload_limit//(1024*1024)} MB. Recórtalo o pega el enlace del clip.')
+                    raise ValueError(f'Uno de los archivos pesa {attachment.size/(1024*1024):.1f} MB. El límite es {self.upload_limit//(1024*1024)} MB por archivo. Redúcelo o pega su enlace.')
                 filename=original[:100-len(extension)]+extension
+                files.append(dict(source=dict(id=attachment.id,url=attachment.url,proxy_url=attachment.proxy_url),filename=filename,size=attachment.size))
             member=await self.system.member(i)
             values['discord_username']=member.name
-            if attachment is not None:
-                source=dict(id=attachment.id,url=attachment.url,proxy_url=attachment.proxy_url)
-                revision=await self.system.call('prepare_upload',self.rid,i.user.id,values,self.revision,source,filename,attachment.size)
+            if files:
+                if len(files)==1:
+                    item=files[0]
+                    revision=await self.system.call('prepare_upload',self.rid,i.user.id,values,self.revision,item['source'],item['filename'],item['size'])
+                else:revision=await self.system.call('prepare_files',self.rid,i.user.id,values,self.revision,files)
                 row=await self.system.call('get',self.rid,include_video=False)
                 try:await self.system.preview(i,row,processing=True)
-                finally:self.system.clips.launch(self.rid,revision,i,attachment)
-                logging.getLogger('LaVenganzaRP.bugs').info('BUGS form_received id=%s clip_bytes=%s receipt_seconds=%.2f clip_preparation=background',self.rid,attachment.size,time.monotonic()-started)
+                finally:
+                    if len(files)==1:self.system.clips.launch(self.rid,revision,i,selected[0])
+                    else:self.system.clips.launch_files(self.rid,revision,i,selected)
+                logging.getLogger('LaVenganzaRP.bugs').info('BUGS form_received id=%s files=%s clip_bytes=%s receipt_seconds=%.2f clip_preparation=background',self.rid,len(files),sum(f['size'] for f in files),time.monotonic()-started)
             else:
                 await self.system.call('save_full',self.rid,i.user.id,values,self.revision)
                 await self.system.preview(i,await self.system.call('get',self.rid,include_video=False))

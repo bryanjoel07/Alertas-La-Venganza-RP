@@ -15,29 +15,35 @@ from urllib.parse import quote, urlsplit
 
 from aiohttp import web
 
-from bug_limits import MAX_CLIP_BYTES
+from bug_limits import MAX_CLIP_BYTES,MAX_REPORT_FILES,FILE_TYPES
 
 log = logging.getLogger('LaVenganzaRP.bugs')
-TYPES = {'.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm'}
+TYPES = FILE_TYPES
 
 
 class ClipReader:
-    def __init__(self, path, token):
+    def __init__(self, path, token, multiple=False):
         self.lock = threading.Lock()
         self.db = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, check_same_thread=False, timeout=10)
         self.blob = None
         try:
             self.db.execute('BEGIN')
-            row = self.db.execute('''SELECT b.id,b.filename,b.sha256,length(b.video)
+            query = '''SELECT b.id,b.filename,b.sha256,length(b.video)
                 FROM lv_bug_media m JOIN lv_bugs b ON b.id=m.report AND b.sha256=m.sha256
                 WHERE m.token=? AND b.status IN ('publicando','pendiente','revision','proceso','solucionado','cerrado')
-                AND b.video IS NOT NULL''', (token,)).fetchone()
+                AND b.video IS NOT NULL'''
+            if multiple:
+                query='''SELECT f.id,f.filename,f.sha256,length(f.content) FROM lv_bug_files f JOIN lv_bugs b ON b.id=f.report
+                    WHERE f.token=? AND f.state='complete' AND f.content IS NOT NULL
+                    AND f.revision=json_extract(b.data,'$.files_revision')
+                    AND b.status IN ('publicando','pendiente','revision','proceso','solucionado','cerrado')'''
+            row = self.db.execute(query, (token,)).fetchone()
             if not row:
                 raise LookupError('Clip not published')
             self.rid, self.filename, self.sha256, self.size = row
             if Path(self.filename).suffix.lower() not in TYPES:
                 raise LookupError('Unknown clip format')
-            self.blob = self.db.blobopen('lv_bugs', 'video', self.rid, readonly=True)
+            self.blob = self.db.blobopen('lv_bug_files' if multiple else 'lv_bugs', 'content' if multiple else 'video', self.rid, readonly=True)
         except BaseException:
             self.close()
             raise
@@ -70,9 +76,19 @@ class ReportMedia:
 
     async def share(self, rid):
         if not self.base_url or self.runner is None:
-            raise ValueError('El clip está guardado, pero falta conectar su publicación. No vuelvas a crear el reporte.')
+            raise ValueError('El archivo está guardado, pero falta conectar su publicación. No vuelvas a crear el reporte.')
         await self.system.call('media_token', rid)
         return await self.system.call('get', rid, include_video=False)
+
+    def file_url(self,item):
+        if not self.base_url or not item.get('token'):return ''
+        return f"{self.base_url}/files/{item['token']}/file{Path(item['filename']).suffix.lower()}"
+
+    async def share_files(self,rid):
+        if not self.base_url or self.runner is None:
+            raise ValueError('Los archivos están guardados, pero falta conectar su publicación. No vuelvas a crear el reporte.')
+        await self.system.call('file_tokens',rid)
+        return await self.system.call('get',rid,include_video=False)
 
     def application(self):
         if self.cache is None:
@@ -80,17 +96,19 @@ class ReportMedia:
         app = web.Application(client_max_size=1024)
         app.router.add_get('/health', self.health)
         app.router.add_get(r'/clips/{token:[A-Za-z0-9_-]{43}}/{name}', self.clip)
+        app.router.add_get(r'/files/{token:[A-Za-z0-9_-]{43}}/{name}', self.clip)
         return app
 
     async def health(self, request):
         return web.json_response(dict(status='ok', max_clip_mb=MAX_CLIP_BYTES // (1024 * 1024),
+            max_files=MAX_REPORT_FILES,photos=True,videos=True,
             discord_connected=self.system.bot.is_ready(), release=os.getenv('RAILWAY_GIT_COMMIT_SHA', '')[:12]))
 
     async def clip(self, request):
         async with self.slots:
             try:
                 path, filename, content_type = await asyncio.to_thread(self.prepare,
-                    request.match_info['token'], request.match_info['name'])
+                    request.match_info['token'], request.match_info['name'],request.path.startswith('/files/'))
             except LookupError:
                 raise web.HTTPNotFound()
         return web.FileResponse(path, headers={'Content-Type': content_type,
@@ -98,14 +116,14 @@ class ReportMedia:
             'Referrer-Policy': 'no-referrer',
             'Content-Disposition': "inline; filename*=UTF-8''" + quote(Path(filename).name, safe='')})
 
-    def prepare(self, token, name):
+    def prepare(self, token, name, multiple=False):
         # Close the SQLite read transaction before streaming to a slow client.
         # The disposable cache is rebuilt from the persistent original on restart.
-        reader = ClipReader(self.system.store.path, token)
+        reader = ClipReader(self.system.store.path, token, multiple)
         temporary = None
         try:
             suffix = Path(reader.filename).suffix.lower()
-            if name != 'clip' + suffix:
+            if name != ('file' if multiple else 'clip') + suffix:
                 raise LookupError('Unknown clip')
             path = Path(self.cache.name) / (reader.sha256 + suffix)
             if not path.exists():
@@ -140,7 +158,7 @@ class ReportMedia:
         await self.runner.setup()
         port = int(os.getenv('PORT', '8080'))
         await web.TCPSite(self.runner, '0.0.0.0', port).start()
-        log.info('BUGS media_ready port=%s max_clip_mb=60 streaming=True drafts_public=False', port)
+        log.info('BUGS media_ready port=%s max_clip_mb=60 max_files=10 photos=True videos=True streaming=True drafts_public=False', port)
 
     async def close(self):
         if self.runner is not None:
