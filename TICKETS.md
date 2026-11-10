@@ -74,3 +74,14 @@ La creación, las listas y la recuperación usan `discord_channels.fetch_channel
 Las reservas en estado creando sin canal se reintentan automáticamente conservando el mismo número, autor y formulario. Antes de crear se comprueba que no exista ya un canal con el topic del ticket. Una coincidencia de tipo desconocido requiere revisión y nunca genera un duplicado. La creación inicial y la recuperación comparten una reserva de tres minutos guardada en SQLite (`creation-lease:*`) para no solaparse ni repetir una petición cuyo resultado todavía sea incierto. Si el autor ya no está en el servidor, la reserva se conserva sin crear un canal sin su acceso.
 
 `/ticket recuperar numero:8` permite reintentar la creación. `cancelar_reserva:true` solo reconcilia y cancela una reserva sin canal después de las comprobaciones; no crea un canal al pedir cancelarla ni cancela una creación en curso. Se siguen protegiendo los casos reservados y los roles protegidos.
+
+
+## Eliminación sin bloquear otros casos
+
+La eliminación usa un bloqueo por ticket, compartido con cerrar y reabrir ese mismo caso. Un respaldo lento o la eliminación de otro canal no bloquean crear y atender otros tickets. Las copias se ordenan por separado y esperan a que termine un respaldo ya en curso.
+
+Antes de borrar siguen siendo obligatorias la transcripción completa, los archivos íntegros, el respaldo verificado y la autorización actual del staff. Se puede reutilizar una copia externa verificada únicamente tras comprobar el tamaño y SHA-256 de su SQLite, los campos y transcripción exactos del caso y todos los blobs de sus pruebas. Cualquier diferencia exige una copia nueva. Se comprueban de nuevo el estado cerrado y la conversación antes de eliminar.
+
+La confirmación informa primero de que se está preparando la copia. Si se elimina desde el propio ticket, no se intenta enviar una respuesta al canal que acaba de desaparecer. Si se opera desde el índice de cerrados, se puede confirmar allí por privado. Los errores «Unknown Channel» de una respuesta a un canal ya desaparecido no provocan una cadena de errores ni hacen pasar una eliminación correcta por fallida.
+
+Los registros `TICKETS deleted` incluyen segundos de archivo, copia y total. Para revertir este cambio desplegar `c6831bd313ac2ec80376186494bb241ad2b9a091` manteniendo SQLite, archivos y canales actuales; se conserva el historial de lo ya eliminado.

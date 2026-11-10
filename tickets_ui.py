@@ -9,7 +9,10 @@ from ticket_forms import FORMS,submission
 
 async def reply(i,text=None,**kwargs):
  sender=i.followup.send if i.response.is_done() else i.response.send_message
- return await sender(text,ephemeral=True,allowed_mentions=discord.AllowedMentions.none(),**kwargs)
+ try:return await sender(text,ephemeral=True,allowed_mentions=discord.AllowedMentions.none(),**kwargs)
+ except discord.HTTPException as error:
+  if error.code!=10003:raise
+  logging.getLogger('LaVenganzaRP.tickets').info('TICKETS response_channel_gone channel=%s',i.channel_id)
 
 class SafeView(discord.ui.View):
  async def on_error(self,i,error,item):
@@ -180,11 +183,13 @@ class DeleteConfirm(SafeView):
   await reply(i,'Solo quien solicitó la eliminación puede confirmarla.');return False
  @discord.ui.button(label='Confirmar eliminación',emoji='🗑️',style=discord.ButtonStyle.danger)
  async def confirm(self,i,button):
-  await i.response.edit_message(content='Verificando la transcripción, las pruebas y el respaldo antes de eliminar…',view=None)
+  await i.response.edit_message(content='Guardando y verificando la copia del ticket. Cuando termine, este canal desaparecerá de tu lista.',view=None)
   self.stop()
+  row=self.system.store.get(self.rid)
+  source_is_ticket=bool(row and i.channel_id==row['channel'])
   try:
    changed=await self.system.delete_ticket(i.user,self.rid)
-   with suppress(discord.NotFound):
+   if not source_is_ticket:
     await reply(i,'Canal eliminado y retirado de las listas. Se conserva una copia interna de respaldo.' if changed else 'El canal ya estaba eliminado; su archivo se conserva.')
   except (ValueError,discord.HTTPException) as error:
    await reply(i,str(error) if isinstance(error,ValueError) else 'Discord no confirmó la eliminación. El caso sigue registrado para revisión.')

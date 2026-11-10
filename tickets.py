@@ -14,6 +14,7 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from access_layout import merged_raw
+from ticket_delete_backup import covers_ticket
 from discord_channels import fetch_channels
 
 import discord
@@ -130,6 +131,7 @@ class TicketSystem:
   self.bot,self.guild_id=bot,guild_id;self.store=TicketStore(path)
   self.lock=asyncio.Lock();self.ready_lock=asyncio.Lock();self.file_lock=asyncio.Semaphore(2)
   self.task=None;self.prepared=False
+  self.case_locks={};self.deletion_backup_lock=asyncio.Lock();self.last_deletion_backup=None
   self.group=app_commands.Group(name='ticket',description='Atención, gestión y seguimiento de tickets')
   self.register()
  async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
@@ -512,7 +514,12 @@ class TicketSystem:
   await self.capture(row,message)
   if staff and fresh_message:await self.notify_player(row['id'],'reply')
   if row['status']=='cerrado':await self.call('update',row['id'],archive_state='pendiente_actualizacion')
+ def case_lock(self,rid):return self.case_locks.setdefault(rid,asyncio.Lock())
  async def close(self,row,actor,reason):
+  lock=self.case_lock(row['id'])
+  if lock.locked():raise ValueError('Ese ticket ya se está procesando. Espera a que termine.')
+  async with lock:return await self._close(row,actor,reason)
+ async def _close(self,row,actor,reason):
   self.store.transition(row['id'],'cerrado',actor,reason)
   row=self.store.get(row['id'])
   channel=await self.channel(row)
@@ -531,46 +538,87 @@ class TicketSystem:
   owner=await self.member(channel.guild,row['owner'])
   if owner and not owner.bot:
    with suppress(discord.HTTPException):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes dejar tu opinión con el botón ⭐ Valorar dentro del ticket.\n{ticket_link(self.guild_id,row)}",allowed_mentions=discord.AllowedMentions.none(),suppress_embeds=True)
+ async def deletion_backup(self,row,proofs):
+  # Queue only the copy operation; ticket creation and other cases keep running.
+  async with self.deletion_backup_lock:
+   if self.bot.backups.enabled:
+    if self.bot.backups.lock.locked():
+     async with self.bot.backups.lock:pass
+    candidates=[self.last_deletion_backup]
+    state=await asyncio.to_thread(self.bot.backups._copy)
+    if isinstance(state,dict):candidates.append(state.get('last_success'))
+    seen=set()
+    for previous in candidates:
+     identity=(previous.get('file'),previous.get('sha256')) if isinstance(previous,dict) else None
+     if identity in seen:continue
+     seen.add(identity)
+     if await asyncio.to_thread(covers_ticket,previous,row,proofs):
+      self.last_deletion_backup=previous
+      log.info('TICKETS deletion_backup_reused id=%s exact_transcript=True proofs_verified=True',row['id'])
+      return
+    try:backup=await self.bot.backups.execute()
+    except Exception:
+     log.exception('TICKETS deletion_backup_failed id=%s; channel preserved',row['id'])
+     raise ValueError('No se elimina: no se pudo verificar el respaldo. El canal se conserva; vuelve a intentarlo.') from None
+    if backup.get('restore_state')!='verified':raise ValueError('No se elimina: no se pudo verificar el respaldo externo.')
+    self.last_deletion_backup=backup
+   else:
+    from backup import snapshot
+    folder=self.store.path.resolve().parent/'backups';folder.mkdir(exist_ok=True)
+    await asyncio.to_thread(snapshot,self.store.path,folder/f'ticket-{row["id"]}-antes-eliminar-{time.time_ns()}.sqlite3')
  async def delete_ticket(self,member,rid):
-  async with self.lock:
+  lock=self.case_lock(rid)
+  async with lock:
+   started=time.monotonic()
    row=self.store.get(rid)
    if not row:raise ValueError('Ese ticket no existe.')
    self.authorize(member,row,staff=True)
    if row.get('deleted_at'):return False
    if row['status']!='cerrado':raise ValueError('Solo se pueden eliminar canales de tickets cerrados.')
+   log.info('TICKETS deletion_started id=%s actor=%s',rid,member.id)
+   # Reading history and backing up can take time; do not hold the global ticket lock.
    state=await self.archive(row)
    row=self.store.get(rid)
+   if row['status']!='cerrado':raise ValueError('El ticket fue reabierto; se canceló la eliminación.')
    if state!='completo' or not row['transcript']:raise ValueError('No se elimina: hay una transcripción o pruebas sin respaldar. Completa el archivo antes de volver a confirmar.')
-   for proof in self.store.files(rid):
+   proofs=await self.call('files',rid)
+   for proof in proofs:
     data=await self.call('blob',rid,proof['attachment'])
     if data is None or hashlib.sha256(data).hexdigest()!=proof['sha256']:
      raise ValueError('No se elimina: una prueba no tiene una copia íntegra verificada.')
    await self.call('update',rid,deletion_requested=int(time.time()),deletion_actor=member.id)
    await self.record(rid,member.id,'solicitar_eliminacion','Confirmación del staff; verificar respaldo antes de borrar canal')
-   if self.bot.backups.enabled:
-    try:backup=await self.bot.backups.execute()
-    except Exception:
-     log.exception('TICKETS deletion_backup_failed id=%s; channel preserved',rid)
-     raise ValueError('No se elimina: el respaldo está ocupado o no pudo verificarse. El canal se conserva; inténtalo de nuevo cuando el respaldo esté disponible.') from None
-    if backup.get('restore_state')!='verified':raise ValueError('No se elimina: no se pudo verificar el respaldo externo.')
-   else:
-    from backup import snapshot
-    folder=self.store.path.resolve().parent/'backups';folder.mkdir(exist_ok=True)
-    await asyncio.to_thread(snapshot,self.store.path,folder/f'ticket-{rid}-antes-eliminar-{time.time_ns()}.sqlite3')
+   archived_at=time.monotonic()
+   await self.deletion_backup(row,proofs)
+   backed_up_at=time.monotonic()
+   # Permissions can change while a copy is uploading. Check the actor again.
+   guild=self.bot.get_guild(self.guild_id)
+   try:fresh_member=await guild.fetch_member(member.id)
+   except discord.NotFound:raise ValueError('Ya no tienes acceso al servidor para eliminar este ticket.') from None
+   current=self.store.get(rid)
+   self.authorize(fresh_member,current,staff=True)
+   if current.get('deleted_at'):return False
    async def remove():
-    # Fetch again after backing up; never delete a foreign, renamed-topic or reopened case.
     current=self.store.get(rid)
     if current['status']!='cerrado':raise ValueError('El ticket fue reabierto; se canceló la eliminación.')
-    channel=await self.channel(current)
-    final_state=await self.archive(current)
-    if final_state!='completo' or self.store.get(rid)['transcript']!=row['transcript']:
-     raise ValueError('No se elimina: el caso cambió durante el respaldo. Revisa la conversación y vuelve a confirmar para respaldar los cambios.')
-    await channel.delete(reason=f'Eliminación confirmada del ticket cerrado #{rid}; actor {member.id}; archivo verificado')
+    try:
+     channel=await self.channel(current)
+     final_state=await self.archive(current)
+     if final_state!='completo' or self.store.get(rid)['transcript']!=row['transcript']:
+      raise ValueError('No se elimina: el caso cambió durante el respaldo. Revisa la conversación y vuelve a confirmar para respaldar los cambios.')
+     await channel.delete(reason=f'Eliminación confirmada del ticket cerrado #{rid}; actor {member.id}; archivo verificado')
+    except discord.NotFound as error:
+     if error.code!=10003:raise
+     log.info('TICKETS deletion_already_missing id=%s verified_backup=True',rid)
     await self.call('mark_deleted',rid,member.id)
    await self.tracked(row,f'Eliminar canal de ticket cerrado #{rid}',remove)
-   log.info('TICKETS deleted channel=%s id=%s archive_preserved=True proofs_verified=True actor=%s',row['channel'],rid,member.id)
+   log.info('TICKETS deleted channel=%s id=%s archive_preserved=True proofs_verified=True actor=%s archive_seconds=%.2f backup_seconds=%.2f total_seconds=%.2f',row['channel'],rid,member.id,archived_at-started,backed_up_at-archived_at,time.monotonic()-started)
    return True
  async def reopen(self,i,row,reason):
+  lock=self.case_lock(row['id'])
+  if lock.locked():raise ValueError('Ese ticket ya se está procesando o eliminando. Espera a que termine.')
+  async with lock:return await self._reopen(i,row,reason)
+ async def _reopen(self,i,row,reason):
   self.authorize(i.user,row)
   if row['status']!='cerrado':raise ValueError('Ese ticket sigue abierto.')
   if not can_staff(i.user,row,self.store) and (i.user.id!=row['owner'] or time.time()-(row['closed'] or 0)>7*86400):raise ValueError('El autor puede reabrir durante siete días; después debe solicitarlo al staff.')

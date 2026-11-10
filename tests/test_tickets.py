@@ -267,6 +267,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   channel=MagicMock();channel.delete=AsyncMock()
   self.system.channel=AsyncMock(return_value=channel)
   self.bot.backups.enabled=True;self.bot.backups.execute=AsyncMock(return_value={'restore_state':'verified'})
+  self.bot.backups.lock=asyncio.Lock();self.bot.backups._copy.return_value={}
+  self.guild.fetch_member=AsyncMock(return_value=self.staff)
   async def tracked(row,title,operation):return await operation()
   self.system.tracked=tracked
   return channel
@@ -524,3 +526,60 @@ class CreationLeaseTests(unittest.TestCase):
   rid=self.create()
   with ThreadPoolExecutor(max_workers=3) as pool:claims=list(pool.map(lambda _:self.store.claim_creation(rid,now=1000),range(3)))
   self.assertEqual(sum(claims),1);self.assertFalse(self.store.claim_creation(rid,now=1179));self.assertTrue(self.store.claim_creation(rid,now=1180))
+
+class DeletionResponsivenessTests(unittest.IsolatedAsyncioTestCase):
+ asyncSetUp=LifecycleTests.asyncSetUp
+ prepare_deletion=LifecycleTests.prepare_deletion
+ async def test_delete_does_not_wait_for_unrelated_global_ticket_work(self):
+  channel=await self.prepare_deletion();await self.system.lock.acquire()
+  try:self.assertTrue(await asyncio.wait_for(self.system.delete_ticket(self.staff,self.rid),1))
+  finally:self.system.lock.release()
+  channel.delete.assert_awaited_once()
+ async def test_slow_backup_leaves_other_tickets_available_and_blocks_reopening_target(self):
+  channel=await self.prepare_deletion();started=asyncio.Event();release=asyncio.Event()
+  async def backup():started.set();await release.wait();return {'restore_state':'verified'}
+  self.bot.backups.execute.side_effect=backup
+  task=asyncio.create_task(self.system.delete_ticket(self.staff,self.rid))
+  try:
+   await asyncio.wait_for(started.wait(),1)
+   self.assertFalse(self.system.lock.locked())
+   with self.assertRaisesRegex(ValueError,'procesando|eliminando'):await self.system.reopen(self.i,self.system.store.get(self.rid),'Volver')
+   other=self.system.store.create(8,'soporte','Otro',{},now=1000);self.system.store.update(other,status='nuevo',channel=101)
+   async with self.system.lock:self.assertTrue(self.system.store.set_priority(other,'alta',5,'Necesita una mano'))
+  finally:release.set()
+  self.assertTrue(await asyncio.wait_for(task,1));channel.delete.assert_awaited_once()
+ async def test_duplicate_delete_requests_share_one_case_lock(self):
+  channel=await self.prepare_deletion()
+  results=await asyncio.gather(self.system.delete_ticket(self.staff,self.rid),self.system.delete_ticket(self.staff,self.rid))
+  self.assertCountEqual(results,[True,False]);channel.delete.assert_awaited_once();self.bot.backups.execute.assert_awaited_once()
+ async def test_permission_loss_during_backup_stops_deletion(self):
+  channel=await self.prepare_deletion();self.guild.fetch_member.return_value=FakeMember(5,guild=self.guild)
+  with self.assertRaises(ValueError):await self.system.delete_ticket(self.staff,self.rid)
+  channel.delete.assert_not_awaited()
+ async def test_confirmation_does_not_reply_inside_the_deleted_ticket(self):
+  from tickets_ui import DeleteConfirm
+  await self.prepare_deletion();self.system.delete_ticket=AsyncMock(return_value=True)
+  self.i.user=self.staff;self.i.channel_id=100;self.i.response.edit_message=AsyncMock();self.i.response.is_done.return_value=True
+  view=DeleteConfirm(self.system,self.staff.id,self.rid);await view.confirm.callback(self.i)
+  self.i.response.edit_message.assert_awaited_once();self.i.followup.send.assert_not_awaited()
+ async def test_confirmation_can_reply_from_the_separate_archive_panel(self):
+  from tickets_ui import DeleteConfirm
+  await self.prepare_deletion();self.system.delete_ticket=AsyncMock(return_value=True)
+  self.i.user=self.staff;self.i.channel_id=999;self.i.response.edit_message=AsyncMock();self.i.response.is_done.return_value=True
+  await DeleteConfirm(self.system,self.staff.id,self.rid).confirm.callback(self.i)
+  self.i.followup.send.assert_awaited_once()
+ async def test_gone_response_channel_does_not_start_an_error_loop(self):
+  from tickets_ui import reply
+  response=SimpleNamespace(status=400,reason='Bad Request')
+  self.i.response.send_message.side_effect=discord.HTTPException(response,{'code':10003,'message':'Unknown Channel'})
+  self.assertIsNone(await reply(self.i,'Terminado'))
+  self.i.response.send_message.side_effect=discord.HTTPException(response,{'code':50013,'message':'Missing Permissions'})
+  with self.assertRaises(discord.HTTPException):await reply(self.i,'Error real')
+ async def test_verified_snapshot_already_covering_the_case_skips_another_upload(self):
+  from backup import snapshot
+  channel=await self.prepare_deletion()
+  path=self.system.store.path.parent/'verified.sqlite';manifest=snapshot(self.system.store.path,path)
+  manifest.update(drive_state='verified',restore_state='verified')
+  self.bot.backups._copy.return_value={'last_success':manifest}
+  self.assertTrue(await self.system.delete_ticket(self.staff,self.rid))
+  self.bot.backups.execute.assert_not_awaited();channel.delete.assert_awaited_once()

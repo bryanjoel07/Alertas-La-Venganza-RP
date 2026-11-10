@@ -14,11 +14,11 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='tickets-channel-compat-recovery-v1'
-SUMMARY='Corrige la creación y recuperación de tickets ante canales nuevos de Discord que la librería no reconoce, incluido el tipo 20. La lectura conserva sus metadatos y permisos como solo lectura, sin impedir usar categorías y canales de tickets compatibles. Recupera reservas sin canal conservando número, autor y formulario; usa una reserva temporal de creación para evitar duplicados. Probada la apertura por los siete rangos de staff. No modifica roles protegidos ni permisos de Ciudadanos.'
-RESTORE=('Para revertir el código, desplegar 362e1fc6392665e4a8eb0440619b01f197c5fe5a conservando SQLite y /data; esa versión vuelve a fallar al listar canales si Discord devuelve un tipo no reconocido. No restaurar una base antigua ni borrar los canales creados durante la recuperación. '
-         'Mantener lv_tickets, eventos, archivos, transcripciones y las claves creation-lease:* de lv_ticket_config; las reservas temporales vencen después de tres minutos. Cada canal recuperado conserva topic lv-ticket:<número> y antes/después mediante TICKET_OPERATION. '
-         'Conservar GIF del SERVER UP, horarios y solicitudes manuales ya consumidas, minijuegos con espera de 12 horas, saldos, premios, tienda, fotos, solicitudes de staff y ajustes. Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
+RELEASE='tickets-delete-responsive-v1'
+SUMMARY='Acelera y aclara la eliminación de tickets cerrados: cada caso tiene su propio bloqueo y los respaldos no detienen otros tickets. Reutiliza un respaldo externo ya verificado solo si su archivo íntegro contiene exactamente la transcripción y las pruebas actuales; si no, crea y verifica una copia nueva. Evita responder dentro del canal después de borrarlo, comprueba de nuevo los permisos del actor y conserva confirmación, archivo y pruebas.'
+RESTORE=('Para revertir el código, desplegar c6831bd313ac2ec80376186494bb241ad2b9a091 conservando SQLite y /data; esa versión vuelve a bloquear otros tickets durante cada respaldo y puede intentar responder dentro del canal ya eliminado. No restaurar una base antigua ni recrear canales eliminados para revertir. '
+         'Mantener lv_tickets, deleted_at, transcripciones, archivos y blobs con sus hashes, además de los respaldos completos ya verificados. La copia reutilizada no se modifica ni se elimina. Las eliminaciones siguen limitadas a tickets cerrados de este bot, confirmados por staff y con copia verificada. '
+         'Conservar la compatibilidad de canales nuevos de Discord, GIF de SERVER UP, minijuegos, saldos, tienda y solicitudes de staff. No reiniciar avisos consumidos ni modificar Owner, Programador, Admin, Súper Admin o escritura de Ciudadanos.')
 
 
 class Journal:
