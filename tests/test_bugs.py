@@ -4,12 +4,14 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock,MagicMock
+from unittest.mock import AsyncMock,MagicMock,patch
 import discord
 from bug_store import BugStore,clip_url
 from bug_ui import BugForm
 from bugs import BugSystem,FORUM,TAGS,GUIDE,OLD_PORTAL,PORTAL
 from tickets_store import PROTECTED
+
+DETAILS='Descripción del error:\nNo abre al pulsar F2\n\nCómo ocurrió:\nEntré al servidor y pulsé F2\n\nSistema afectado:\nInventario\n\nFrecuencia:\nSiempre'
 
 class StoreTests(unittest.TestCase):
     def setUp(self):
@@ -61,7 +63,7 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.store.reserve(rid,1)
     def test_full_form_accepts_link_or_file_and_preserves_both_across_restart(self):
         rid=self.store.begin(1)
-        values=dict(player_id='42',title='Error',details='Dónde pasa y cómo repetirlo',clip='https://example.com/clip')
+        values=dict(player_id='42',title='Error',details=DETAILS,clip='https://example.com/clip')
         self.store.save_full(rid,1,values,0)
         self.assertEqual(self.store.get(rid)['step'],2)
         values['clip']=''
@@ -75,7 +77,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.guild=SimpleNamespace(id=10,fetch_member=AsyncMock())
-        self.member=SimpleNamespace(id=1,bot=False,roles=[],guild_permissions=discord.Permissions.none())
+        self.member=SimpleNamespace(id=1,name='usuario1',bot=False,roles=[],guild_permissions=discord.Permissions.none())
         self.guild.fetch_member.return_value=self.member
         self.forum=MagicMock(spec=discord.ForumChannel);self.forum.guild=self.guild;self.forum.id=FORUM
         self.forum.available_tags=[SimpleNamespace(id=i) for i in TAGS.values()]
@@ -99,8 +101,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.title,'Reportar un error');self.assertEqual(len(payload['components']),5)
         self.assertEqual(payload['components'][3]['component']['type'],19)
         self.assertFalse(second.file.required)
-        self.assertIn('Qué pasa: Problema',second.inputs['details'].default)
-        self.assertIn('Cómo pasó: Pasos',second.inputs['details'].default)
+        self.assertIn('Descripción del error:\nProblema',second.inputs['details'].default)
+        self.assertIn('Cómo ocurrió:\nPasos',second.inputs['details'].default)
     async def test_report_embed_never_mentions_everyone_or_loses_credit(self):
         rid=self.system.store.begin(1);self.system.store.save(rid,1,1,dict(player_id='42',title='Error',description='Problema',steps='Pasos',system='Inventario'),0)
         embed=self.system.embed(self.system.store.get(rid))
@@ -108,7 +110,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('@everyone',json.dumps(embed.to_dict()))
     async def test_all_fields_and_file_are_submitted_in_one_modal(self):
         rid=self.system.store.begin(1);form=BugForm(self.system,self.system.store.get(rid))
-        for key,value in dict(player_id='42',title='Inventario',details='No abre al pulsar F2').items():form.inputs[key]._value=value
+        for key,value in dict(player_id='42',title='Inventario',details=DETAILS).items():form.inputs[key]._value=value
         form.clip._value=''
         form.file._values=[SimpleNamespace(filename='clip.mp4',size=10,read=AsyncMock(return_value=b'clip-video'))]
         self.i.response=SimpleNamespace(defer=AsyncMock(),is_done=lambda:True)
@@ -116,7 +118,11 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await form.on_submit(self.i)
         saved=self.system.store.get(rid)
         self.assertEqual(saved['step'],2);self.assertEqual(saved['video'],b'clip-video')
-        self.assertEqual(json.loads(saved['data'])['details'],'No abre al pulsar F2')
+        data=json.loads(saved['data'])
+        self.assertEqual(data['details'],DETAILS)
+        self.assertEqual(data['description'],'No abre al pulsar F2')
+        self.assertEqual(data['system'],'Inventario');self.assertEqual(data['frequency'],'Siempre')
+        self.assertEqual(data['discord_username'],'usuario1')
         self.forum.create_thread.assert_not_called()
         self.assertIn('Revisa tu reporte',self.i.followup.send.call_args.args[0])
     async def test_publication_itself_refuses_a_forged_completed_draft_without_clip(self):
@@ -188,14 +194,15 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(str(GUIDE),root.content)
     async def test_canonical_ready_never_creates_another_forum_post_even_when_called_twice(self):
         entry=SimpleNamespace(author=self.bot.user,id=888,components=[SimpleNamespace(children=[SimpleNamespace(custom_id='lvbug:new:0'),SimpleNamespace(custom_id='lvbug:mine:0')])])
-        guide=SimpleNamespace(fetch_message=AsyncMock(return_value=entry))
+        guide=SimpleNamespace(id=888,fetch_message=AsyncMock(return_value=entry))
         self.bot.fetch_channel=AsyncMock(return_value=guide)
         self.system.forum=AsyncMock(return_value=self.forum)
         self.system.guide_buttons=AsyncMock()
         self.system.retire_duplicate_portal=AsyncMock()
         async def tracked(rid,title,request,operation):return await operation()
         self.system.tracked=tracked;self.system.store.config('guide_buttons',888)
-        await self.system.ready();await self.system.ready()
+        with patch('bug_panel.ReportPanel.ready',AsyncMock(return_value=guide)):
+            await self.system.ready();await self.system.ready()
         self.forum.create_thread.assert_not_called()
     async def test_cleanup_refuses_a_real_report_even_if_it_has_the_old_portal_id(self):
         self.system.store.adopt(OLD_PORTAL,1,'Reporte real','Datos','https://example.com/video')

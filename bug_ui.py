@@ -4,6 +4,7 @@ from pathlib import Path
 import discord
 from feedback_ui import reply, NONE, RED
 from bug_store import STATES
+from bug_template import DETAILS_LIMIT,details_default
 
 async def failed(i,error):
     if isinstance(error,ValueError):return await reply(i,str(error))
@@ -33,13 +34,12 @@ class BugForm(discord.ui.Modal):
         self.upload_limit=min(25*1024*1024,getattr(system.bot.get_guild(system.guild_id),'filesize_limit',25*1024*1024))
         super().__init__(title='Reportar un error',timeout=900)
         data=json.loads(row['data']);self.inputs={}
-        details=data.get('details') or '\n\n'.join(f'{label}: {data[key]}' for key,label in
-            [('description','Qué pasa'),('steps','Cómo pasó'),('system','Dónde pasa'),('frequency','Cada cuánto pasa')] if data.get(key))
-        for key,label,limit,paragraph in [('player_id','Tu ID dentro del servidor',30,False),('title','¿Qué error encontraste?',100,False),('details','Cuéntanos qué pasó',2500,True)]:
+        details=details_default(data)
+        for key,label,limit,paragraph in [('player_id','Tu ID dentro del servidor',30,False),('title','Nombre del error',100,False),('details','Descripción, pasos, sistema y frecuencia',DETAILS_LIMIT,True)]:
             item=discord.ui.TextInput(custom_id=key,max_length=limit,default=(details if key=='details' else data.get(key)) or None,
                 style=discord.TextStyle.paragraph if paragraph else discord.TextStyle.short)
             self.inputs[key]=item
-            self.add_item(discord.ui.Label(text=label,description='Explica dónde pasa, cómo te pasó y cada cuánto ocurre.' if paragraph else None,component=item))
+            self.add_item(discord.ui.Label(text=label,description='Completa los cuatro apartados. Conserva sus títulos y reemplaza los textos entre corchetes.' if paragraph else None,component=item))
         self.file=discord.ui.FileUpload(custom_id='clip_file',required=False,min_values=0,max_values=1)
         self.clip=discord.ui.TextInput(custom_id='clip_link',required=False,max_length=1000,placeholder='https://…',default=data.get('clip') or None)
         self.add_item(discord.ui.Label(text='Clip obligatorio · Adjunta el video aquí',description=('Ya tienes un video guardado; puedes reemplazarlo.' if row.get('video') else f'Hasta {self.upload_limit//(1024*1024)} MB. Adjunta un video o pega un enlace abajo.'),component=self.file))
@@ -47,7 +47,7 @@ class BugForm(discord.ui.Modal):
     async def on_submit(self,i):
         await i.response.defer(ephemeral=True,thinking=True)
         try:
-            await self.system.member(i)
+            member=await self.system.member(i)
             filename=video=None
             if self.file.values:
                 attachment=self.file.values[0]
@@ -57,6 +57,7 @@ class BugForm(discord.ui.Modal):
                 video=await attachment.read()
             from feedback import clean
             values={key:clean(item.value) for key,item in self.inputs.items()};values['clip']=self.clip.value
+            values['discord_username']=member.name
             await self.system.call('save_full',self.rid,i.user.id,values,self.revision,filename,video)
             row=await self.system.call('get',self.rid)
             await reply(i,'**Revisa tu reporte. Se publicará en el foro para que lo vea la comunidad.**\nEvita contraseñas y datos personales.',embed=self.system.embed(row),view=buttons('publish','continue',rid=self.rid))

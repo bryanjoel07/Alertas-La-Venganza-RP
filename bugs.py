@@ -52,10 +52,13 @@ class BugSystem:
     def embed(self,row):
         data=json.loads(row['data']);embed=discord.Embed(title=f"🐛 Reporte #{row['id']} · {data.get('title','Error')}"[:256],color=RED)
         embed.description=f"Publicado por <@{row['owner']}>\n**Estado:** {STATES.get(row['status'],row['status'])}\n**Responsable:** "+(f"<@{row['assignee']}>" if row['assignee'] else 'Pendiente de atención')
-        fields=[('ID en el servidor','player_id')] if data.get('details') else [('ID en el servidor','player_id'),('¿Qué pasa?','description'),('¿Cómo ocurrió?','steps'),('Sistema afectado','system'),('Frecuencia','frequency')]
+        structured=data.get('report_schema')==4
+        fields=[('ID en el servidor','player_id')] if data.get('details') and not structured else [('ID en el servidor','player_id'),('Descripción del error','description'),('Cómo ocurrió','steps'),('Sistema afectado','system'),('Frecuencia','frequency')]
+        if structured:embed.add_field(name='Cuenta de Discord',value=discord.utils.escape_markdown('@'+data['discord_username']) if data.get('discord_username') else f"<@{row['owner']}>",inline=False)
         for label,key in fields:
-            embed.add_field(name=label,value=discord.utils.escape_markdown(data.get(key,'Pendiente'))[:1024],inline=False)
-        if data.get('details'):
+            text=discord.utils.escape_markdown(data.get(key,'Pendiente'))
+            for start in range(0,len(text),1024):embed.add_field(name=label if start==0 else label+' (continúa)',value=text[start:start+1024],inline=False)
+        if data.get('details') and not structured:
             text=discord.utils.escape_markdown(data['details'])
             for start in range(0,len(text),1024):embed.add_field(name='Detalles del problema' if start==0 else 'Detalles (continúa)',value=text[start:start+1024],inline=False)
         embed.add_field(name='🎥 Clip',value=data.get('clip') or ('Video adjunto al reporte' if row.get('video') else 'Falta adjuntar el clip'),inline=False)
@@ -69,17 +72,15 @@ class BugSystem:
         return await self.bot.changes.tracked('BUG_REPORTS',title,operation,request_id=request,snapshot=snapshot)
     async def ready(self):
         async with self.install_lock:
-            await self.forum()
-            await self.tracked(None,'Mantener una sola entrada de Reportes','guide-entry-v2',self.guide_buttons)
-            await self.retire_duplicate_portal()
-            guide=await self.bot.fetch_channel(GUIDE)
-            message=await guide.fetch_message(int(await self.call('config','guide_buttons')))
+            from bug_panel import ReportPanel
+            guide=await ReportPanel(self).ready()
+            message=await guide.fetch_message(guide.id)
             if message.author.id!=self.bot.user.id or self.entry_controls(message)!=['lvbug:new:0','lvbug:mine:0']:
                 raise RuntimeError('No se confirmó el único panel de Reportes.')
             form=BugForm(self,dict(id=0,revision=0,data='{}',video=None))
             components=form.to_dict()['components']
             if len(components)!=5 or components[3]['component']['type']!=19:raise RuntimeError('El formulario único no incluye el archivo adjunto.')
-            log.info('BUGS ready forum=%s guide=%s entry_message=%s single_entry=True single_form=True fields=5 clip_required=True original_template_preserved=True clip_upload=True admin_controls=True',FORUM,GUIDE,message.id)
+            log.info('BUGS ready forum=%s guide=%s entry_message=%s bot_owned_template=True single_entry=True single_form=True fields=5 detailed_sections=4 clip_required=True clip_upload=True admin_controls=True legacy_removed=%s',FORUM,guide.id,message.id,await self.call('config','legacy_guide_removed'))
     @staticmethod
     def entry_controls(message):
         return [getattr(c,'custom_id',None) for row in message.components for c in row.children]

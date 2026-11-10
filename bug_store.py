@@ -5,6 +5,7 @@ import json
 import sqlite3
 import time
 from urllib.parse import urlsplit
+from bug_template import DETAILS_LIMIT,parse_details
 
 STATES = {'pendiente':'🔴 Pendiente','revision':'🟠 En revisión','proceso':'🔵 En proceso','solucionado':'🟢 Solucionado','cerrado':'⚫ Cerrado'}
 
@@ -35,6 +36,16 @@ class BugStore:
             db.execute('''CREATE TABLE IF NOT EXISTS lv_bug_events(id INTEGER PRIMARY KEY,report INTEGER NOT NULL,
                 actor INTEGER NOT NULL,action TEXT NOT NULL,detail TEXT NOT NULL,created INTEGER NOT NULL)''')
             db.execute('CREATE TABLE IF NOT EXISTS lv_bug_config(key TEXT PRIMARY KEY,value TEXT NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS lv_bug_panel_backups(source INTEGER PRIMARY KEY,payload TEXT NOT NULL,sha256 TEXT NOT NULL)')
+    def panel_backup(self,source,payload=None):
+        with self.db() as db:
+            if payload is not None:
+                encoded=json.dumps(payload,ensure_ascii=False,sort_keys=True)
+                db.execute('INSERT OR IGNORE INTO lv_bug_panel_backups VALUES (?,?,?)',(source,encoded,hashlib.sha256(encoded.encode()).hexdigest()))
+            row=db.execute('SELECT payload,sha256 FROM lv_bug_panel_backups WHERE source=?',(source,)).fetchone()
+            if not row:return None
+            if hashlib.sha256(row['payload'].encode()).hexdigest()!=row['sha256']:raise ValueError('La copia de la plantilla anterior no pasó la verificación.')
+            return json.loads(row['payload'])
     def config(self,key,value=None):
         with self.db() as db:
             if value is not None:db.execute('INSERT INTO lv_bug_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(value)))
@@ -87,7 +98,7 @@ class BugStore:
             if not data.get('clip') and not row['video']:raise ValueError('Falta el clip del error.')
             db.execute("UPDATE lv_bugs SET status='publicando' WHERE id=?",(rid,))
     def save_full(self,rid,owner,values,revision,filename=None,video=None):
-        limits={'player_id':30,'title':100,'details':2500}
+        limits={'player_id':30,'title':100,'details':DETAILS_LIMIT}
         for key,limit in limits.items():
             if not values.get(key,'').strip() or len(values[key])>limit:raise ValueError('Completa el ID, el título y los detalles del problema.')
         clip=clip_url(values.get('clip',''))
@@ -96,11 +107,13 @@ class BugStore:
             if not row or row['owner']!=owner or row['status']!='borrador' or row['revision']!=revision:
                 raise ValueError('El formulario cambió. Abre tu borrador otra vez.')
             if not clip and not video and not row['video']:raise ValueError('El clip es obligatorio, bro. Adjunta el video o pega su enlace; el reporte no se envió.')
+            sections=parse_details(values['details'])
             if video is not None:
                 if not video or len(video)>25*1024*1024 or not filename:raise ValueError('Adjunta un video válido de hasta 25 MB.')
                 if db.execute('SELECT COALESCE(SUM(length(video)),0) FROM lv_bugs WHERE id!=?',(rid,)).fetchone()[0]+len(video)>200*1024*1024:
                     raise ValueError('No queda espacio para más archivos ahora. Pega el enlace del clip.')
             data=json.loads(row['data']);data.update({key:values[key].strip() for key in limits});data['clip']=clip
+            data.update(sections,report_schema=4,discord_username=values.get('discord_username',''))
             db.execute('''UPDATE lv_bugs SET data=?,step=2,updated=?,revision=revision+1,
                 filename=COALESCE(?,filename),video=COALESCE(?,video),sha256=COALESCE(?,sha256) WHERE id=?''',
                 (json.dumps(data,ensure_ascii=False),int(time.time()),filename,video,hashlib.sha256(video).hexdigest() if video else None,rid))

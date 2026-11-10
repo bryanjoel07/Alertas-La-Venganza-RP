@@ -14,9 +14,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bug-reports-single-form-v3'
-SUMMARY='Reúne el reporte y el archivo adjunto en un solo formulario: ID, título, detalles, video y enlace alternativo. El clip es obligatorio tanto al guardar el formulario como al confirmar y publicar. Sin archivo ni enlace no se crea la publicación. Los borradores anteriores se abren en el formulario único conservando sus datos y videos. Sigue existiendo un solo panel en la plantilla fijada.'
-RESTORE=('Para volver al formulario de dos pasos desplegar a68040695693f861001e32c209a701f1323cf7d6 conservando SQLite y /data. Los reportes nuevos guardan details; para retomar borradores con la interfaz antigua copiar ese campo a description y completar los campos que falten sin borrar el video ni su hash. No restaurar un SQLite antiguo, reactivar el panel separado ni borrar reportes o archivos.')
+RELEASE='bug-reports-official-panel-v4'
+SUMMARY='Reemplaza la plantilla manual por una nueva publicación del bot, organizada con instrucciones y botones en el mismo mensaje. El formulario único exige los cuatro apartados: descripción, cómo ocurrió, sistema afectado y frecuencia; identifica la cuenta de Discord automáticamente y mantiene el clip obligatorio. Antes de retirar la plantilla antigua autorizada, guarda y verifica una copia privada, comprueba el panel nuevo y conserva cualquier conversación o archivo ajeno. No modifica reportes reales, roles o permisos.'
+RESTORE=('Código anterior: 669520f42f138f6f040c8d8d87643ed284357b9c. Si ya se retiró la plantilla antigua, adaptar su constante GUIDE al ID guardado en lv_bug_config.official_guide_v4 antes de desplegar esa versión; el antiguo ID no se puede recrear. Conservar SQLite y sus tablas lv_bug_panel_backups, lv_bugs, videos y hashes. La copia privada de la plantilla permite reconstruir su texto con un ID nuevo si se solicita. No restaurar una base antigua, borrar reportes ni reactivar paneles duplicados.')
 
 
 class Journal:
