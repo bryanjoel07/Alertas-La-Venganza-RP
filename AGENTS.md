@@ -8,6 +8,8 @@ The owner explicitly forbids modifying these roles, including permissions, chann
 
 Read-only inspection is allowed. Do not remove existing staff access as part of organizing channels or roles. Naming command channels does not authorize restricting staff permissions. Preserve Citizen writing permissions. Never delete channels or their history when organizing navigation.
 
+Targeted later authorization (2026-11-10): the owner explicitly requests removing all role memberships from his two accounts with exact usernames `esschino__` and `esschino_`, keeping only Ciudadanos (1245009164070158409). For this one request only, protected staff role memberships may also be removed from these two verified account IDs. Persist their exact IDs and original memberships before acting. This does not authorize editing role definitions, permissions, positions, other members, or repeating a completed cleanup. Discord's implicit @everyone remains.
+
 For every future bot deployment, update `RELEASE`, `SUMMARY`, and `RESTORE` in `change_log.py` to describe the actual change and a correct previous commit/restoration procedure. Route new administrative Discord mutations through `ChangeLog.tracked` so the before-state is durable before mutation. Read REGISTRO_CAMBIOS.md for restoration limits. Do not claim to log manual Discord edits automatically.
 
 The owner explicitly authorizes a staff-only deletion button for closed tickets managed by this bot, after confirmation and a verified transcript/evidence backup. This exception does not authorize deleting other channels, open tickets, legacy tickets, or protected roles. Preserve archived ticket records and proof blobs after deleting the Discord channel.

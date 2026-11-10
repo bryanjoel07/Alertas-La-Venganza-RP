@@ -43,6 +43,7 @@ from change_log import ChangeLog
 from tickets import TicketSystem
 from photos import PhotoSystem
 from channel_cleanup import clear_exclusive_log
+from citizen_cleanup import keep_citizen_roles
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -237,6 +238,7 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.minigames.group,guild=GUILD)
         self.tree.add_command(self.minigames.play_command,guild=GUILD)
         self.lock = asyncio.Lock()
+        self.citizen_cleanup_lock = asyncio.Lock()
         self.tracker = None
         self.monitor_task = None
         self.event_features = EventFeatures(self, DB_PATH, self.lock)
@@ -1535,6 +1537,10 @@ async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
     log.info("SERVER_UP banner ready file=%s bytes=%s", SERVER_UP_BANNER.name, SERVER_UP_BANNER.stat().st_size)
+    try:
+        await keep_citizen_roles(client)
+    except Exception:
+        log.exception("No se pudo completar la solicitud de dejar Ciudadanos en las dos cuentas del dueño")
     try:
         await client.changes.tracked("REPAIR_STAFF_ACCESS_REQUEST_ID", "Restaurar accesos de Staff",
             lambda: repair_staff_command_access(client, GUILD_ID, DB_PATH))

@@ -14,6 +14,8 @@ Cada registro conserva sus propias instrucciones. Esta versión de la tienda pue
 
 Para una operación de Discord, descargar el JSON, comparar `before` y `after`, y restaurar solo los campos autorizados usando los IDs originales. Las copias contienen categorías, posiciones, permisos y nombres; no contienen mensajes y no recuperan canales borrados. Nunca borrar/recrear canales como mecanismo de restauración. Owner, Programador, Admin y Súper Admin están excluidos de cualquier modificación.
 
+Excepción solicitada por el dueño el 10 de noviembre de 2026: retirar membresías de sus dos cuentas `esschino__` y `esschino_` para dejar solo Ciudadanos, incluyendo sus roles de staff. El registro de esa solicitud conserva sus IDs, roles y slots de color/título anteriores. Volver al código anterior no devuelve membresías; para restaurarlas se necesita actuar sobre esos IDs con autorización, sin modificar las definiciones de los roles ni otras cuentas.
+
 ## Publicar cambios futuros
 
 Antes de desplegar otra versión, actualizar `RELEASE`, `SUMMARY` y `RESTORE` en `change_log.py`, incluyendo el commit anterior correcto y la forma de revertir el cambio sin perder datos. Railway identifica cada versión por `RAILWAY_GIT_COMMIT_SHA`; fuera de Railway se usa `RELEASE`.
