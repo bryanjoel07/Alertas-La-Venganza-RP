@@ -48,6 +48,7 @@ from feedback import FeedbackSystem
 from channel_design import inspect_channel_design
 from bugs import BugSystem
 from suggestions import SuggestionSystem
+from rules_lookup import inspect_rules_source
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1608,6 +1609,10 @@ async def on_guild_channel_delete(channel):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
+    try:
+        await inspect_rules_source(client, GUILD_ID)
+    except Exception:
+        log.exception('No se pudo leer la fuente oficial de normas')
     try:
         await client.suggestions.ready()
     except Exception:
