@@ -33,7 +33,7 @@ from settings_panel import SettingsPanel
 from recruitment import RecruitmentSystem
 from minigames import MinigameSystem
 from daily_up import announce_daily_up,daily_up_embed
-from server_up_media import ServerUpBanner,banner_url
+from server_up_media import ServerUpBanner,RENDER_BANNER
 from economy import Economy
 from profiles_hub import ProfileTree
 from server_audit import audit_server
@@ -69,7 +69,7 @@ CONFIRM_SECONDS = 90
 PANEL_MAX_AGE = 180
 DB_PATH = database_path()
 DATA_DIR = os.path.dirname(DB_PATH)
-SERVER_UP_BANNER = Path(__file__).parent / "assets" / "banners" / "server-up.gif"
+SERVER_UP_BANNER = RENDER_BANNER
 DRAFT_SECONDS = 1800
 DRAFTS = {}
 
@@ -385,14 +385,8 @@ async def enable_alert_mentions(channel):
 
 async def send_daily_up():
     embed=daily_up_embed(get_setting,CONNECT_URL)
-    banner = SERVER_UP_BANNER
-    stable_url=banner_url(client)
-    embed.set_image(url=stable_url or "attachment://" + banner.name)
     channel = daily_up_channel()
-    payload=dict(content="@everyone", embed=embed,
-        allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
-    if not stable_url:payload['file']=discord.File(banner,filename=banner.name)
-    message = await channel.send(**payload)
+    message = await client.server_up_banner.send(channel,embed)
     log.info("SERVER UP enviado: canal=%s (%s) mensaje=%s", channel.name, channel.id, message.id)
     return message
 

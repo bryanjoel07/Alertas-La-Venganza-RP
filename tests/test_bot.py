@@ -163,21 +163,26 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
         daily = SimpleNamespace(name="🟢︱Server-Up", id=123, send=AsyncMock())
+        captured=[]
+        async def sent(**kwargs):
+            captured.append(kwargs['file'].fp.read())
+            return SimpleNamespace(id=77,content='@everyone')
+        daily.send.side_effect=sent
         alerts = SimpleNamespace(id=self.bot.ALERT_CHANNEL_ID, send=AsyncMock())
         guild = SimpleNamespace(text_channels=[daily, SimpleNamespace(name="alertas")])
         with patch.object(self.bot.client, 'get_guild', return_value=guild), \
              patch.object(self.bot.client, 'get_channel', return_value=alerts), \
-             patch.object(self.bot, 'post_webhook', AsyncMock()) as webhook:
+             patch.object(self.bot, 'post_webhook', AsyncMock()) as webhook, \
+             patch('server_up_media.verify_image',AsyncMock(return_value=dict(mode='attachment',width=400,height=225))):
             await self.bot.send_daily_up()
             daily.send.assert_awaited_once()
             kwargs = daily.send.call_args.kwargs
             self.assertEqual(kwargs['content'], '@everyone')
             self.assertEqual(kwargs['allowed_mentions'].to_dict()['parse'], ['everyone'])
-            self.assertEqual(kwargs['embed'].image.url, 'attachment://server-up.gif')
-            self.assertEqual(kwargs['file'].filename, 'server-up.gif')
-            banner = Path(self.bot.__file__).parent / 'assets/banners/server-up.gif'
-            self.assertEqual(kwargs['file'].fp.read(), banner.read_bytes())
-            kwargs['file'].close()
+            from server_up_media import ATTACHMENT,FILENAME,RENDER_BANNER
+            self.assertEqual(kwargs['embed'].image.url,ATTACHMENT)
+            self.assertEqual(kwargs['file'].filename,FILENAME)
+            self.assertEqual(captured,[RENDER_BANNER.read_bytes()])
             for state in ('down', 'up'):
                 await self.bot.send_alert(state)
             self.assertEqual(alerts.send.await_count, 2)
@@ -199,16 +204,17 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.bot.get_setting('manual_server_up_request'), 'test-manual-1')
             self.assertEqual(self.bot.get_setting('daily_server_up_slot'), '')
 
-    async def test_daily_up_uses_stable_original_gif_without_a_second_attachment(self):
+    async def test_daily_up_verifies_native_gif_even_when_the_hosted_copy_is_available(self):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
-        from server_up_media import ROUTE
-        daily=SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=99)),name='Server Up',id=123)
-        with patch.object(self.bot,'daily_up_channel',return_value=daily),patch.object(self.bot.client.bugs.media,'base_url','https://bot.example.com'),patch.object(self.bot.client.bugs.media,'runner',object()):
+        from server_up_media import ATTACHMENT,FILENAME
+        daily=SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=99,content='@everyone')),name='Server Up',id=123)
+        with patch.object(self.bot,'daily_up_channel',return_value=daily),patch.object(self.bot.client.bugs.media,'base_url','https://bot.example.com'),patch.object(self.bot.client.bugs.media,'runner',object()),patch('server_up_media.verify_image',AsyncMock(return_value=dict(mode='attachment',width=400,height=225))) as verify:
             await self.bot.send_daily_up()
         payload=daily.send.call_args.kwargs
-        self.assertEqual(payload['embed'].image.url,'https://bot.example.com'+ROUTE)
-        self.assertNotIn('file',payload)
+        self.assertEqual(payload['embed'].image.url,ATTACHMENT)
+        self.assertEqual(payload['file'].filename,FILENAME)
+        verify.assert_awaited_once_with(daily,99,ATTACHMENT,'@everyone')
         self.assertEqual(payload['content'],'@everyone')
         self.assertEqual(payload['allowed_mentions'].to_dict()['parse'],['everyone'])
 

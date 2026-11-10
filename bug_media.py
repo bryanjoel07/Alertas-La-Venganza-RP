@@ -16,7 +16,7 @@ from urllib.parse import quote, urlsplit
 from aiohttp import web
 
 from bug_limits import MAX_FILE_MB,MAX_REPORT_FILES,FILE_TYPES
-from server_up_media import ROUTE,banner_file
+from server_up_media import ROUTE,RENDER_ROUTE,banner_file
 
 log = logging.getLogger('LaVenganzaRP.bugs')
 TYPES = FILE_TYPES
@@ -97,6 +97,7 @@ class ReportMedia:
         app = web.Application(client_max_size=1024)
         app.router.add_get('/health', self.health)
         app.router.add_get(ROUTE,banner_file)
+        app.router.add_get(RENDER_ROUTE,banner_file)
         app.router.add_get(r'/clips/{token:[A-Za-z0-9_-]{43}}/{name}', self.clip)
         app.router.add_get(r'/files/{token:[A-Za-z0-9_-]{43}}/{name}', self.clip)
         return app

@@ -55,6 +55,14 @@ class MediaTests(unittest.IsolatedAsyncioTestCase):
         missing=await self.session.get(self.origin+ROUTE.replace(DIGEST,'0'*64))
         self.assertEqual(missing.status,404)
 
+    async def test_compatible_server_up_copy_is_a_small_gif_and_original_route_stays_available(self):
+        from server_up_media import RENDER_BANNER,RENDER_DIGEST,RENDER_ROUTE
+        response=await self.session.get(self.origin+RENDER_ROUTE)
+        self.assertEqual(response.status,200)
+        self.assertEqual(response.headers['Content-Type'],'image/gif')
+        self.assertEqual(hashlib.sha256(await response.read()).hexdigest(),RENDER_DIGEST)
+        self.assertLess(RENDER_BANNER.stat().st_size,5_000_000)
+
     async def test_120_mb_original_survives_restart_publishes_once_and_streams_intact(self):
         payload=b'x'*(MAX_CLIP_BYTES-4)+b'end!'
         digest=hashlib.sha256(payload).hexdigest()

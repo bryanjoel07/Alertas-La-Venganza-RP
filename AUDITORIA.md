@@ -76,3 +76,11 @@ El propietario mostró la imagen rota del aviso `1569841663361417331`. El enlace
 Se añade una ruta pública exacta para ese archivo en el servidor HTTP existente, con tipo `image/gif` y URL que incluye su huella. No permite listar archivos ni acceder a otras rutas. Los avisos nuevos usan esa dirección estable sin un segundo adjunto visible. Se conserva la alternativa de adjuntar el GIF si no está configurado el servidor de archivos.
 
 La reparación del aviso indicado verifica canal, autor, mensaje y adjuntos, guarda el estado previo con `ChangeLog.tracked` y edita solo la imagen en el mismo mensaje, sin nuevas menciones. Verifica tanto los bytes originales servidos como la respuesta del proxy de imágenes de Discord antes de registrar su finalización. La suite ampliada pasa **654 pruebas**, incluyendo preservación del GIF, ruta pública, aviso único, reparación con copia previa, permisos de menciones vacíos al editar y reintento de procesamiento de imágenes de Discord.
+
+### Corrección de la validación visual — v23
+
+El propietario confirmó que v22 seguía sin mostrar la imagen. Su registro tenía HTTP 200 pero `width=0` y `height=0`; comprobar la descarga no demostraba que el embed se mostrara. Se elimina ese criterio de éxito y se exigen dimensiones positivas, un origen correcto y un GIF válido del proxy, con una nueva lectura después de procesar la imagen.
+
+El original de 7,083,987 bytes queda intacto. Se prepara `server-up-discord.gif`: 4,578,413 bytes, 400 × 225, cien fotogramas y diez segundos de animación, SHA-256 `04b3a386b94cc4baf08ac6debb7cad1cfe510b33d941535868c90a0f12fbf09a`. La conversión usa FFmpeg con `fps=10`, `palettegen=max_colors=96:reserve_transparent=0` y `paletteuse=dither=none`; no requiere FFmpeg ni Pillow en producción. El adjunto nativo tiene nombre nuevo para que Discord vuelva a procesarlo. La copia HTTPS queda como alternativa y debe pasar el mismo criterio de dimensiones. Las rutas anteriores se conservan.
+
+Las pruebas comprueban expresamente que HTTP 200 con dimensiones cero no marque el caso como completado, que pueda reintentarse, que se preserve el estado previo y que la alternativa de un aviso futuro no duplique mensajes ni menciones. La reparación actual afecta únicamente a la imagen del mismo aviso.
