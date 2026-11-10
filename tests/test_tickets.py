@@ -182,6 +182,77 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.access.assert_awaited_once()
   self.bot.get_guild.return_value.edit_role_positions.assert_not_called()
 
+ async def test_claim_removes_button_from_existing_message_and_backs_up_old_controls(self):
+  from change_log import ChangeLog
+  self.bot.user.id=99;self.i.user=self.staff
+  self.system.store.update(self.rid,control_message=500)
+  before=self.system.store.get(self.rid)
+  message=SimpleNamespace(id=500,author=self.bot.user,content='',embeds=[self.system.embed(before)],
+    components=[discord.components.ActionRow(c) for c in TicketControls.from_row(before).to_components()])
+  async def edit(**kwargs):
+   message.embeds=[kwargs['embed']]
+   message.components=[discord.components.ActionRow(c) for c in kwargs['view'].to_components()]
+   return message
+  message.edit=AsyncMock(side_effect=edit)
+  async def history(**kwargs):
+   if False:yield None
+  channel=SimpleNamespace(id=100,fetch_message=AsyncMock(return_value=message),history=history,send=AsyncMock())
+  self.system.channel=AsyncMock(return_value=channel);self.system.access=AsyncMock();self.system.notify_player=AsyncMock()
+  self.bot.changes=ChangeLog(self.bot,self.system.store.path,10);self.bot.changes.journal.initialize()
+  await self.system.action(self.i,self.rid,'claim')
+  expected=[f'lv:ticket:case:{self.rid}:{a}' for a in ('resolve','close','priority')]
+  self.assertEqual([c.custom_id for group in message.components for c in group.children],expected)
+  self.assertEqual(self.system.store.get(self.rid)['assignee'],self.staff.id)
+  channel.send.assert_not_awaited()
+  journal=self.bot.changes.journal.rows()[0]
+  old_ids=[c['custom_id'] for row in json.loads(journal['before_json'])['components'] for c in row['components']]
+  new_ids=[c['custom_id'] for row in json.loads(journal['after_json'])['components'] for c in row['components']]
+  self.assertIn(f'lv:ticket:case:{self.rid}:claim',old_ids)
+  self.assertEqual(new_ids,expected)
+  restarted=TicketSystem(self.bot,self.system.store.path,10);restarted.store.initialize()
+  restarted.channel=AsyncMock(return_value=channel)
+  await restarted.refresh(before) # A stale unassigned row must not restore Reclamar.
+  self.assertEqual([c.custom_id for group in message.components for c in group.children],expected)
+
+ async def test_old_claim_button_cannot_reclaim_or_reset_an_assigned_resolved_ticket(self):
+  self.system.store.claim(self.rid,self.staff.id)
+  self.system.store.transition(self.rid,'resuelto',self.staff.id,'Ya se atendió')
+  before=self.system.store.get(self.rid);events=self.system.store.events(self.rid)
+  self.system.access=AsyncMock();self.system.refresh=AsyncMock();self.system.notify_player=AsyncMock()
+  for actor in (self.staff,FakeMember(6,roles=NORMAL_STAFF,guild=self.guild)):
+   self.i.user=actor
+   with self.assertRaisesRegex(ValueError,'ya está reclamado'):
+    await self.system.action(self.i,self.rid,'claim')
+  self.assertEqual(self.system.store.get(self.rid),before)
+  self.assertEqual(self.system.store.events(self.rid),events)
+  self.system.access.assert_not_awaited();self.system.refresh.assert_not_awaited();self.system.notify_player.assert_not_awaited()
+
+ async def test_case_picker_and_staff_command_hide_claim_using_current_assignment(self):
+  before=self.system.store.get(self.rid)
+  picker=CasePicker(self.system,[before],staff=True);picker._values=[str(self.rid)]
+  self.system.store.claim(self.rid,self.staff.id);self.i.user=self.staff
+  self.system.channel=AsyncMock();self.system.access=AsyncMock()
+  await picker.callback(self.i)
+  response=self.i.followup.send.call_args or self.i.response.send_message.call_args
+  expected=[f'lv:ticket:case:{self.rid}:{a}' for a in ('resolve','close','priority')]
+  self.assertEqual([c.custom_id for c in response.kwargs['view'].children],expected)
+  self.i.followup.send.reset_mock();self.i.response.send_message.reset_mock()
+  await self.system.group.get_command('acceso').callback(self.i,self.rid)
+  response=self.i.followup.send.call_args or self.i.response.send_message.call_args
+  self.assertEqual([c.custom_id for c in response.kwargs['view'].children],expected)
+
+ async def test_closed_and_reopened_controls_respect_responsible_and_unassigned_transfer(self):
+  self.system.store.claim(self.rid,self.staff.id)
+  self.system.store.transition(self.rid,'cerrado',self.staff.id,'Listo')
+  closed=TicketControls.from_row(self.system.store.get(self.rid))
+  self.assertEqual([c.item.label for c in closed.children],['Valorar','Eliminar ticket'])
+  self.system.store.transition(self.rid,'en_atencion',self.staff.id,'Reapertura')
+  reopened=TicketControls.from_row(self.system.store.get(self.rid))
+  self.assertEqual([c.item.label for c in reopened.children],['Resolver','Cerrar','Prioridad'])
+  self.system.store.transfer(self.rid,'soporte',self.staff.id,'Dejar para asignar')
+  unassigned=TicketControls.from_row(self.system.store.get(self.rid))
+  self.assertEqual([c.item.label for c in unassigned.children],['Reclamar','Resolver','Cerrar','Prioridad'])
+
  async def test_reserved_transfer_removes_former_participant_api_access(self):
   self.system.store.participant(self.rid,7,5)
   former=FakeMember(7,guild=self.guild)

@@ -100,13 +100,16 @@ class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticke
    await reply(i,'El caso se conserva, pero esa acción necesita revisión. Inténtalo de nuevo o avisa a administración.')
 
 class TicketControls(discord.ui.View):
- def __init__(self,rid,closed=False,deleted=False):
+ def __init__(self,rid,closed=False,deleted=False,*,assigned=False):
   super().__init__(timeout=None)
-  actions=[] if deleted else ['rate','delete'] if closed else ['claim','resolve','close','priority']
+  actions=[] if deleted else ['rate','delete'] if closed else ['resolve','close','priority'] if assigned else ['claim','resolve','close','priority']
   for n,action in enumerate(actions):
    item=TicketAction(rid,action)
    item.item.row=n//4
    self.add_item(item)
+ @classmethod
+ def from_row(cls,row):
+  return cls(row['id'],row['status']=='cerrado',bool(row.get('deleted_at')),assigned=bool(row.get('assignee')))
 
 class TextForm(discord.ui.Modal):
  async def on_error(self,i,error):
@@ -163,7 +166,7 @@ class CasePicker(discord.ui.Select):
     if self.staff:await self.system.access(i.user,row)
     row=self.system.store.get(row['id'])
    location='Canal eliminado · archivo disponible' if row.get('deleted_at') else f"<#{row['channel']}>"
-   await reply(i,f"Ticket #{row['id']} · {location}",embed=self.system.embed(row),view=TicketControls(row['id'],row['status']=='cerrado',bool(row.get('deleted_at'))))
+   await reply(i,f"Ticket #{row['id']} · {location}",embed=self.system.embed(row),view=TicketControls.from_row(row))
   except discord.NotFound:await reply(i,'El canal de ese ticket ya no existe. Abre de nuevo la lista.')
   except (ValueError,discord.HTTPException) as error:await reply(i,str(error) if isinstance(error,ValueError) else 'No se pudo abrir el caso.')
 

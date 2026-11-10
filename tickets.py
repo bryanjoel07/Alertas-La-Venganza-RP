@@ -181,20 +181,34 @@ class TicketSystem:
   embed.set_footer(text=f"Autor ID {row['owner']} · Usa los controles del ticket · No compartas contraseñas ni datos de tarjeta")
   return embed
  async def refresh(self,row):
+  row=self.store.get(row['id']) or row
   if row.get('deleted_at'):return
   channel=await self.channel(row)
   message=None
   if row['control_message']:
    with suppress(discord.NotFound):message=await channel.fetch_message(row['control_message'])
-  if message:await message.edit(embed=self.embed(row),view=TicketControls(row['id'],row['status']=='cerrado'))
+  if message:await self.edit_control(row,channel,message)
   else:
    async for old in channel.history(limit=100,oldest_first=True):
     if old.author.id==self.bot.user.id and any(e.title and e.title.startswith(f"{DEPARTMENTS[row['department']][0]} Ticket #{row['id']} ·") for e in old.embeds):
      message=old;break
-   if message:await message.edit(embed=self.embed(row),view=TicketControls(row['id'],row['status']=='cerrado'))
-   else:message=await channel.send(embed=self.embed(row),view=TicketControls(row['id'],row['status']=='cerrado'),allowed_mentions=discord.AllowedMentions.none())
+   if message:await self.edit_control(row,channel,message)
+   else:message=await channel.send(embed=self.embed(row),view=TicketControls.from_row(row),allowed_mentions=discord.AllowedMentions.none())
    await self.call('update',row['id'],control_message=message.id)
   await self.sync_control_messages(row,channel,message.id)
+ async def edit_control(self,row,channel,message):
+  async def edit():
+   return await message.edit(embed=self.embed(row),view=TicketControls.from_row(row))
+  ids=[getattr(c,'custom_id',None) for group in message.components for c in group.children]
+  if row.get('assignee') and row['status']!='cerrado' and f"lv:ticket:case:{row['id']}:claim" in ids:
+   async def snapshot():
+    fresh=await channel.fetch_message(message.id)
+    if fresh.author.id!=self.bot.user.id:raise ValueError('El mensaje de controles no pertenece a este bot.')
+    return dict(ticket=row['id'],channel=channel.id,message=fresh.id,content=fresh.content,
+      embeds=[e.to_dict() for e in fresh.embeds],components=[c.to_dict() for c in fresh.components])
+   return await self.bot.changes.tracked('TICKET_CONTROLS','Retirar Reclamar de un ticket que ya tiene responsable',edit,
+     request_id=f"{row['id']}:{message.id}:{time.time_ns()}",snapshot=snapshot)
+  return await edit()
  async def sync_control_messages(self,row,channel,control_id):
   prefix=f"lv:ticket:case:{row['id']}:"
   kept_closed_notice=False
@@ -732,6 +746,8 @@ class TicketSystem:
   await i.response.defer(ephemeral=True,thinking=True)
   if action=='claim':
    async with self.lock:
+    current=self.store.get(rid);self.authorize(i.user,current,staff=True)
+    if current.get('assignee'):raise ValueError('Este ticket ya está reclamado y tiene responsable.')
     self.store.claim(rid,i.user.id);await self.access(i.user,self.store.get(rid));await self.refresh(self.store.get(rid))
    await self.notify_player(rid,'claim')
    return await reply(i,f"Ticket #{rid} asignado a ti: <#{row['channel']}>.")
@@ -908,13 +924,13 @@ class TicketSystem:
       case_channel=await self.channel(current)
       control=await case_channel.fetch_message(self.store.get(current['id'])['control_message'])
       actions=[getattr(c,'custom_id',None) for r in control.components for c in r.children]
-      expected=[f"lv:ticket:case:{current['id']}:{a}" for a in ('claim','resolve','close','priority')]
-      if actions!=expected:raise RuntimeError('Discord no confirmó los cuatro botones del ticket abierto')
+      expected=[c.custom_id for c in TicketControls.from_row(current).children]
+      if actions!=expected:raise RuntimeError('Discord no confirmó los controles correspondientes al responsable del ticket')
       active_updated+=1
       log.info('TICKETS active_controls_verified id=%s channel=%s actions=%s assigned=%s claim_reminders=%s',current['id'],case_channel.id,actions,bool(current['assignee']),claim_reminder_eligible(current))
      except discord.NotFound:log.warning('TICKETS missing_active_channel id=%s',current['id'])
   log.info('TICKETS controls_verified active_updated=%s closed_updated=%s category=%s',active_updated,upgraded,closed.id)
-  log.info('TICKETS controls_layout_verified open=%s closed=%s rating_owner_only=True',[c.item.label for c in TicketControls(0).children],[c.item.label for c in TicketControls(0,True).children])
+  log.info('TICKETS controls_layout_verified unassigned=%s assigned=%s closed=%s rating_owner_only=True',[c.item.label for c in TicketControls(0).children],[c.item.label for c in TicketControls(0,assigned=True).children],[c.item.label for c in TicketControls(0,True).children])
   rating=RatingForm(self,0)
   rating_payload=rating.to_dict()['components']
   if len(rating_payload)!=2 or len(rating.stars.options)!=5 or rating.comment.required:raise RuntimeError('No se confirmó el formulario de estrellas')
@@ -1173,10 +1189,11 @@ class TicketSystem:
   @self.group.command(name='acceso',description='Abrir un ticket como revisor autorizado')
   async def access(i:discord.Interaction,numero:int):
    await i.response.defer(ephemeral=True)
-   row=self.current(i,numero)
-   async with self.lock:await self.access(i.user,row)
+   async with self.lock:
+    row=self.current(i,numero);await self.access(i.user,row)
+    row=self.store.get(row['id'])
    location='Canal eliminado · archivo disponible' if row.get('deleted_at') else f"<#{row['channel']}>"
-   await reply(i,f"Caso #{numero}: {location}",embed=self.embed(row),view=TicketControls(numero,row['status']=='cerrado',bool(row.get('deleted_at'))))
+   await reply(i,f"Caso #{numero}: {location}",embed=self.embed(row),view=TicketControls.from_row(row))
   @self.group.command(name='nota',description='Guardar una nota interna que no verá el jugador')
   async def note(i:discord.Interaction,texto:app_commands.Range[str,1,1500],numero:int=None):
    row=self.current(i,numero);self.authorize(i.user,row,True)

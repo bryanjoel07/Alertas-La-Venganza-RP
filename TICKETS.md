@@ -20,7 +20,7 @@ Se permite un caso activo por usuario y motivo, hasta tres abiertos y una apertu
 
 ## Gestión
 
-Botones del ticket abierto: Reclamar, Resolver, Cerrar y Prioridad. Tras cerrar: Valorar (solo para el autor) y Eliminar ticket (solo staff autorizado). Los mensajes antiguos se actualizan y se retiran sus botones sobrantes. El resto de herramientas del staff se usan por comandos.
+Botones del ticket abierto sin responsable: Reclamar, Resolver, Cerrar y Prioridad. Al reclamarlo desaparece Reclamar y quedan Resolver, Cerrar y Prioridad, tanto en el canal como en las vistas de Mis tickets y del staff. Los casos ya asignados se actualizan al iniciar el bot; la retirada del botón conserva una copia privada del mensaje y sus controles anteriores en el historial de cambios. Una vista antigua no puede volver a reclamar un caso asignado ni cambiar su responsable. Reabrir un caso con responsable conserva los tres botones; si se queda sin responsable, vuelve a aparecer Reclamar. Tras cerrar: Valorar (solo para el autor) y Eliminar ticket (solo staff autorizado). Los mensajes antiguos se actualizan y se retiran sus botones sobrantes. El resto de herramientas del staff se usan por comandos.
 
 Valorar abre un formulario con una selección de 1 a 5 estrellas y un comentario opcional. No hace falta escribir una puntuación ni usar un formato especial. Solo el jugador que abrió el ticket puede enviar una opinión, una sola vez y mientras el ticket siga cerrado y no eliminado. La autorización se comprueba de nuevo al enviar el formulario.
 
