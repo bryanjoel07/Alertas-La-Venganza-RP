@@ -82,10 +82,28 @@ class BugStore:
             if not row or row['owner']!=owner:raise ValueError('Ese reporte no es tuyo.')
             if row['thread']:return
             if row['status']=='publicando':raise ValueError('Ese reporte ya se está publicando. Lo recuperaré si Discord tarda.')
-            if row['step']!=2:raise ValueError('Completa los dos pasos primero.')
+            if row['step']!=2:raise ValueError('Completa el formulario primero.')
             data=json.loads(row['data'])
             if not data.get('clip') and not row['video']:raise ValueError('Falta el clip del error.')
             db.execute("UPDATE lv_bugs SET status='publicando' WHERE id=?",(rid,))
+    def save_full(self,rid,owner,values,revision,filename=None,video=None):
+        limits={'player_id':30,'title':100,'details':2500}
+        for key,limit in limits.items():
+            if not values.get(key,'').strip() or len(values[key])>limit:raise ValueError('Completa el ID, el título y los detalles del problema.')
+        clip=clip_url(values.get('clip',''))
+        with self.db() as db:
+            row=db.execute('SELECT * FROM lv_bugs WHERE id=?',(rid,)).fetchone()
+            if not row or row['owner']!=owner or row['status']!='borrador' or row['revision']!=revision:
+                raise ValueError('El formulario cambió. Abre tu borrador otra vez.')
+            if not clip and not video and not row['video']:raise ValueError('El clip es obligatorio, bro. Adjunta el video o pega su enlace; el reporte no se envió.')
+            if video is not None:
+                if not video or len(video)>25*1024*1024 or not filename:raise ValueError('Adjunta un video válido de hasta 25 MB.')
+                if db.execute('SELECT COALESCE(SUM(length(video)),0) FROM lv_bugs WHERE id!=?',(rid,)).fetchone()[0]+len(video)>200*1024*1024:
+                    raise ValueError('No queda espacio para más archivos ahora. Pega el enlace del clip.')
+            data=json.loads(row['data']);data.update({key:values[key].strip() for key in limits});data['clip']=clip
+            db.execute('''UPDATE lv_bugs SET data=?,step=2,updated=?,revision=revision+1,
+                filename=COALESCE(?,filename),video=COALESCE(?,video),sha256=COALESCE(?,sha256) WHERE id=?''',
+                (json.dumps(data,ensure_ascii=False),int(time.time()),filename,video,hashlib.sha256(video).hexdigest() if video else None,rid))
     def published(self,rid,thread,message):
         with self.db() as db:
             db.execute("UPDATE lv_bugs SET thread=?,message=?,status='pendiente',updated=? WHERE id=?",(thread,message,int(time.time()),rid))

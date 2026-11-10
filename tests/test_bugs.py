@@ -53,6 +53,23 @@ class StoreTests(unittest.TestCase):
     def test_clip_url_rejects_credentials_and_non_https(self):
         for value in ('http://example.com/a','https://user:secret@example.com/a','no es enlace'):
             with self.assertRaises(ValueError):clip_url(value)
+    def test_full_form_cannot_be_saved_or_published_without_any_clip(self):
+        rid=self.store.begin(1)
+        values=dict(player_id='42',title='Error',details='Dónde pasa y cómo repetirlo',clip='')
+        with self.assertRaisesRegex(ValueError,'clip es obligatorio'):self.store.save_full(rid,1,values,0)
+        self.assertEqual(self.store.get(rid)['step'],0)
+        with self.assertRaises(ValueError):self.store.reserve(rid,1)
+    def test_full_form_accepts_link_or_file_and_preserves_both_across_restart(self):
+        rid=self.store.begin(1)
+        values=dict(player_id='42',title='Error',details='Dónde pasa y cómo repetirlo',clip='https://example.com/clip')
+        self.store.save_full(rid,1,values,0)
+        self.assertEqual(self.store.get(rid)['step'],2)
+        values['clip']=''
+        self.store.save_full(rid,1,values,1,'video.mp4',b'video')
+        fresh=BugStore(self.store.path)
+        self.assertEqual(fresh.get(rid)['video'],b'video')
+        fresh.reserve(rid,1)
+        self.assertEqual(fresh.get(rid)['status'],'publicando')
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -74,19 +91,39 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):await self.system.member(self.i,admin=True)
         self.forum.permissions_for.return_value.view_channel=False
         with self.assertRaises(ValueError):await self.system.member(self.i)
-    async def test_modal_has_native_file_upload_and_resumes_stage_two(self):
+    async def test_one_modal_has_details_and_native_file_upload_even_for_old_drafts(self):
         rid=self.system.store.begin(1);row=self.system.store.get(rid)
         first=BugForm(self.system,row);self.assertEqual(len(first.children),5)
         self.system.store.save(rid,1,1,dict(player_id='1',title='Error',description='Problema',steps='Pasos',system='Inventario'),0)
         second=BugForm(self.system,self.system.store.get(rid));payload=second.to_dict()
-        self.assertEqual(second.step,2);self.assertEqual(len(payload['components']),3)
-        self.assertEqual(payload['components'][2]['component']['type'],19)
+        self.assertEqual(second.title,'Reportar un error');self.assertEqual(len(payload['components']),5)
+        self.assertEqual(payload['components'][3]['component']['type'],19)
         self.assertFalse(second.file.required)
+        self.assertIn('Qué pasa: Problema',second.inputs['details'].default)
+        self.assertIn('Cómo pasó: Pasos',second.inputs['details'].default)
     async def test_report_embed_never_mentions_everyone_or_loses_credit(self):
         rid=self.system.store.begin(1);self.system.store.save(rid,1,1,dict(player_id='42',title='Error',description='Problema',steps='Pasos',system='Inventario'),0)
         embed=self.system.embed(self.system.store.get(rid))
         self.assertIn('<@1>',embed.description)
         self.assertNotIn('@everyone',json.dumps(embed.to_dict()))
+    async def test_all_fields_and_file_are_submitted_in_one_modal(self):
+        rid=self.system.store.begin(1);form=BugForm(self.system,self.system.store.get(rid))
+        for key,value in dict(player_id='42',title='Inventario',details='No abre al pulsar F2').items():form.inputs[key]._value=value
+        form.clip._value=''
+        form.file._values=[SimpleNamespace(filename='clip.mp4',size=10,read=AsyncMock(return_value=b'clip-video'))]
+        self.i.response=SimpleNamespace(defer=AsyncMock(),is_done=lambda:True)
+        self.i.followup=SimpleNamespace(send=AsyncMock())
+        await form.on_submit(self.i)
+        saved=self.system.store.get(rid)
+        self.assertEqual(saved['step'],2);self.assertEqual(saved['video'],b'clip-video')
+        self.assertEqual(json.loads(saved['data'])['details'],'No abre al pulsar F2')
+        self.forum.create_thread.assert_not_called()
+        self.assertIn('Revisa tu reporte',self.i.followup.send.call_args.args[0])
+    async def test_publication_itself_refuses_a_forged_completed_draft_without_clip(self):
+        rid=self.system.store.begin(1)
+        with self.system.store.db() as db:db.execute("UPDATE lv_bugs SET status='publicando',step=2 WHERE id=?",(rid,))
+        with self.assertRaisesRegex(ValueError,'clip es obligatorio'):await self.system.create(rid)
+        self.forum.create_thread.assert_not_called()
     async def test_video_is_stored_before_discord_and_double_publish_does_not_create_two_threads(self):
         rid=self.system.store.begin(1)
         self.system.store.save(rid,1,1,dict(player_id='42',title='Error',description='Problema',steps='Pasos',system='Inventario'),0)

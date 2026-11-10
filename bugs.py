@@ -52,8 +52,12 @@ class BugSystem:
     def embed(self,row):
         data=json.loads(row['data']);embed=discord.Embed(title=f"🐛 Reporte #{row['id']} · {data.get('title','Error')}"[:256],color=RED)
         embed.description=f"Publicado por <@{row['owner']}>\n**Estado:** {STATES.get(row['status'],row['status'])}\n**Responsable:** "+(f"<@{row['assignee']}>" if row['assignee'] else 'Pendiente de atención')
-        for label,key in [('ID en el servidor','player_id'),('¿Qué pasa?','description'),('¿Cómo ocurrió?','steps'),('Sistema afectado','system'),('Frecuencia','frequency')]:
+        fields=[('ID en el servidor','player_id')] if data.get('details') else [('ID en el servidor','player_id'),('¿Qué pasa?','description'),('¿Cómo ocurrió?','steps'),('Sistema afectado','system'),('Frecuencia','frequency')]
+        for label,key in fields:
             embed.add_field(name=label,value=discord.utils.escape_markdown(data.get(key,'Pendiente'))[:1024],inline=False)
+        if data.get('details'):
+            text=discord.utils.escape_markdown(data['details'])
+            for start in range(0,len(text),1024):embed.add_field(name='Detalles del problema' if start==0 else 'Detalles (continúa)',value=text[start:start+1024],inline=False)
         embed.add_field(name='🎥 Clip',value=data.get('clip') or ('Video adjunto al reporte' if row.get('video') else 'Falta adjuntar el clip'),inline=False)
         embed.set_footer(text=f"lvbug:{row['id']} · La Venganza RP")
         return embed
@@ -72,7 +76,10 @@ class BugSystem:
             message=await guide.fetch_message(int(await self.call('config','guide_buttons')))
             if message.author.id!=self.bot.user.id or self.entry_controls(message)!=['lvbug:new:0','lvbug:mine:0']:
                 raise RuntimeError('No se confirmó el único panel de Reportes.')
-            log.info('BUGS ready forum=%s guide=%s entry_message=%s single_entry=True original_template_preserved=True clip_upload=True admin_controls=True',FORUM,GUIDE,message.id)
+            form=BugForm(self,dict(id=0,revision=0,data='{}',video=None))
+            components=form.to_dict()['components']
+            if len(components)!=5 or components[3]['component']['type']!=19:raise RuntimeError('El formulario único no incluye el archivo adjunto.')
+            log.info('BUGS ready forum=%s guide=%s entry_message=%s single_entry=True single_form=True fields=5 clip_required=True original_template_preserved=True clip_upload=True admin_controls=True',FORUM,GUIDE,message.id)
     @staticmethod
     def entry_controls(message):
         return [getattr(c,'custom_id',None) for row in message.components for c in row.children]
@@ -163,6 +170,8 @@ class BugSystem:
     async def create(self,rid,recover=False):
         row=await self.call('get',rid);forum=await self.forum();thread=None
         if row['thread']:return
+        if row['status']!='publicando' or (not json.loads(row['data']).get('clip') and not row['video']):
+            raise ValueError('El clip es obligatorio. No se puede publicar un reporte sin él.')
         if recover:
             for candidate in (await self.threads(forum)).values():
                 if candidate.owner_id!=self.bot.user.id or not candidate.name.startswith(f"🐛 #{rid:04d} · "):continue

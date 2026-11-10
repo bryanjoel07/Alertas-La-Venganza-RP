@@ -14,9 +14,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bug-reports-single-entry-v2'
-SUMMARY='Corrige las entradas repetidas de Reportes. Conserva un único panel activo dentro de la plantilla oficial fijada y deja de crear paneles separados. La antigua publicación del bot 1569698524654993449 se convierte en enlace a la plantilla y se archiva conservando toda su conversación. Solo se retiran mensajes de botones duplicados escritos por este bot, sin archivos, con copia previa. Los reportes reales y sus videos no se modifican.'
-RESTORE=('Para revertir el código desplegar c0a5c7d05df44372c605cd61c7b0f3ecbed7c02e conservando SQLite y /data. Para reactivar además el antiguo panel, restaurar su mensaje, archived y locked desde el before de BUG_PORTAL_RETIRE:1569698524654993449 y vaciar lv_bug_config.retired_portal. Eso reintroduce las dos entradas. Los mensajes del bot retirados de la guía pueden recrearse desde BUG_GUIDE_DUPLICATES, con IDs nuevos. No borrar hilos ni restaurar un SQLite antiguo; conservar todos los reportes, videos y la plantilla original.')
+RELEASE='bug-reports-single-form-v3'
+SUMMARY='Reúne el reporte y el archivo adjunto en un solo formulario: ID, título, detalles, video y enlace alternativo. El clip es obligatorio tanto al guardar el formulario como al confirmar y publicar. Sin archivo ni enlace no se crea la publicación. Los borradores anteriores se abren en el formulario único conservando sus datos y videos. Sigue existiendo un solo panel en la plantilla fijada.'
+RESTORE=('Para volver al formulario de dos pasos desplegar a68040695693f861001e32c209a701f1323cf7d6 conservando SQLite y /data. Los reportes nuevos guardan details; para retomar borradores con la interfaz antigua copiar ese campo a description y completar los campos que falten sin borrar el video ni su hash. No restaurar un SQLite antiguo, reactivar el panel separado ni borrar reportes o archivos.')
 
 
 class Journal:

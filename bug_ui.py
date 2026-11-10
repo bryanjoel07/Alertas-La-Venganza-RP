@@ -31,41 +31,35 @@ class BugForm(discord.ui.Modal):
     def __init__(self,system,row):
         self.system,self.rid,self.revision=system,row['id'],row['revision']
         self.upload_limit=min(25*1024*1024,getattr(system.bot.get_guild(system.guild_id),'filesize_limit',25*1024*1024))
-        self.step=1 if row['step']!=1 else 2
-        super().__init__(title=f'Reportar un error · {self.step}/2',timeout=900)
+        super().__init__(title='Reportar un error',timeout=900)
         data=json.loads(row['data']);self.inputs={}
-        if self.step==1:
-            for key,label,limit,paragraph in [('player_id','Tu ID dentro del servidor',30,False),('title','¿Qué error encontraste?',100,False),
-                ('description','¿Qué está pasando?',1200,True),('steps','¿Qué estabas haciendo cuando pasó?',1000,True),('system','¿Dónde pasa? Inventario, carros, trabajo…',100,False)]:
-                item=discord.ui.TextInput(label=label,max_length=limit,default=data.get(key),style=discord.TextStyle.paragraph if paragraph else discord.TextStyle.short)
-                self.inputs[key]=item;self.add_item(item)
-        else:
-            self.frequency=discord.ui.Select(options=[discord.SelectOption(label=v,value=v) for v in ('Siempre','A veces','Una sola vez')])
-            self.clip=discord.ui.TextInput(required=False,max_length=1000,placeholder='https://…',default=data.get('clip'))
-            self.file=discord.ui.FileUpload(custom_id='clip_file',required=False,min_values=0,max_values=1)
-            self.add_item(discord.ui.Label(text='¿Cada cuánto pasa?',component=self.frequency))
-            self.add_item(discord.ui.Label(text='Enlace del clip (si lo tienes)',component=self.clip))
-            self.add_item(discord.ui.Label(text='O adjunta el video aquí',description=f'Video de hasta {self.upload_limit//(1024*1024)} MB. Hace falta un archivo o un enlace.',component=self.file))
+        details=data.get('details') or '\n\n'.join(f'{label}: {data[key]}' for key,label in
+            [('description','Qué pasa'),('steps','Cómo pasó'),('system','Dónde pasa'),('frequency','Cada cuánto pasa')] if data.get(key))
+        for key,label,limit,paragraph in [('player_id','Tu ID dentro del servidor',30,False),('title','¿Qué error encontraste?',100,False),('details','Cuéntanos qué pasó',2500,True)]:
+            item=discord.ui.TextInput(custom_id=key,max_length=limit,default=(details if key=='details' else data.get(key)) or None,
+                style=discord.TextStyle.paragraph if paragraph else discord.TextStyle.short)
+            self.inputs[key]=item
+            self.add_item(discord.ui.Label(text=label,description='Explica dónde pasa, cómo te pasó y cada cuánto ocurre.' if paragraph else None,component=item))
+        self.file=discord.ui.FileUpload(custom_id='clip_file',required=False,min_values=0,max_values=1)
+        self.clip=discord.ui.TextInput(custom_id='clip_link',required=False,max_length=1000,placeholder='https://…',default=data.get('clip') or None)
+        self.add_item(discord.ui.Label(text='Clip obligatorio · Adjunta el video aquí',description=('Ya tienes un video guardado; puedes reemplazarlo.' if row.get('video') else f'Hasta {self.upload_limit//(1024*1024)} MB. Adjunta un video o pega un enlace abajo.'),component=self.file))
+        self.add_item(discord.ui.Label(text='Enlace del clip si no adjuntas el video',description='Sin video ni enlace no se puede enviar el reporte.',component=self.clip))
     async def on_submit(self,i):
         await i.response.defer(ephemeral=True,thinking=True)
         try:
             await self.system.member(i)
-            if self.step==1:
-                from feedback import clean
-                await self.system.call('save',self.rid,i.user.id,1,{k:clean(v.value) for k,v in self.inputs.items()},self.revision)
-                await reply(i,'Guardé los datos del error, bro. Falta el clip y revisar antes de publicarlo.',view=buttons('continue',rid=self.rid))
-            else:
-                filename=video=None
-                if self.file.values:
-                    attachment=self.file.values[0]
-                    filename=Path(attachment.filename).name[:100]
-                    if attachment.size>self.upload_limit or Path(filename).suffix.lower() not in ('.mp4','.webm','.mov','.m4v'):
-                        raise ValueError(f'Adjunta un video MP4, WEBM o MOV de hasta {self.upload_limit//(1024*1024)} MB. Si pesa más, pega su enlace.')
-                    video=await attachment.read()
-                values=dict(frequency=self.frequency.values[0] if self.frequency.values else '',clip=self.clip.value)
-                await self.system.call('save',self.rid,i.user.id,2,values,self.revision,filename,video)
-                row=await self.system.call('get',self.rid)
-                await reply(i,'**Revisa tu reporte. Se publicará en el foro para que lo vea la comunidad.**\nEvita contraseñas y datos personales.',embed=self.system.embed(row),view=buttons('publish','continue',rid=self.rid))
+            filename=video=None
+            if self.file.values:
+                attachment=self.file.values[0]
+                filename=Path(attachment.filename).name[:100]
+                if attachment.size>self.upload_limit or Path(filename).suffix.lower() not in ('.mp4','.webm','.mov','.m4v'):
+                    raise ValueError(f'Adjunta un video MP4, WEBM o MOV de hasta {self.upload_limit//(1024*1024)} MB. Si pesa más, pega su enlace.')
+                video=await attachment.read()
+            from feedback import clean
+            values={key:clean(item.value) for key,item in self.inputs.items()};values['clip']=self.clip.value
+            await self.system.call('save_full',self.rid,i.user.id,values,self.revision,filename,video)
+            row=await self.system.call('get',self.rid)
+            await reply(i,'**Revisa tu reporte. Se publicará en el foro para que lo vea la comunidad.**\nEvita contraseñas y datos personales.',embed=self.system.embed(row),view=buttons('publish','continue',rid=self.rid))
         except Exception as exc:await failed(i,exc)
     async def on_error(self,i,error):await failed(i,error)
 
