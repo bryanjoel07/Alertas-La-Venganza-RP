@@ -46,6 +46,7 @@ from channel_cleanup import clear_exclusive_log
 from citizen_cleanup import keep_citizen_roles
 from feedback import FeedbackSystem
 from channel_design import inspect_channel_design
+from bugs import BugSystem
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -232,6 +233,8 @@ class LaVenganzaBot(discord.Client):
         self.tree.add_command(self.tickets.group, guild=GUILD)
         self.feedback = FeedbackSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.feedback.group, guild=GUILD)
+        self.bugs = BugSystem(self, DB_PATH, GUILD_ID)
+        self.tree.add_command(self.bugs.group, guild=GUILD)
         self.photos = PhotoSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.photos.group, guild=GUILD)
         self.settings_panel=SettingsPanel(self,DB_PATH,GUILD_ID,CONNECT_URL)
@@ -267,6 +270,7 @@ class LaVenganzaBot(discord.Client):
         await self.economy.start()
         await self.tickets.start()
         await self.feedback.start()
+        await self.bugs.start()
         await self.photos.start()
         await self.recruitment.start()
         await self.minigames.start()
@@ -291,7 +295,7 @@ class LaVenganzaBot(discord.Client):
         self.obscenity_filter.install.cancel()
         self.streamer_panel.install.cancel()
         self.live_alerts.poll.cancel()
-        tasks = [task for task in (self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -1481,7 +1485,32 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
 
 
 @client.event
+async def on_thread_update(before, after):
+    try:
+        await client.bugs.thread_update(after)
+    except Exception:
+        log.exception('No se pudo sincronizar una etiqueta de Reportes')
+
+
+@client.event
+async def on_thread_create(thread):
+    if thread.parent_id != 1556488595131466000:
+        return
+    try:
+        await asyncio.sleep(1)
+        await client.bugs.observe(await thread.fetch_message(thread.id))
+    except discord.NotFound:
+        pass
+    except Exception:
+        log.exception('No se pudo registrar la publicación nueva de Reportes')
+
+
+@client.event
 async def on_message(message):
+    try:
+        await client.bugs.observe(message)
+    except Exception:
+        log.exception('No se pudo registrar un reporte abierto en el foro')
     try:
         await client.photos.observe(message)
     except Exception:
@@ -1550,6 +1579,10 @@ async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
     log.info("SERVER_UP banner ready file=%s bytes=%s", SERVER_UP_BANNER.name, SERVER_UP_BANNER.stat().st_size)
+    try:
+        await client.bugs.ready()
+    except Exception:
+        log.exception('No se pudo preparar el sistema de reportes de errores')
     try:
         await inspect_channel_design(client, GUILD_ID)
     except Exception:
