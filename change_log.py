@@ -14,11 +14,9 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='staff-feedback-v1'
-SUMMARY='Sistema de Feedback del staff en 1539014594348064939: estrellas, comentario opcional, elección pública o privada, atención por ticket y fuera de tickets, buscador completo del staff, resultados e historial personal. Los tickets cerrados y eliminados pueden valorarse una sola vez; se conserva la valoración en el sistema de tickets. Los reportes contra staff y las opiniones antiguas siguen privados. Incluye respuesta del responsable, retirada con registro y recuperación de publicaciones sin duplicarlas. No modifica canales ni permisos.'
-RESTORE=('Para revertir el código, desplegar 0e1bcbbea6d911fb09a8171fde5697f93bb83d97 conservando SQLite y /data. No restaurar una base antigua ni borrar lv_feedback, sus eventos, las valoraciones de lv_tickets o el historial del canal. '
-         'Antes de retirar el sistema, quitar únicamente los componentes interactivos de los mensajes de este bot identificados por lv_feedback_config.panel_message y lv_feedback.message; conservar las opiniones y los mensajes anteriores del canal. Las copias de FEEDBACK_PANEL contienen el panel previo para restaurar su presentación. '
-         'Las opiniones privadas importadas no autorizan publicación. No cambiar permisos, categorías o roles ni reactivar solicitudes de limpieza o avisos consumidos.')
+RELEASE='reportes-design-readonly-v1'
+SUMMARY='Inspección puntual del diseño de 1556488595131466000 solicitada por el dueño: instrucciones, etiquetas, vista y primeras publicaciones. Solo peticiones GET a Discord; no modifica el foro, sus publicaciones, permisos ni ningún sistema existente.'
+RESTORE=('Vaciar CHANNEL_DESIGN_REQUEST_ID desactiva la lectura puntual. Para retirar este código, desplegar a40e90eab2bf17a8dd37b3f371503f8bd5b11812 conservando SQLite y /data. La inspección no modifica Discord ni requiere restaurar datos. Conservar Feedback, tickets y el resto de sistemas; no reactivar solicitudes consumidas.')
 
 
 class Journal:

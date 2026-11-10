@@ -45,6 +45,7 @@ from photos import PhotoSystem
 from channel_cleanup import clear_exclusive_log
 from citizen_cleanup import keep_citizen_roles
 from feedback import FeedbackSystem
+from channel_design import inspect_channel_design
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -1549,6 +1550,10 @@ async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
     log.info("SERVER_UP banner ready file=%s bytes=%s", SERVER_UP_BANNER.name, SERVER_UP_BANNER.stat().st_size)
+    try:
+        await inspect_channel_design(client, GUILD_ID)
+    except Exception:
+        log.exception('No se pudo leer el diseño del foro de referencia')
     try:
         await client.feedback.ready()
     except Exception:
