@@ -583,3 +583,41 @@ class DeletionResponsivenessTests(unittest.IsolatedAsyncioTestCase):
   self.bot.backups._copy.return_value={'last_success':manifest}
   self.assertTrue(await self.system.delete_ticket(self.staff,self.rid))
   self.bot.backups.execute.assert_not_awaited();channel.delete.assert_awaited_once()
+
+class PreparedDeletionTests(unittest.IsolatedAsyncioTestCase):
+ asyncSetUp=LifecycleTests.asyncSetUp
+ prepare_deletion=LifecycleTests.prepare_deletion
+ async def test_close_prepares_copy_after_the_final_closure_message(self):
+  order=[];channel=MagicMock();channel.send=AsyncMock(side_effect=lambda *a,**k:order.append('notice'))
+  self.system.channel=AsyncMock(return_value=channel);self.system.member=AsyncMock(return_value=None)
+  self.system.apply_permissions=AsyncMock();self.system.ensure_category=AsyncMock();self.system.move=AsyncMock();self.system.refresh=AsyncMock()
+  self.system.sync_control_messages=AsyncMock(side_effect=lambda *a:order.append('controls'))
+  async def archive(row):
+   order.append('archive');self.system.store.update(self.rid,transcript='Final conversation',archive_state='completo');return 'completo'
+  self.system.archive=AsyncMock(side_effect=archive)
+  self.system.deletion_backup=AsyncMock(side_effect=lambda *a:order.append('backup'))
+  await self.system.close(self.system.store.get(self.rid),5,'Resuelto')
+  self.assertEqual(order,['archive','notice','controls','archive','backup'])
+  self.assertEqual(self.system.deletion_backup.call_args.args[0]['transcript'],'Final conversation')
+ async def test_close_button_does_not_hold_global_lock_while_preparing_copy(self):
+  self.i.response.send_modal=AsyncMock()
+  async def close(*args):self.assertFalse(self.system.lock.locked())
+  self.system.close=AsyncMock(side_effect=close)
+  await self.system.action(self.i,self.rid,'close')
+  form=self.i.response.send_modal.call_args.args[0]
+  await form.callback(self.i,'Ya está resuelto')
+  self.system.close.assert_awaited_once()
+ async def test_prepared_snapshot_is_reused_when_deletion_is_confirmed(self):
+  from backup import snapshot
+  channel=await self.prepare_deletion()
+  async def backup():
+   manifest=snapshot(self.system.store.path,self.system.store.path.parent/'prepared.sqlite')
+   manifest.update(drive_state='verified',restore_state='verified');return manifest
+  self.bot.backups.execute.side_effect=backup
+  self.assertTrue(await self.system.prepare_deletion_backup(self.rid))
+  self.assertTrue(await self.system.delete_ticket(self.staff,self.rid))
+  self.bot.backups.execute.assert_awaited_once();channel.delete.assert_awaited_once()
+ async def test_partial_archive_cannot_be_prepared(self):
+  await self.prepare_deletion();self.system.archive.return_value='parcial'
+  self.assertFalse(await self.system.prepare_deletion_backup(self.rid))
+  self.bot.backups.execute.assert_not_awaited()

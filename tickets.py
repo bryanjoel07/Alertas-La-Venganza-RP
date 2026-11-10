@@ -132,6 +132,7 @@ class TicketSystem:
   self.lock=asyncio.Lock();self.ready_lock=asyncio.Lock();self.file_lock=asyncio.Semaphore(2)
   self.task=None;self.prepared=False
   self.case_locks={};self.deletion_backup_lock=asyncio.Lock();self.last_deletion_backup=None
+  self.category_lock=asyncio.Lock()
   self.group=app_commands.Group(name='ticket',description='Atención, gestión y seguimiento de tickets')
   self.register()
  async def call(self,name,*args,**kwargs):return await asyncio.to_thread(getattr(self.store,name),*args,**kwargs)
@@ -207,6 +208,8 @@ class TicketSystem:
    else:changes['view']=None
    if changes:await previous.edit(**changes)
  async def ensure_category(self,guild,closed=False):
+  async with self.category_lock:return await self._ensure_category(guild,closed)
+ async def _ensure_category(self,guild,closed=False):
   key='closed_category' if closed else 'active_category'
   saved=self.store.config(key)
   channels=await fetch_channels(guild)
@@ -538,6 +541,21 @@ class TicketSystem:
   owner=await self.member(channel.guild,row['owner'])
   if owner and not owner.bot:
    with suppress(discord.HTTPException):await owner.send(f"Cerramos tu ticket #{row['id']} de La Venganza RP.\nSolución: {discord.utils.escape_markdown(reason)[:1000]}\nPuedes dejar tu opinión con el botón ⭐ Valorar dentro del ticket.\n{ticket_link(self.guild_id,row)}",allowed_mentions=discord.AllowedMentions.none(),suppress_embeds=True)
+  try:await self.prepare_deletion_backup(row['id'])
+  except Exception:log.exception('TICKETS close_backup_pending id=%s; deletion_will_verify_again',row['id'])
+ async def prepare_deletion_backup(self,rid):
+  started=time.monotonic();row=self.store.get(rid)
+  if not row or row.get('deleted_at') or row['status']!='cerrado':return False
+  # Include the final closure notice and controls in the reusable copy.
+  state=await self.archive(row);row=self.store.get(rid)
+  if state!='completo' or row['status']!='cerrado' or not row['transcript']:return False
+  proofs=await self.call('files',rid)
+  for proof in proofs:
+   data=await self.call('blob',rid,proof['attachment'])
+   if data is None or hashlib.sha256(data).hexdigest()!=proof['sha256']:return False
+  await self.deletion_backup(row,proofs)
+  log.info('TICKETS deletion_prepared_on_close id=%s verified=True seconds=%.2f',rid,time.monotonic()-started)
+  return True
  async def deletion_backup(self,row,proofs):
   # Queue only the copy operation; ticket creation and other cases keep running.
   async with self.deletion_backup_lock:
@@ -662,11 +680,14 @@ class TicketSystem:
   if action=='close' and not(can_staff(i.user,row,self.store) or i.user.id==row['owner']):raise ValueError('Solo el autor o el staff pueden cerrar.')
   if action in ('close','resolve','wait','note','reopen'):
    async def submit(click,value):
+    if action in ('close','reopen'):
+     current=self.store.get(rid);self.authorize(click.user,current)
+     if action=='reopen':return await self.reopen(click,current,value)
+     await self.close(current,click.user.id,value)
+     return await reply(click,'Ticket cerrado y archivado; conserva su canal e historial.')
     async with self.lock:
      current=self.store.get(rid)
      self.authorize(click.user,current,staff=action in ('resolve','wait','note'))
-     if action=='close':await self.close(current,click.user.id,value);return await reply(click,'Ticket cerrado y archivado; conserva su canal e historial.')
-     if action=='reopen':return await self.reopen(click,current,value)
      if action=='note':
       await self.call('note',rid,click.user.id,value);return await reply(click,'Nota interna guardada. El jugador no la verá en su transcripción.')
      state='resuelto' if action=='resolve' else 'esperando_jugador'
@@ -982,6 +1003,7 @@ class TicketSystem:
    except discord.NotFound:log.warning('TICKETS missing_followup_channel ticket=%s',row['id'])
    except Exception:log.exception('TICKETS followup_error ticket=%s; continuing other tickets',row['id'])
  async def maintain_ticket(self,rid,now):
+  closing=None
   async with self.lock:
    row=self.store.get(rid)
    if not row or row['status'] in ('creando','fallido','cerrado') or row.get('deleted_at'):return
@@ -994,13 +1016,14 @@ class TicketSystem:
      # Writing warning_at must not reset the waiting period; closing uses warning timestamp directly.
      await self.call('update',row['id'],warning_at=now)
     elif row['warning_at'] and now-row['warning_at']>=int(self.store.config('close_warning_hours'))*3600:
-     await self.close(row,self.bot.user.id,'Archivado por falta de respuesta después del aviso previo. Puede reabrirse durante siete días.')
+     closing=row
    elif row['status'] in ('nuevo','en_atencion') and now-max(row['created'],row['last_staff'] or 0,row['last_user'])>=int(self.store.config('remind_hours'))*3600 and now-(row['reminded_at'] or 0)>=int(self.store.config('remind_hours'))*3600:
     channel=await self.channel(row)
     target=f"<@{row['assignee']}> " if row['assignee'] else ''
     await channel.send('🔔 '+target+'este caso sigue pendiente de atención. Staff puede reclamarlo o actualizar su estado.',
         allowed_mentions=discord.AllowedMentions(users=[discord.Object(id=row['assignee'])] if row['assignee'] else []))
     await self.call('update',row['id'],reminded_at=now)
+  if closing:await self.close(closing,self.bot.user.id,'Archivado por falta de respuesta después del aviso previo. Puede reabrirse durante siete días.')
  async def loop(self):
   await self.bot.wait_until_ready()
   while not self.bot.is_closed():
@@ -1158,11 +1181,13 @@ class TicketSystem:
   @app_commands.choices(estado=[app_commands.Choice(name=label,value=key) for key,label in STATE_LABELS.items() if key in STATES])
   async def state(i:discord.Interaction,estado:str,motivo:app_commands.Range[str,1,1500],numero:int=None):
    await i.response.defer(ephemeral=True)
-   async with self.lock:
-    row=self.current(i,numero);self.authorize(i.user,row,True)
-    if estado=='cerrado':await self.close(row,i.user.id,motivo)
-    elif row['status']=='cerrado':return await self.reopen(i,row,motivo)
-    else:await self.call('transition',row['id'],estado,i.user.id,motivo);await self.refresh(self.store.get(row['id']))
+   row=self.current(i,numero);self.authorize(i.user,row,True)
+   if estado=='cerrado':await self.close(row,i.user.id,motivo)
+   elif row['status']=='cerrado':return await self.reopen(i,row,motivo)
+   else:
+    async with self.lock:
+     row=self.current(i,numero);self.authorize(i.user,row,True)
+     await self.call('transition',row['id'],estado,i.user.id,motivo);await self.refresh(self.store.get(row['id']))
    await reply(i,'Estado y motivo guardados.')
   @self.group.command(name='transferir',description='Cambiar de departamento o responsable con motivo')
   @app_commands.choices(departamento=[app_commands.Choice(name=label,value=key) for key,(_,label,_) in DEPARTMENTS.items()])

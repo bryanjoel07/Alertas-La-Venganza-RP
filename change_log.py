@@ -14,11 +14,11 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='tickets-delete-responsive-v1'
-SUMMARY='Acelera y aclara la eliminación de tickets cerrados: cada caso tiene su propio bloqueo y los respaldos no detienen otros tickets. Reutiliza un respaldo externo ya verificado solo si su archivo íntegro contiene exactamente la transcripción y las pruebas actuales; si no, crea y verifica una copia nueva. Evita responder dentro del canal después de borrarlo, comprueba de nuevo los permisos del actor y conserva confirmación, archivo y pruebas.'
-RESTORE=('Para revertir el código, desplegar c6831bd313ac2ec80376186494bb241ad2b9a091 conservando SQLite y /data; esa versión vuelve a bloquear otros tickets durante cada respaldo y puede intentar responder dentro del canal ya eliminado. No restaurar una base antigua ni recrear canales eliminados para revertir. '
-         'Mantener lv_tickets, deleted_at, transcripciones, archivos y blobs con sus hashes, además de los respaldos completos ya verificados. La copia reutilizada no se modifica ni se elimina. Las eliminaciones siguen limitadas a tickets cerrados de este bot, confirmados por staff y con copia verificada. '
-         'Conservar la compatibilidad de canales nuevos de Discord, GIF de SERVER UP, minijuegos, saldos, tienda y solicitudes de staff. No reiniciar avisos consumidos ni modificar Owner, Programador, Admin, Súper Admin o escritura de Ciudadanos.')
+RELEASE='tickets-delete-prepared-v1'
+SUMMARY='Prepara y verifica el respaldo al terminar de cerrar un ticket, incluyendo el aviso final, para reutilizarlo al confirmar Eliminar. El paso de eliminación conserva sus comprobaciones de autor, conversación, pruebas y copia íntegra, y solo repite la copia si cambió el caso. Los cierres habituales y sus respaldos trabajan por caso sin mantener el bloqueo general. Se mide de nuevo la eliminación con una prueba del propio bot.'
+RESTORE=('Para revertir la preparación al cierre, desplegar cb450445761fd7c075f7782036ce4221921c6ebc conservando SQLite y /data. Esa versión prepara las copias al confirmar la eliminación. No restaurar una base antigua ni borrar respaldos, archivos o canales para revertir. '
+         'Mantener tickets, transcripciones, blobs, hashes y marcas de canales eliminados. La eliminación sigue reservada a tickets cerrados de este bot, con confirmación del staff y respaldo verificado. '
+         'Conservar la compatibilidad de canales nuevos, GIF de SERVER UP, minijuegos, tienda y solicitudes de staff. No reiniciar avisos consumidos ni modificar Owner, Programador, Admin, Súper Admin o escritura de Ciudadanos.')
 
 
 class Journal:

@@ -85,3 +85,10 @@ Antes de borrar siguen siendo obligatorias la transcripción completa, los archi
 La confirmación informa primero de que se está preparando la copia. Si se elimina desde el propio ticket, no se intenta enviar una respuesta al canal que acaba de desaparecer. Si se opera desde el índice de cerrados, se puede confirmar allí por privado. Los errores «Unknown Channel» de una respuesta a un canal ya desaparecido no provocan una cadena de errores ni hacen pasar una eliminación correcta por fallida.
 
 Los registros `TICKETS deleted` incluyen segundos de archivo, copia y total. Para revertir este cambio desplegar `c6831bd313ac2ec80376186494bb241ad2b9a091` manteniendo SQLite, archivos y canales actuales; se conserva el historial de lo ya eliminado.
+
+
+## Copia preparada al cierre
+
+Después del aviso final de cierre y de actualizar sus controles, el bot guarda de nuevo la conversación completa y prepara el respaldo verificado. Cuando el staff confirma Eliminar, puede reutilizar esa copia exacta y ahorrarse otra subida. Si el contenido o los archivos cambiaron, se vuelve a respaldar antes de borrar. Un fallo al preparar la copia no reabre ni elimina el caso: la confirmación posterior sigue verificando todo y puede reintentar el respaldo.
+
+Los cierres por formulario, comando y mantenimiento no mantienen el bloqueo general durante la copia; el mismo caso sigue protegido por su bloqueo individual. La selección y creación de categorías tiene su propio bloqueo breve. Para revertir únicamente esta preparación anticipada desplegar `cb450445761fd7c075f7782036ce4221921c6ebc` conservando los datos y copias actuales.
