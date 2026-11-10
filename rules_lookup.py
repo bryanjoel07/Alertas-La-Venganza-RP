@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 
 from rules_search import sections,search,pages,fingerprint,normalize,ALIASES
+from rule_topics import TOPICS,topic_for
 
 CHANNEL_ID=1528925322362228787
 RED=0xD60000
@@ -46,7 +47,7 @@ class RulesLookup:
   self.index=();self.loaded_at=0;self.generation=0;self.invalid=True
   self.lock=asyncio.Lock();self.ready_lock=asyncio.Lock();self.prepared=False;self.task=None
   @app_commands.command(name='regla',description='Buscar una norma de La Venganza y abrir su mensaje oficial')
-  @app_commands.describe(tema='Qué buscas: CK, PK, secuestros, vehículos, zonas seguras…')
+  @app_commands.describe(tema='Qué buscas: CK, PK, PKT, secuestros, vehículos, zonas seguras…')
   @app_commands.guild_only()
   async def command(i,tema:app_commands.Range[str,1,100]):
    await i.response.defer(ephemeral=True,thinking=True)
@@ -96,6 +97,8 @@ class RulesLookup:
  async def show(self,i,view,edit=False):
   source=await self.member(i)
   await self.refresh()
+  explanation=topic_for(view.query)
+  if explanation:return await self.show_explanation(i,source,explanation,edit=edit)
   selected=None
   for attempt in range(3):
    matches=self.matching_pages(view.query)
@@ -128,6 +131,26 @@ class RulesLookup:
   if edit:await i.edit_original_response(content=None,embed=embed,view=view,allowed_mentions=NONE)
   else:await reply(i,embed=embed,view=view)
   log.info('RULES result_verified query=%s source=%s section=%s page=%s/%s private=True',normalize(view.query),section.message,section.key,view.page+1,count)
+ async def show_explanation(self,i,source,topic,edit=False):
+  # This link is context for the approved explanation, rather than a quotation source.
+  url=f'https://discord.com/channels/{self.guild_id}/{CHANNEL_ID}'
+  reference=next((row for row in search(self.index,'pk') if 'muerte' in normalize(row.heading)),None)
+  if reference:
+   try:message=await source.fetch_message(reference.message)
+   except discord.NotFound:
+    self.invalidate(self.guild_id,CHANNEL_ID)
+    await self.refresh(force=True)
+   else:
+    url+=f'/{message.id}'
+    if fingerprint(message)!=reference.fingerprint:self.invalidate(self.guild_id,CHANNEL_ID)
+  embed=discord.Embed(title=f'📚 {topic.heading}',description=topic.body,color=RED)
+  embed.add_field(name='Reglamento del servidor',value=f'[Consultar las normas publicadas]({url})',inline=False)
+  embed.set_footer(text='La Venganza RP · Explicación de administración')
+  controls=discord.ui.View(timeout=None)
+  controls.add_item(discord.ui.Button(label='Ver normas',emoji='📚',url=url))
+  if edit:await i.edit_original_response(content=None,embed=embed,view=controls,allowed_mentions=NONE)
+  else:await reply(i,embed=embed,view=controls)
+  log.info('RULES explanation_served topic=%s owner_requested=True private=True',topic.key)
  async def autocomplete(self,i,current):
   if i.guild_id!=self.guild_id or self.invalid:return []
   guild=self.bot.get_guild(self.guild_id)
@@ -136,7 +159,7 @@ class RulesLookup:
   permission=source.permissions_for(i.user)
   if not permission.view_channel or not permission.read_message_history:return []
   choices=[];seen=set();query=normalize(current)
-  topics=[key.upper() if len(key)<=3 else key for key in ALIASES if search(self.index,key)]
+  topics=[key.upper() if len(key)<=3 else key for key in ALIASES if key in TOPICS or search(self.index,key)]
   topics.extend(section.heading for section in self.index)
   for topic in topics:
    if topic in seen or query and query not in normalize(topic):continue
@@ -163,6 +186,9 @@ class RulesLookup:
    command=next((c.to_dict() for c in registered if c.name=='regla'),{})
    if not any(p['name']=='tema' and p['type']==3 and p.get('autocomplete') for p in command.get('options',[])):
     raise RuntimeError('Discord no confirmó /regla con su buscador de temas.')
+   for key,topic in TOPICS.items():
+    if topic_for(key) is not topic or len(topic.body)>4096:raise RuntimeError('No se confirmó la explicación solicitada para '+key)
+    log.info('RULES explanation_verified topic=%s title=%s separate_topic=True owner_requested=True channel_messages_unchanged=True',key,topic.heading)
    self.prepared=True
    log.info('RULES ready channel=%s sections=%s command=/regla autocomplete=True private=True live_source_verified=True roles_unchanged=True messages_unchanged=True',CHANNEL_ID,len(self.index))
  async def loop(self):

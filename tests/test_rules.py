@@ -6,6 +6,7 @@ import discord
 
 from rules_lookup import RulesLookup,RuleResults,CHANNEL_ID
 from rules_search import sections,search,pages,normalize
+from rule_topics import TOPICS,topic_for,TICKETS_CHANNEL
 
 FIRST=1567278823324782854
 SECOND=1567278835332812821
@@ -107,11 +108,11 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     followup=SimpleNamespace(send=AsyncMock()),edit_original_response=AsyncMock())
  def response(self):return self.i.response.send_message.call_args or self.i.followup.send.call_args
  async def test_command_returns_an_exact_passage_and_the_correct_original_link_privately(self):
-  await self.system.command.callback(self.i,'CK')
+  await self.system.command.callback(self.i,'zonas seguras')
   self.i.response.defer.assert_awaited_once_with(ephemeral=True,thinking=True)
   response=self.response();embed=response.kwargs['embed'];view=response.kwargs['view']
-  self.assertEqual(embed.description,search(self.system.index,'ck')[0].body)
-  self.assertIn(str(SECOND),view.children[-1].url);self.assertEqual(len(view.children),1)
+  self.assertEqual(embed.description,search(self.system.index,'zonas seguras')[0].body)
+  self.assertIn(str(FIRST),view.children[-1].url);self.assertEqual(len(view.children),1)
   self.assertTrue(response.kwargs['ephemeral']);self.assertEqual(response.kwargs['allowed_mentions'].to_dict()['parse'],[])
   for source in self.messages.values():source.edit.assert_not_awaited();source.delete.assert_not_awaited()
   self.source.set_permissions.assert_not_called();self.source.send.assert_not_called()
@@ -131,21 +132,22 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
   self.user.can_history=True;self.i.guild_id=99
   with self.assertRaises(ValueError):await self.system.member(self.i)
  async def test_edits_are_checked_live_even_if_the_gateway_invalidation_event_was_missed(self):
-  await self.system.refresh();self.assertTrue(search(self.system.index,'ck'))
+  await self.system.refresh();self.assertTrue(search(self.system.index,'ems'))
   self.messages[SECOND].content='**8. Normativas de muerte y heridas**\nSe deben interpretar las heridas.'
-  await self.system.command.callback(self.i,'ck')
+  await self.system.command.callback(self.i,'ems')
   response=self.response();self.assertNotIn('embed',response.kwargs)
-  self.assertIn('No encontré',response.args[0]);self.assertEqual(search(self.system.index,'ck'),[])
+  self.assertIn('No encontré',response.args[0]);self.assertEqual(search(self.system.index,'ems'),[])
  async def test_deleted_source_and_bulk_edits_never_return_stale_rule_text(self):
   await self.system.refresh();self.messages.pop(SECOND)
   self.system.invalidate(10,CHANNEL_ID)
-  self.assertEqual(await self.system.autocomplete(self.i,'CK'),[])
-  await self.system.command.callback(self.i,'ck')
+  self.assertEqual(await self.system.autocomplete(self.i,'EMS'),[])
+  await self.system.command.callback(self.i,'ems')
   self.assertIn('No encontré',self.response().args[0]);self.assertNotIn('embed',self.response().kwargs)
- async def test_autocomplete_lists_only_topics_actually_present_in_the_source(self):
+ async def test_autocomplete_includes_official_and_owner_requested_topics(self):
   await self.system.refresh()
   choices=await self.system.autocomplete(self.i,'pk')
-  self.assertIn('PK',[c.value for c in choices]);self.assertNotIn('PKT',[c.value for c in choices])
+  self.assertIn('PK',[c.value for c in choices]);self.assertIn('PKT',[c.value for c in choices])
+  self.assertEqual(search(self.system.index,'pkt'),[])
   self.assertEqual(await self.system.autocomplete(self.i,'nra'),[])
  async def test_failed_live_verification_never_falls_back_to_cached_text(self):
   await self.system.refresh()
@@ -163,3 +165,37 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
   self.assertTrue(any('query_verified topic=pk' in line for line in logs.output))
   self.bot.tree.fetch_commands.assert_awaited_once()
   await self.system.ready();self.bot.tree.fetch_commands.assert_awaited_once()
+ async def test_ck_and_pkt_have_their_own_explanations_without_rewriting_source_messages(self):
+  originals={mid:source.content for mid,source in self.messages.items()}
+  for query,key in [('CK','ck'),('PKT','pkt'),('qué significa un PKT','pkt'),('Character Kill','ck'),('PK TOTAL','pkt')]:
+   self.i.response.send_message.reset_mock()
+   await self.system.command.callback(self.i,query)
+   response=self.response();embed=response.kwargs['embed']
+   self.assertEqual(embed.title,'📚 '+TOPICS[key].heading)
+   self.assertEqual(embed.description,TOPICS[key].body)
+   self.assertIn('Explicación de administración',embed.footer.text)
+   self.assertNotIn('Fuente oficial',[field.name for field in embed.fields])
+   self.assertIn(str(TICKETS_CHANNEL),embed.description)
+   self.assertTrue(response.kwargs['ephemeral'])
+  self.assertEqual({mid:source.content for mid,source in self.messages.items()},originals)
+  for source in self.messages.values():source.edit.assert_not_awaited();source.delete.assert_not_awaited()
+ async def test_pk_keeps_its_original_search_and_is_not_treated_as_pkt(self):
+  self.assertIsNone(topic_for('PK'));self.assertIsNone(topic_for('player kill'))
+  self.assertIsNone(topic_for('CL'))
+  self.assertEqual(topic_for('C.K.').key,'ck');self.assertEqual(topic_for('P.K.T.').key,'pkt')
+  await self.system.command.callback(self.i,'PK')
+  self.assertIn('muerte y heridas',self.response().kwargs['embed'].title)
+  self.assertNotIn('Player Kill Total',self.response().kwargs['embed'].description)
+ async def test_custom_topics_preserve_access_checks_and_can_use_a_channel_link_after_source_deletion(self):
+  self.user.can_read=False
+  for key in ('CK','PKT'):
+   with self.assertRaises(ValueError):await self.system.show(self.i,RuleResults(self.system,1,key))
+  self.user.can_read=True;await self.system.refresh();self.messages.pop(SECOND)
+  await self.system.command.callback(self.i,'PKT')
+  response=self.response()
+  self.assertIn('PKT',response.kwargs['embed'].title)
+  self.assertTrue(response.kwargs['view'].children[0].url.endswith(str(CHANNEL_ID)))
+ async def test_ready_verifies_both_approved_explanations(self):
+  with self.assertLogs('LaVenganzaRP.rules',level='INFO') as logs:await self.system.ready()
+  self.assertTrue(any('explanation_verified topic=ck' in line for line in logs.output))
+  self.assertTrue(any('explanation_verified topic=pkt' in line for line in logs.output))
