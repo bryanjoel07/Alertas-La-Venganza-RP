@@ -34,7 +34,7 @@ Comandos principales:
 - `/ticket compra` consulta la compra vinculada; `/ticket devolver` exige autorización de economía, un motivo y una confirmación. Usa las transacciones idempotentes de la tienda, sin cobros ni devoluciones al abrir un caso.
 - `/ticket configuracion`: límites y tiempos; requiere Administrador.
 - `/ticket departamento`: añadir/quitar roles encargados en departamentos normales. No acepta roles protegidos, Ciudadanos, @everyone ni roles de bots. Los roles habituales de staff mantienen su acceso.
-- `/ticket recuperar`: concilia creaciones y archivos interrumpidos. Una creación incierta nunca genera otro canal automáticamente. Tras revisar la auditoría y esperar dos minutos, un administrador puede cancelar solo la reserva con `cancelar_reserva:true` para permitir una nueva solicitud, sin borrar canales.
+- `/ticket recuperar`: concilia creaciones y archivos interrumpidos. Recupera el canal existente o reintenta una reserva sin canal después de revisar una lista completa y esperar la reserva temporal de tres minutos. `cancelar_reserva:true` permite cancelar únicamente una reserva sin canal y sin creación en curso, conservando sus datos.
 
 Estados: Nuevo → En atención → Esperando al jugador → Resuelto → Cerrado. Cada actuación conserva actor, fecha y motivo. Prioridades: normal, alta o urgente, con justificación.
 
@@ -65,3 +65,12 @@ El nuevo panel se publica y fija en el canal indicado. Los paneles y casos de ot
 Para pausar, poner `TICKETS_ENABLED=0` en Railway; se conserva toda la información. Para volver al código anterior desplegar `67b4dcce78d5dbfdd1cce876b31859776d6f0db8`, conservando `/data` y SQLite. No restaurar una base vieja sobre la actual: se perderían actuaciones nuevas. Conservar los canales ya creados y sus IDs. No modificar los cuatro roles protegidos para recuperar tickets.
 
 `TICKETS_INSTALL_REQUEST_ID` identifica la instalación en el registro. `TICKETS_SELFTEST_REQUEST_ID` activa una única verificación privada con dos casos del bot, excluidos de las estadísticas de atención. Verifica privacidad, notas, respaldo real de adjuntos, cierre, reapertura, transferencia y una copia/restauración en Drive si los respaldos automáticos están habilitados. Quitar estas dos variables tras verificar; mantener `TICKETS_ENABLED=1`.
+
+
+## Canales nuevos de Discord y reservas de creación
+
+La creación, las listas y la recuperación usan `discord_channels.fetch_channels`. Si la librería rechaza un tipo nuevo (por ejemplo, 20), se vuelven a leer los datos del servidor: los canales conocidos siguen usando sus constructores normales y los desconocidos se conservan como metadatos de solo lectura. Se mantienen ID, categoría, posición y permisos en las copias antes/después; no se cambian, reclasifican ni eliminan estos canales. Otros errores de red o datos siguen siendo errores.
+
+Las reservas en estado creando sin canal se reintentan automáticamente conservando el mismo número, autor y formulario. Antes de crear se comprueba que no exista ya un canal con el topic del ticket. Una coincidencia de tipo desconocido requiere revisión y nunca genera un duplicado. La creación inicial y la recuperación comparten una reserva de tres minutos guardada en SQLite (`creation-lease:*`) para no solaparse ni repetir una petición cuyo resultado todavía sea incierto. Si el autor ya no está en el servidor, la reserva se conserva sin crear un canal sin su acceso.
+
+`/ticket recuperar numero:8` permite reintentar la creación. `cancelar_reserva:true` solo reconcilia y cancela una reserva sin canal después de las comprobaciones; no crea un canal al pedir cancelarla ni cancela una creación en curso. Se siguen protegiendo los casos reservados y los roles protegidos.

@@ -112,6 +112,21 @@ class TicketStore:
    db.execute('UPDATE lv_tickets SET priority=?,updated=? WHERE id=?',(priority,int(time.time()),rid))
    self.event(db,rid,actor,'prioridad',f'{priority}: {reason.strip()}')
    return True
+ def claim_creation(self,rid,now=None):
+  stamp=int(time.time()) if now is None else now
+  with self.db() as db:
+   row=db.execute('SELECT status,channel FROM lv_tickets WHERE id=?',(rid,)).fetchone()
+   if not row or row['status']!='creando' or row['channel']:return False
+   key=f'creation-lease:{rid}'
+   old=db.execute('SELECT value FROM lv_ticket_config WHERE key=?',(key,)).fetchone()
+   if old and int(old[0])>stamp:return False
+   db.execute('INSERT INTO lv_ticket_config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(stamp+180)))
+   return True
+ def creation_pending(self,rid,now=None):
+  stamp=int(time.time()) if now is None else now
+  with self.db() as db:
+   row=db.execute('SELECT value FROM lv_ticket_config WHERE key=?',(f'creation-lease:{rid}',)).fetchone()
+   return bool(row and int(row[0])>stamp)
  def priority_event(self,rid):
   with self.db() as db:
    row=db.execute("SELECT * FROM lv_ticket_events WHERE ticket=? AND action='prioridad' ORDER BY id DESC LIMIT 1",(rid,)).fetchone()

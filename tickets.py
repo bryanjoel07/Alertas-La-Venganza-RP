@@ -14,6 +14,7 @@ import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from access_layout import merged_raw
+from discord_channels import fetch_channels
 
 import discord
 from discord import app_commands
@@ -206,7 +207,7 @@ class TicketSystem:
  async def ensure_category(self,guild,closed=False):
   key='closed_category' if closed else 'active_category'
   saved=self.store.config(key)
-  channels=await guild.fetch_channels()
+  channels=await fetch_channels(guild)
   category=next((c for c in channels if str(c.id)==saved and isinstance(c,discord.CategoryChannel)),None)
   if not closed and not category:
    # Reuse the existing Tickets category without altering any of its permissions.
@@ -304,6 +305,7 @@ class TicketSystem:
    rid=await self.call('create',i.user.id,department,subject,form,excluded,purchase)
    row=self.store.get(rid)
    try:
+    if not await self.call('claim_creation',rid):raise ValueError('Este ticket ya se está preparando.')
     category=await self.ensure_category(i.guild)
     async def create_channel():
      created=await i.guild.create_text_channel(f'🎫┊𝐭𝐢𝐜𝐤𝐞𝐭-{rid:04d}',category=category,topic=f'lv-ticket:{rid}',
@@ -428,7 +430,7 @@ class TicketSystem:
   channels={}
   if any(r['channel'] for r in candidates):
    guild=self.bot.get_guild(self.guild_id)
-   channels={c.id:c for c in await guild.fetch_channels() if isinstance(c,discord.TextChannel)}
+   channels={c.id:c for c in await fetch_channels(guild) if isinstance(c,discord.TextChannel)}
   if player is not None:
    async with self.lock:
     # Recheck after fetching channels and keep transfers/deletions out while rendering the private summary.
@@ -719,7 +721,7 @@ class TicketSystem:
   return confirmed
  async def ensure_closed_index(self,guild,category):
   marker='lv-closed-ticket-index'
-  channels=await guild.fetch_channels()
+  channels=await fetch_channels(guild)
   saved=self.store.config('closed_index_channel')
   candidates=[c for c in channels if isinstance(c,discord.TextChannel) and (str(c.id)==saved or c.topic==marker)]
   if len(candidates)>1:raise ValueError('Hay varios índices de archivo; no se creará otro')
@@ -758,7 +760,7 @@ class TicketSystem:
   await self.ensure_category(guild)
   closed=await self.ensure_category(guild,True)
   closed=await self.grant_closed_visibility(closed)
-  all_channels=await guild.fetch_channels()
+  all_channels=await fetch_channels(guild)
   ordered=sorted((c for c in all_channels if isinstance(c,discord.CategoryChannel)),key=lambda c:(c.position,c.id))
   anchor=next((c for c in ordered if str(c.id)==self.store.config('active_category')),None)
   if anchor and ordered.index(closed)!=ordered.index(anchor)+1:
@@ -867,9 +869,9 @@ class TicketSystem:
     await self.bot.changes.tracked('TICKETS_DELETE_SELFTEST_REQUEST_ID','Verificar eliminación de ticket cerrado',self.delete_selftest)
     self.prepared=True
     log.info('TICKETS ready panel=%s active_category=%s closed_category=%s persistent_controls=True',PANEL_CHANNEL,self.store.config('active_category'),self.store.config('closed_category'))
- async def recover(self,rid=None):
+ async def recover(self,rid=None,create_missing=True):
   guild=self.bot.get_guild(self.guild_id)
-  channels=await guild.fetch_channels()
+  channels=await fetch_channels(guild)
   rows=[self.store.get(rid)] if rid else self.store.list(limit=10000)
   for row in rows:
    if not row:continue
@@ -880,12 +882,38 @@ class TicketSystem:
      await self.call('mark_deleted',row['id'],row['deletion_actor'] or self.bot.user.id)
      continue
    if row['status']=='creando' or (row['status']=='fallido' and row['channel']):
+    if self.store.creation_pending(row['id']):continue
     matches=[c for c in channels if isinstance(c,discord.TextChannel) and c.topic==f"lv-ticket:{row['id']}"]
     if len(matches)==1:
      self.store.update(row['id'],channel=matches[0].id,status='nuevo')
      await self.refresh(self.store.get(row['id']))
     elif len(matches)>1:log.error('TICKETS uncertain_duplicate id=%s',row['id'])
+    elif create_missing and row['status']=='creando' and not row['channel']:
+     # An unknown channel with our marker must be reviewed, never duplicated.
+     if any(getattr(c,'topic',None)==f"lv-ticket:{row['id']}" for c in channels):
+      log.error('TICKETS unsupported_case_channel id=%s; creation deferred',row['id']);continue
+     owner=await self.member(guild,row['owner'])
+     if owner is None:
+      log.warning('TICKETS creation_owner_missing id=%s; reservation preserved',row['id']);continue
+     if not await self.call('claim_creation',row['id']):continue
+     try:
+      category=await self.ensure_category(guild)
+      async def create_channel():
+       created=await guild.create_text_channel(f'🎫┊𝐭𝐢𝐜𝐤𝐞𝐭-{row["id"]:04d}',category=category,topic=f'lv-ticket:{row["id"]}',
+        overwrites=channel_overwrites(guild,row,self.store,owner),reason=f'Recuperar creación pendiente del ticket #{row["id"]}')
+       await self.call('update',row['id'],channel=created.id,status='nuevo')
+       return created
+      channel=await self.tracked(row,f'Recuperar creación del ticket #{row["id"]}',create_channel)
+      await self.refresh(self.store.get(row['id']))
+      await self.notify_new(self.store.get(row['id']),channel)
+      log.info('TICKETS creation_recovered id=%s department=%s channel=%s author=%s',row['id'],row['department'],channel.id,row['owner'])
+     except Exception:
+      log.exception('TICKETS creation_retry_pending id=%s; reservation preserved',row['id'])
+      continue
    row=self.store.get(row['id'])
+   if row['channel'] and not row['control_message'] and row['status'] in STATES-{'cerrado'}:
+    try:await self.refresh(row)
+    except discord.HTTPException:log.exception('TICKETS control_recovery_pending id=%s',row['id'])
    if row['status']=='cerrado' and row['archive_state'] in ('pendiente','pendiente_actualizacion'):
     try:
      await self.apply_permissions(row)
@@ -953,7 +981,7 @@ class TicketSystem:
     self.store.config(key,rid)
    row=self.store.get(rid)
    if not row['channel']:
-    matches=[c for c in await guild.fetch_channels() if getattr(c,'topic',None)==f'lv-ticket:{rid}']
+    matches=[c for c in await fetch_channels(guild) if getattr(c,'topic',None)==f'lv-ticket:{rid}']
     if len(matches)>1:raise RuntimeError('La prueba requiere revisar canales duplicados')
     if matches:channel=matches[0]
     else:
@@ -986,7 +1014,7 @@ class TicketSystem:
   if not request or self.store.config('selftest-complete:'+request):return
   if not re.fullmatch('[A-Za-z0-9_-]{1,80}',request):raise ValueError('Identificador de prueba inválido')
   guild=self.bot.get_guild(self.guild_id)
-  original_channels={c.id:(c.category_id,c.name,sorted((o.type,o.id,o.allow,o.deny) for o in c._overwrites)) for c in await guild.fetch_channels()}
+  original_channels={c.id:(c.category_id,c.name,sorted((o.type,o.id,o.allow,o.deny) for o in c._overwrites)) for c in await fetch_channels(guild)}
   protected_before={r.id:(r.name,r.position,r.permissions.value,r.colour.value) for r in await guild.fetch_roles() if r.id in PROTECTED}
   async with self.lock:
    for index,department in enumerate(('soporte','staff')):
@@ -999,7 +1027,7 @@ class TicketSystem:
      self.store.config(key,rid)
     row=self.store.get(rid)
     if not row['channel']:
-     existing=[c for c in await guild.fetch_channels() if getattr(c,'topic',None)==f'lv-ticket:{rid}']
+     existing=[c for c in await fetch_channels(guild) if getattr(c,'topic',None)==f'lv-ticket:{rid}']
      if len(existing)>1:raise RuntimeError('Prueba con creación incierta duplicada; requiere revisión')
      if existing:channel=existing[0]
      else:
@@ -1040,7 +1068,7 @@ class TicketSystem:
     log.info('TICKETS selftest_case_verified id=%s department=%s channel=%s archived=True proofs_verified=True notes_private=True',rid,department,channel.id)
   protected_after={r.id:(r.name,r.position,r.permissions.value,r.colour.value) for r in await guild.fetch_roles() if r.id in PROTECTED}
   if protected_before!=protected_after:raise RuntimeError('Un rol protegido cambió durante la verificación')
-  for channel in await guild.fetch_channels():
+  for channel in await fetch_channels(guild):
    if channel.id in original_channels and not (getattr(channel,'topic','') or '').startswith('lv-ticket:'):
     before=original_channels[channel.id]
     if (channel.category_id,channel.name,sorted((o.type,o.id,o.allow,o.deny) for o in channel._overwrites))!=before:
@@ -1178,12 +1206,13 @@ class TicketSystem:
   @self.group.command(name='recuperar',description='Reconciliar una creación o un archivo interrumpido')
   async def recover(i:discord.Interaction,numero:int,cancelar_reserva:bool=False):
    self.admin(i.user);await i.response.defer(ephemeral=True,thinking=True)
-   async with self.lock:await self.recover(numero)
+   async with self.lock:await self.recover(numero,create_missing=not cancelar_reserva)
    row=self.current(i,numero)
    if row['status']=='creando' and not row['channel']:
     if cancelar_reserva:
+     if self.store.creation_pending(numero):raise ValueError('El bot está preparando este ticket. Espera tres minutos antes de cancelar la reserva.')
      if time.time()-row['created']<120:raise ValueError('Espera dos minutos antes de cancelar una creación incierta.')
-     if any(getattr(c,'topic',None)==f"lv-ticket:{numero}" for c in await i.guild.fetch_channels()):raise ValueError('Hay un canal para este caso. Vuelve a recuperar sin cancelar.')
+     if any(getattr(c,'topic',None)==f"lv-ticket:{numero}" for c in await fetch_channels(i.guild)):raise ValueError('Hay un canal para este caso. Vuelve a recuperar sin cancelar.')
      await self.call('update',numero,status='fallido');await self.record(numero,i.user.id,'cancelar_reserva','Revisión de canales completada; se habilita un nuevo intento del jugador.')
      return await reply(i,'Reserva cancelada sin borrar canales. El jugador puede abrir una nueva solicitud.')
     raise ValueError('La creación no tiene un canal confirmado. Revisa la auditoría; después de dos minutos puedes usar /ticket recuperar cancelar_reserva:true para habilitar otro intento sin borrar canales.')

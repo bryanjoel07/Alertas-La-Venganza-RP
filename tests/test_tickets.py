@@ -451,3 +451,76 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   await self.system.action(self.i,self.rid,'resolve')
   modal=self.i.response.send_modal.call_args.args[0]
   self.assertEqual(modal.value.label,'¿Cuál fue la solución?')
+
+class PendingCreationTests(unittest.IsolatedAsyncioTestCase):
+ async def asyncSetUp(self):
+  tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+  self.bot=MagicMock();self.system=TicketSystem(self.bot,Path(tmp.name)/'db.sqlite3',10);self.system.store.initialize()
+  self.guild=MagicMock();self.guild.id=10;self.guild.roles=[]
+  self.guild.default_role=discord.Object(id=10);self.guild.me=FakeMember(999,guild=self.guild)
+  self.guild.fetch_channels=AsyncMock(return_value=[]);self.bot.get_guild.return_value=self.guild
+  self.owner=FakeMember(1,roles=[next(iter(PROTECTED))],guild=self.guild,admin=True)
+  self.system.member=AsyncMock(return_value=self.owner)
+  self.category=MagicMock(spec=discord.CategoryChannel,id=40)
+  self.system.ensure_category=AsyncMock(return_value=self.category)
+  self.system.refresh=AsyncMock();self.system.notify_new=AsyncMock()
+  self.channel=MagicMock(spec=discord.TextChannel,id=100,topic='lv-ticket:1')
+  self.guild.create_text_channel=AsyncMock(return_value=self.channel)
+  async def tracked(row,title,operation):return await operation()
+  self.system.tracked=tracked
+  self.rid=self.system.store.create(1,'faccion','Ayuda con la ganga',{'ganga':'Nombre guardado'},now=1000)
+ async def test_missing_channel_is_retried_for_staff_and_keeps_id_and_form(self):
+  await self.system.recover(self.rid)
+  row=self.system.store.get(self.rid)
+  self.assertEqual(row['status'],'nuevo');self.assertEqual(row['channel'],100)
+  self.assertEqual(json.loads(row['form']),{'ganga':'Nombre guardado'})
+  self.guild.create_text_channel.assert_awaited_once()
+  kwargs=self.guild.create_text_channel.call_args.kwargs
+  self.assertEqual(kwargs['topic'],f'lv-ticket:{self.rid}')
+  self.assertTrue(kwargs['overwrites'][self.owner].view_channel)
+  self.assertFalse(kwargs['overwrites'][self.guild.default_role].view_channel)
+  self.assertFalse(any(target.id in PROTECTED for target in kwargs['overwrites']))
+  await self.system.recover(self.rid);self.guild.create_text_channel.assert_awaited_once()
+ async def test_all_seven_staff_ranks_can_open_their_own_ticket(self):
+  from tickets_store import ALL_STAFF
+  with patch.dict('os.environ',TICKETS_ENABLED='1'):
+   for n,role in enumerate(ALL_STAFF,10):
+    owner=FakeMember(n,roles=[role],admin=role in PROTECTED,guild=self.guild)
+    self.guild.create_text_channel.return_value=MagicMock(spec=discord.TextChannel,id=100+n)
+    interaction=MagicMock(guild_id=10,guild=self.guild,user=owner)
+    interaction.response.is_done.return_value=True;interaction.followup.send=AsyncMock()
+    await self.system.open(interaction,'soporte','Necesito ayuda',{'detalles':'Original'})
+    row=self.system.store.list(owner=n)[0]
+    self.assertEqual(row['status'],'nuevo');self.assertEqual(row['owner'],n)
+ async def test_unknown_channel_with_same_marker_blocks_duplicate_creation(self):
+  from discord_channels import UnsupportedChannel
+  self.guild.fetch_channels.return_value=[UnsupportedChannel(self.guild,dict(id='42',type=20,name='Desconocido',topic=f'lv-ticket:{self.rid}'))]
+  await self.system.recover(self.rid)
+  self.guild.create_text_channel.assert_not_awaited();self.assertEqual(self.system.store.get(self.rid)['status'],'creando')
+ async def test_confirmed_channel_is_adopted_without_recreating(self):
+  self.guild.fetch_channels.return_value=[self.channel]
+  await self.system.recover(self.rid)
+  self.assertEqual(self.system.store.get(self.rid)['channel'],100);self.guild.create_text_channel.assert_not_awaited()
+ async def test_creation_in_flight_does_not_create_a_second_channel(self):
+  self.assertTrue(self.system.store.claim_creation(self.rid))
+  await self.system.recover(self.rid);self.guild.create_text_channel.assert_not_awaited()
+ async def test_cancel_mode_does_not_create_a_channel(self):
+  await self.system.recover(self.rid,create_missing=False)
+  self.guild.create_text_channel.assert_not_awaited();self.assertEqual(self.system.store.get(self.rid)['status'],'creando')
+ async def test_one_failed_retry_does_not_block_the_next_player(self):
+  other=self.system.store.create(2,'soporte','Ayuda',{},now=1000)
+  self.guild.create_text_channel.side_effect=[OSError('ambiguous timeout'),self.channel]
+  await self.system.recover()
+  self.assertEqual(self.system.store.get(other)['status'],'creando')
+  self.assertEqual(self.system.store.get(self.rid)['status'],'nuevo')
+ async def test_deleted_member_preserves_reservation(self):
+  self.system.member.return_value=None;await self.system.recover(self.rid)
+  self.guild.create_text_channel.assert_not_awaited();self.assertEqual(self.system.store.get(self.rid)['status'],'creando')
+
+class CreationLeaseTests(unittest.TestCase):
+ setUp=TicketStoreTests.setUp
+ create=TicketStoreTests.create
+ def test_lease_is_atomic_across_workers_and_expires_for_reconciliation(self):
+  rid=self.create()
+  with ThreadPoolExecutor(max_workers=3) as pool:claims=list(pool.map(lambda _:self.store.claim_creation(rid,now=1000),range(3)))
+  self.assertEqual(sum(claims),1);self.assertFalse(self.store.claim_creation(rid,now=1179));self.assertTrue(self.store.claim_creation(rid,now=1180))

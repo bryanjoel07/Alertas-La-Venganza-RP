@@ -11,13 +11,14 @@ import time
 
 import discord
 from discord import app_commands
+from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='server-up-gif-v1'
-SUMMARY='Usa el GIF original proporcionado por el propietario como banner del SERVER UP diario y manual. Conserva sus 150 fotogramas, 10 segundos y repetición en bucle, sin convertirlo en imagen fija. El archivo se incluye localmente para no depender de la caducidad del enlace de Discord. Mantiene horario, texto, rojo y @everyone existentes; no reenvía anuncios ni modifica mensajes antiguos.'
-RESTORE=('Para volver al banner fijo, desplegar 9ae1f8414127233c8e13d21d654ef1cb54542308 conservando SQLite y /data. También puede cambiarse SERVER_UP_BANNER y la referencia de adjunto a assets/banners/server-up.jpg, que se conserva en el repositorio. '
-         'No restaurar una base antigua ni reiniciar daily_server_up_slot o manual_server_up_request; no duplicar anuncios. Conservar turnos de minijuegos cada 12 horas, premios, compras, saldos, fotos, votos, tickets, solicitudes de staff y ajustes. '
-         'Este cambio no modifica canales ni permisos. Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
+RELEASE='tickets-channel-compat-recovery-v1'
+SUMMARY='Corrige la creación y recuperación de tickets ante canales nuevos de Discord que la librería no reconoce, incluido el tipo 20. La lectura conserva sus metadatos y permisos como solo lectura, sin impedir usar categorías y canales de tickets compatibles. Recupera reservas sin canal conservando número, autor y formulario; usa una reserva temporal de creación para evitar duplicados. Probada la apertura por los siete rangos de staff. No modifica roles protegidos ni permisos de Ciudadanos.'
+RESTORE=('Para revertir el código, desplegar 362e1fc6392665e4a8eb0440619b01f197c5fe5a conservando SQLite y /data; esa versión vuelve a fallar al listar canales si Discord devuelve un tipo no reconocido. No restaurar una base antigua ni borrar los canales creados durante la recuperación. '
+         'Mantener lv_tickets, eventos, archivos, transcripciones y las claves creation-lease:* de lv_ticket_config; las reservas temporales vencen después de tres minutos. Cada canal recuperado conserva topic lv-ticket:<número> y antes/después mediante TICKET_OPERATION. '
+         'Conservar GIF del SERVER UP, horarios y solicitudes manuales ya consumidas, minijuegos con espera de 12 horas, saldos, premios, tienda, fotos, solicitudes de staff y ajustes. Nunca modificar Owner, Programador, Admin o Súper Admin ni los permisos de escribir de Ciudadanos.')
 
 
 class Journal:
@@ -69,14 +70,14 @@ class Journal:
 
 
 async def server_snapshot(guild):
-    channels=await guild.fetch_channels()
+    channels=await fetch_channels(guild)
     roles=await guild.fetch_roles()
     return dict(roles=[dict(id=str(r.id),name=r.name,position=r.position,permissions=str(r.permissions.value),
                            color=r.color.value,hoist=r.hoist) for r in roles],
                 channels=[dict(id=str(c.id),name=c.name,parent=str(c.category_id) if c.category_id else None,
                     position=c.position,type=str(c.type),topic=getattr(c,'topic',None),
                     overwrites=[dict(id=str(o.id),type=o.type,allow=str(o.allow),deny=str(o.deny))
-                                for o in c._overwrites]) for c in channels])
+                                for o in c._overwrites], **({"raw":c.raw} if isinstance(c,UnsupportedChannel) else {})) for c in channels])
 
 
 def change_embed(row):
