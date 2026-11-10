@@ -5,7 +5,7 @@ from pathlib import Path
 import secrets
 import time
 
-from bug_limits import FILE_TYPES,MAX_CLIP_BYTES,MAX_REPORT_FILES
+from bug_limits import FILE_TYPES,MAX_CLIP_BYTES,MAX_REPORT_FILES,MAX_FILE_MB
 from bug_template import DETAILS_LIMIT,parse_details
 
 FILE_COUNT="""(SELECT COUNT(*) FROM lv_bug_files f WHERE f.report=lv_bugs.id
@@ -28,6 +28,18 @@ class ReportFiles:
         return [dict(r) for r in db.execute(f"SELECT {FILE_FIELDS} FROM lv_bug_files WHERE report=? AND revision=? AND state='complete' ORDER BY position",(rid,revision))]
 
     @staticmethod
+    def attachment_status(db,row):
+        if json.loads(row['data']).get('upload_pending'):
+            files=[dict(r) for r in db.execute('SELECT filename,size,state FROM lv_bug_files WHERE report=? AND revision=? ORDER BY position',(row['id'],row['revision']))]
+            if files:return files
+            job=db.execute('SELECT filename,size,state FROM lv_bug_uploads WHERE report=? AND revision=?',(row['id'],row['revision'])).fetchone()
+            return [dict(job)] if job else []
+        if row['files']:return row['files']
+        if row['video'] and row['filename']:
+            return [dict(filename=row['filename'],size=row['video_size'],state='complete')]
+        return []
+
+    @staticmethod
     def discard_inactive_files(db,rid,active):
         if active is None:db.execute('DELETE FROM lv_bug_files WHERE report=?',(rid,))
         else:db.execute('DELETE FROM lv_bug_files WHERE report=? AND revision!=?',(rid,active))
@@ -42,7 +54,7 @@ class ReportFiles:
         for item in files:
             validate_source(item['source'])
             if Path(item['filename']).suffix.lower() not in FILE_TYPES:raise ValueError('Adjunta fotos o videos compatibles.')
-            if not 0<item['size']<=MAX_CLIP_BYTES:raise ValueError('Cada archivo debe pesar hasta 60 MB.')
+            if not 0<item['size']<=MAX_CLIP_BYTES:raise ValueError(f'Cada archivo debe pesar hasta {MAX_FILE_MB} MB.')
         with self.db() as db:
             row=db.execute('SELECT owner,status,revision,data FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row or row['owner']!=owner or row['status']!='borrador' or row['revision']!=revision:

@@ -6,7 +6,16 @@ import discord
 from feedback_ui import reply, NONE, RED
 from bug_store import STATES,clip_url
 from bug_template import DETAILS_LIMIT,details_default,parse_details
-from bug_limits import MAX_CLIP_BYTES,MAX_REPORT_FILES,FILE_TYPES
+from bug_limits import MAX_CLIP_BYTES,MAX_REPORT_FILES,FILE_TYPES,MAX_FILE_MB,BYTES_PER_MB
+
+def size_summary(files):
+    if not files:return ''
+    lines=[f"**{len(files)}/{MAX_REPORT_FILES} archivos** · Total: **{sum(f['size'] for f in files)/BYTES_PER_MB:.1f} MB**"]
+    for n,item in enumerate(files,1):
+        icon={'complete':'✅','failed':'⚠️'}.get(item.get('state'),'⏳')
+        name=discord.utils.escape_markdown(item['filename'].replace('\n',' ').replace('\r',' ')[:20])
+        lines.append(f"{icon} {n}. {name}\n**{item['size']/BYTES_PER_MB:.1f} MB / {MAX_FILE_MB} MB**")
+    return '\n'.join(lines)
 
 async def failed(i,error):
     if isinstance(error,ValueError):return await reply(i,str(error))
@@ -47,7 +56,7 @@ class BugForm(discord.ui.Modal):
         self.file=discord.ui.FileUpload(custom_id='clip_file',required=False,min_values=0,max_values=MAX_REPORT_FILES)
         self.clip=discord.ui.TextInput(custom_id='clip_link',required=False,max_length=1000,placeholder='https://…',default=data.get('clip') or None)
         saved=row.get('video') or row.get('file_count')
-        self.add_item(discord.ui.Label(text='Pruebas · Fotos y videos',description=('Ya hay pruebas guardadas. Subir otras las reemplaza. Hasta 10 archivos de 60 MB cada uno.' if saved else 'Hasta 10 fotos o videos de 60 MB cada uno. Puedes mezclarlos en el mismo reporte.'),component=self.file))
+        self.add_item(discord.ui.Label(text='Pruebas · Fotos y videos',description=(f'Ya hay pruebas guardadas. Subir otras las reemplaza. Hasta {MAX_REPORT_FILES} archivos de {MAX_FILE_MB} MB cada uno.' if saved else f'Hasta {MAX_REPORT_FILES} fotos o videos de {MAX_FILE_MB} MB cada uno. Al enviar verás cuánto pesa cada archivo.'),component=self.file))
         self.add_item(discord.ui.Label(text='Enlace de las pruebas (opcional)',description='Si no adjuntas archivos, pega el enlace de la foto o del video. Hace falta una prueba.',component=self.clip))
     async def on_submit(self,i):
         started=time.monotonic()
@@ -67,8 +76,8 @@ class BugForm(discord.ui.Modal):
                     raise ValueError('Uno de los archivos llegó vacío. Vuelve a adjuntarlo.')
                 if attachment.size>self.upload_limit:
                     logging.getLogger('LaVenganzaRP.bugs').info('BUGS clip_rejected id=%s reason=too_large bytes=%s',self.rid,attachment.size)
-                    raise ValueError(f'Uno de los archivos pesa {attachment.size/(1024*1024):.1f} MB. El límite es {self.upload_limit//(1024*1024)} MB por archivo. Redúcelo o pega su enlace.')
-                filename=original[:100-len(extension)]+extension
+                    raise ValueError(f'Uno de los archivos pesa {attachment.size/BYTES_PER_MB:.1f} MB. El límite es {MAX_FILE_MB} MB por archivo. Redúcelo o pega su enlace.')
+                filename=Path(original).stem[:100-len(extension)]+extension
                 files.append(dict(source=dict(id=attachment.id,url=attachment.url,proxy_url=attachment.proxy_url),filename=filename,size=attachment.size))
             member=await self.system.member(i)
             values['discord_username']=member.name

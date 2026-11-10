@@ -7,7 +7,7 @@ Foro: 1556488595131466000. El panel oficial del bot es 1569705426704924753; su I
 1. ID dentro del juego.
 2. Nombre del error.
 3. Detalles: descripción, cómo ocurrió, sistema afectado y frecuencia. Cada apartado se guarda por separado.
-4. Fotos y videos: **hasta 10 archivos mezclados, de 60 MiB cada uno** (62.914.560 bytes).
+4. Fotos y videos: **hasta 10 archivos mezclados, de 120 MB cada uno** (120.000.000 bytes).
 5. Enlace alternativo HTTPS, si no se adjuntan archivos.
 
 Se admiten PNG, JPG/JPEG, WEBP, GIF, HEIC/HEIF y AVIF; y MP4, WEBM, MOV y M4V. Una foto sola cuenta como prueba; ya no se exige video en todos los reportes. Hace falta al menos un archivo o un enlace para guardar el formulario completo y publicar. La cuenta de Discord se identifica automáticamente. El aviso distingue un formato no compatible, un archivo vacío y un tamaño excesivo. Los nombres largos conservan su extensión.
@@ -16,7 +16,9 @@ Discord aplica además el límite de carga de la cuenta del jugador; el bot no p
 
 ## Preparación y publicación
 
-Al enviar, el bot confirma los datos guardados y prepara los archivos en segundo plano. Para grupos, el mismo mensaje muestra el progreso; no se publica un reporte parcial. «Publicar reporte» permanece deshabilitado y el servidor bloquea su uso hasta guardar íntegramente todas las pruebas.
+Al enviar, el bot confirma los datos guardados y prepara los archivos en segundo plano. Desde ese momento cada archivo muestra su peso frente al máximo: por ejemplo **2.4 MB / 120 MB**. También se muestran la cantidad seleccionada sobre diez, el peso total y el estado de preparación de cada archivo, actualizados en el mismo mensaje. El contador usa MB decimales (1 MB = 1.000.000 bytes) y expresa peso frente al límite, no porcentaje de descarga. Sigue visible en la vista previa y en la publicación. Discord no comunica los archivos al bot hasta enviar el formulario.
+
+Para grupos, el mismo mensaje muestra también cuántos archivos terminaron de guardarse; no se publica un reporte parcial. «Publicar reporte» permanece deshabilitado y el servidor bloquea su uso hasta guardar íntegramente todas las pruebas.
 
 Los archivos se descargan de uno en uno dentro de cada grupo, con hasta dos preparaciones de reportes en paralelo y 180 segundos por descarga. Cada original tiene tamaño comprobado y SHA256. Los grupos sobreviven a reinicios y solo vuelven a descargar archivos pendientes; un trabajo antiguo no puede sobrescribir un formulario editado después. Si una descarga falla, se conservan los datos y se pide volver a adjuntar las pruebas o usar un enlace.
 
@@ -34,7 +36,7 @@ Los reportes abiertos directamente por jugadores también reciben controles. Una
 
 ## Persistencia y lectura de archivos
 
-SQLite conserva lv_bugs, lv_bug_events, lv_bug_config, lv_bug_uploads, lv_bug_media y lv_bug_files. Los archivos individuales anteriores siguen en lv_bugs.video; no se migran ni se eliminan. lv_bug_files conserva cada archivo de un grupo, su fuente de Discord, revisión, orden, estado, contenido, SHA256 y enlace aleatorio. El presupuesto compartido de originales es 1 GiB, incluyendo reservas de descargas pendientes. Los borradores reemplazados conservan sus pruebas anteriores hasta completar las nuevas; nunca se reemplazan archivos de un reporte ya publicado.
+SQLite conserva lv_bugs, lv_bug_events, lv_bug_config, lv_bug_uploads, lv_bug_media y lv_bug_files. Los archivos individuales anteriores siguen en lv_bugs.video; no se migran ni se eliminan. lv_bug_files conserva cada archivo de un grupo, su fuente de Discord, revisión, orden, estado, contenido, SHA256 y enlace aleatorio. El presupuesto compartido de originales es 1.5 GiB, incluyendo reservas de descargas pendientes, suficiente para una selección completa de diez archivos de 120 MB. Los borradores reemplazados conservan sus pruebas anteriores hasta completar las nuevas; nunca se reemplazan archivos de un reporte ya publicado. El contador lee solo metadatos de la selección actual, conservados en las tablas existentes; no añade ni migra tablas.
 
 Las creaciones interrumpidas se buscan por autor, número y marca del bot antes de crear otro hilo. Los cambios de estado pendientes se reintentan. Los respaldos de SQLite incluyen los contenidos de ambas formas de almacenamiento. Formularios, listados y registros administrativos usan metadatos sin copiar todos los archivos a memoria.
 

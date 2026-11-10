@@ -6,6 +6,7 @@ import discord
 from bug_template import panel_embed
 from bug_ui import buttons
 from feedback_ui import NONE
+from bug_limits import MAX_FILE_MB,MAX_REPORT_FILES
 
 FORUM=1556488595131466000
 LEGACY=1564719087798460466
@@ -66,27 +67,27 @@ class ReportPanel:
             if thread.parent_id!=FORUM or thread.owner_id!=self.bot.user.id or thread.id in (LEGACY,OLD_PORTAL):raise ValueError('El panel nuevo no pertenece a este bot o no está en Reportes.')
             root=await thread.fetch_message(thread.id)
             if root.author.id!=self.bot.user.id:raise ValueError('El mensaje nuevo no pertenece al bot.')
-            if await self.call('config','panel_revision')!='8' or self.system.entry_controls(root)!=CONTROLS:
+            if await self.call('config','panel_revision')!='9' or self.system.entry_controls(root)!=CONTROLS:
                 await root.edit(content=None,embed=embed,view=buttons('new','mine'),allowed_mentions=NONE)
             await self.call('config','official_guide_v4',thread.id)
             await self.call('config','guide_buttons',thread.id)
-            await self.call('config','panel_revision','8')
+            await self.call('config','panel_revision','9')
         async def snapshot():
             if thread is None:return dict(guide=None)
             current=await self.bot.fetch_channel(thread.id)
             return dict(thread=thread_state(current),message=message_state(await current.fetch_message(current.id)),
                 panel_revision=await self.call('config','panel_revision'))
-        await self.bot.changes.tracked('BUG_REPORTS','Actualizar Reportes para fotos, videos y varios archivos',publish,
-            request_id='official-panel-v8',snapshot=snapshot)
+        await self.bot.changes.tracked('BUG_REPORTS','Actualizar el límite a 120 MB y mostrar el contador de peso',publish,
+            request_id='official-panel-v9',snapshot=snapshot)
         await self.verify(thread.id)
-        log.info('BUGS panel_verified guide=%s max_clip_mb=60 max_files=10 photos=True videos=True same_entry=True',thread.id)
+        log.info('BUGS panel_verified guide=%s max_clip_mb=%s max_files=10 weight_counter=True photos=True videos=True same_entry=True',thread.id,MAX_FILE_MB)
         return await self.bot.fetch_channel(thread.id)
     async def verify(self,tid):
         thread=await self.bot.fetch_channel(tid);root=await thread.fetch_message(tid)
         if thread.parent_id!=FORUM or thread.owner_id!=self.bot.user.id or root.author.id!=self.bot.user.id or self.system.entry_controls(root)!=CONTROLS or not any(e.footer.text==MARKER for e in root.embeds):
             raise RuntimeError('Discord no confirmó la nueva plantilla del bot y sus botones.')
-        if not any('60 MB' in field.value and '10 archivos' in field.value and 'fotos' in field.value for embed in root.embeds for field in embed.fields):
-            raise RuntimeError('Discord no confirmó el aviso de fotos, videos y diez archivos de hasta 60 MB.')
+        if not any(f'2.4 MB / {MAX_FILE_MB} MB' in field.value and f'{MAX_REPORT_FILES} archivos' in field.value and 'fotos' in field.value for embed in root.embeds for field in embed.fields):
+            raise RuntimeError('Discord no confirmó el límite y el contador de peso de los archivos.')
         return thread
     async def ready(self):
         forum=await self.system.forum()

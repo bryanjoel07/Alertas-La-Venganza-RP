@@ -8,12 +8,12 @@ import re
 import discord
 from discord import app_commands
 from bug_store import BugStore,STATES
-from bug_ui import BugAction,BugForm,StatePicker,buttons,failed
+from bug_ui import BugAction,BugForm,StatePicker,buttons,failed,size_summary
 from feedback_ui import reply,RED,NONE
 from tickets_store import PROTECTED
 from bug_uploads import ClipUploads
 from bug_media import ReportMedia
-from bug_limits import MAX_CLIP_BYTES,IMAGE_TYPES,MAX_REPORT_FILES
+from bug_limits import IMAGE_TYPES,MAX_REPORT_FILES,MAX_FILE_MB,BYTES_PER_MB
 
 FORUM=1556488595131466000
 GUIDE=1564719087798460466
@@ -71,9 +71,13 @@ class BugSystem:
             for start in range(0,len(text),1024):embed.add_field(name='Detalles del problema' if start==0 else 'Detalles (continúa)',value=text[start:start+1024],inline=False)
         hosted=self.media.url(row)
         files=row.get('files',[])
-        proof='\n'.join(f"{n}. {discord.utils.escape_markdown(f['filename'][:40])} · {f['size']/(1024*1024):.1f} MB" for n,f in enumerate(files,1))
-        embed.add_field(name='📎 Pruebas',value='Preparando los archivos adjuntos…' if data.get('upload_pending') else
-            proof or (f'[Abrir archivo]({hosted})' if hosted else data.get('clip') or ('Archivo adjunto al reporte' if row.get('video') else 'Falta adjuntar una foto o un video')),inline=False)
+        proof=size_summary(row.get('attachment_status',files))
+        link=f'[Abrir archivo]({hosted})' if hosted else data.get('clip') if not files else ''
+        value=proof or ('Preparando los archivos adjuntos…' if data.get('upload_pending') else link or ('Archivo adjunto al reporte' if row.get('video') else 'Falta adjuntar una foto o un video'))
+        if proof and link and not data.get('upload_pending'):
+            if len(value)+len(link)+1<=1024:value+='\n'+link
+            else:embed.add_field(name='🔗 Abrir prueba',value=link,inline=False)
+        embed.add_field(name='📎 Pruebas',value=value,inline=False)
         if hosted and Path(row['filename']).suffix.lower() in IMAGE_TYPES:embed.set_image(url=hosted)
         embed.set_footer(text=f"lvbug:{row['id']} · La Venganza RP")
         return embed
@@ -85,7 +89,7 @@ class BugSystem:
             url=self.media.file_url(item)
             if not url:continue
             label='Foto' if item['kind']=='image' else 'Video'
-            links.append(f"{n}. [{label} · {item['size']/(1024*1024):.1f} MB]({url})")
+            links.append(f"{n}. [{label} · {item['size']/BYTES_PER_MB:.1f} MB]({url})")
             if item['kind']=='image':
                 if not images:main.set_image(url=url)
                 else:embeds.append(discord.Embed(color=RED).set_image(url=url))
@@ -114,7 +118,7 @@ class BugSystem:
             components=form.to_dict()['components']
             if len(components)!=5 or components[3]['component']['type']!=19:raise RuntimeError('El formulario único no incluye el archivo adjunto.')
             if components[3]['component']['max_values']!=MAX_REPORT_FILES:raise RuntimeError('El formulario no permite los diez archivos esperados.')
-            log.info('BUGS ready forum=%s guide=%s entry_message=%s bot_owned_template=True single_entry=True single_form=True fields=5 detailed_sections=4 evidence_required=True photos=True videos=True max_files=10 admin_controls=True legacy_removed=%s max_clip_mb=%s large_clip_links=%s',FORUM,guide.id,message.id,await self.call('config','legacy_guide_removed'),MAX_CLIP_BYTES//(1024*1024),bool(self.media.runner))
+            log.info('BUGS ready forum=%s guide=%s entry_message=%s bot_owned_template=True single_entry=True single_form=True fields=5 detailed_sections=4 evidence_required=True photos=True videos=True max_files=10 weight_counter=True admin_controls=True legacy_removed=%s max_clip_mb=%s large_clip_links=%s',FORUM,guide.id,message.id,await self.call('config','legacy_guide_removed'),MAX_FILE_MB,bool(self.media.runner))
     @staticmethod
     def entry_controls(message):
         return [getattr(c,'custom_id',None) for row in message.components for c in row.children]

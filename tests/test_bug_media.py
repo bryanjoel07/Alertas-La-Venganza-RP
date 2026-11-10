@@ -42,7 +42,7 @@ class MediaTests(unittest.IsolatedAsyncioTestCase):
         row=await self.system.media.share(rid)
         return urlsplit(self.system.media.url(row)).path
 
-    async def test_60_mb_original_survives_restart_publishes_once_and_streams_intact(self):
+    async def test_120_mb_original_survives_restart_publishes_once_and_streams_intact(self):
         payload=b'x'*(MAX_CLIP_BYTES-4)+b'end!'
         digest=hashlib.sha256(payload).hexdigest()
         rid=self.video(payload);del payload
@@ -55,7 +55,7 @@ class MediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(posted['allowed_mentions'].to_dict()['parse'],[])
         row=BugStore(self.system.store.path).get(rid,include_video=False)
         self.assertEqual(row['video_size'],MAX_CLIP_BYTES)
-        self.assertEqual(row['video'],1)  # Metadata avoids loading 60 MB for a form/list.
+        self.assertEqual(row['video'],1)  # Metadata avoids loading the file for a form/list.
         self.assertEqual(row['sha256'],digest)
         url=self.system.media.url(row);path=urlsplit(url).path
         self.assertIn(url,str(posted['embed'].to_dict()))
@@ -95,7 +95,7 @@ class MediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status,416);await response.read()
         await asyncio.wait_for(self.system.call('begin',2),1)
         response=await self.session.get(self.origin+'/health')
-        self.assertEqual((await response.json())['max_clip_mb'],60)
+        self.assertEqual((await response.json())['max_clip_mb'],120)
 
     async def test_discord_413_falls_back_to_saved_original_and_keeps_same_report(self):
         rid=self.video();self.system.store.reserve(rid,1)

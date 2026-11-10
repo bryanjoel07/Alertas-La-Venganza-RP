@@ -46,8 +46,8 @@ class UploadStoreTests(unittest.TestCase):
     def test_only_discord_upload_sources_are_allowed(self):
         for url in ('http://cdn.discordapp.com/attachments/100/900/a.mp4','https://example.com/attachments/100/900/a.mp4','https://cdn.discordapp.com/attachments/100/901/a.mp4','https://user:secret@cdn.discordapp.com/attachments/100/900/a.mp4'):
             with self.assertRaises(ValueError):validate_source(dict(SOURCE,url=url))
-    def test_more_than_60_mb_is_rejected_without_reserving_or_replacing_a_clip(self):
-        with self.assertRaisesRegex(ValueError,'60 MB'):
+    def test_more_than_120_mb_is_rejected_without_reserving_or_replacing_a_clip(self):
+        with self.assertRaisesRegex(ValueError,'120 MB'):
             self.store.prepare_upload(self.rid,1,VALUES,0,SOURCE,'clip.mp4',MAX_CLIP_BYTES+1)
         self.assertIsNone(self.store.upload_job(self.rid))
         self.assertEqual(self.store.get(self.rid)['revision'],0)
@@ -120,7 +120,7 @@ class ResponsiveTests(unittest.IsolatedAsyncioTestCase):
         self.guild.fetch_member.assert_not_awaited();self.bot.fetch_channel.assert_not_awaited()
         with self.assertRaises(ValueError):await self.system.member(self.i,admin=True)
         self.guild.fetch_member.assert_awaited_once_with(1)
-    async def test_native_60_mb_user_upload_is_not_limited_by_the_bots_10_mb_guild_limit(self):
+    async def test_native_120_mb_user_upload_is_not_limited_by_the_bots_10_mb_guild_limit(self):
         self.guild.filesize_limit=10*1024*1024
         gate=asyncio.Event()
         async def read():await gate.wait();return b'clip'
@@ -140,13 +140,33 @@ class ResponsiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.system.store.get(rid)['step'],2)
         self.assertEqual(len(self.system.store.get(rid)['video']),2_800_000)
         self.i.followup.send.assert_not_awaited()
-    async def test_video_above_60_mb_reports_its_actual_size_before_any_download(self):
+    async def test_photo_weight_is_visible_before_download_and_stays_correct_when_ready(self):
+        gate=asyncio.Event();reading=asyncio.Event()
+        async def read():reading.set();await gate.wait();return b'p'*2_400_000
+        rid,form=self.form(AsyncMock(side_effect=read))
+        form.file.values[0].filename='foto.png';form.file.values[0].size=2_400_000
+        await asyncio.wait_for(form.on_submit(self.i),1)
+        await asyncio.wait_for(reading.wait(),1)
+        first=self.i.edit_original_response.call_args_list[0].kwargs
+        proof=next(f.value for f in first['embed'].fields if f.name=='📎 Pruebas')
+        self.assertIn('2.4 MB / 120 MB',proof);self.assertIn('⏳',proof)
+        self.assertTrue(first['view'].children[0].item.disabled)
+        pending=BugStore(self.system.store.path).get(rid,include_video=False)
+        self.assertEqual(pending['attachment_status'],[dict(filename='foto.png',size=2_400_000,state='pending')])
+        gate.set();await asyncio.gather(*list(self.system.clips.jobs.values()))
+        last=self.i.edit_original_response.call_args.kwargs
+        proof=next(f.value for f in last['embed'].fields if f.name=='📎 Pruebas')
+        self.assertIn('2.4 MB / 120 MB',proof);self.assertIn('✅',proof)
+        self.assertFalse(last['view'].children[0].item.disabled)
+        self.i.followup.send.assert_not_awaited()
+        self.forum.create_thread.assert_not_called()
+    async def test_video_above_120_mb_reports_its_actual_size_before_any_download(self):
         read=AsyncMock();rid,form=self.form(read)
-        form.file.values[0].size=61*1024*1024
+        form.file.values[0].size=121_000_000
         await form.on_submit(self.i)
         message=self.i.followup.send.call_args.args[0]
-        self.assertIn('pesa 61.0 MB',message)
-        self.assertIn('límite es 60 MB',message)
+        self.assertIn('pesa 121.0 MB',message)
+        self.assertIn('límite es 120 MB',message)
         read.assert_not_awaited()
         self.assertIsNone(self.system.store.upload_job(rid))
     async def test_long_video_filename_keeps_its_extension_and_can_publish(self):

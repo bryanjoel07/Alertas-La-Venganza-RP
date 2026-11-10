@@ -1,6 +1,7 @@
 """The official report questions, kept together in one Discord modal."""
 import re
 import unicodedata
+from bug_limits import MAX_FILE_MB,MAX_REPORT_FILES
 
 DETAILS_LIMIT=3500
 SECTIONS=[('description','Descripción del error','Describe qué sucede'),
@@ -47,7 +48,7 @@ def panel_embed():
         description='Informa de un fallo del servidor desde **Reportar un error**. Completa los datos y adjunta tus fotos o videos en el mismo formulario; después podrás revisarlo antes de publicarlo.')
     embed.add_field(name='👤 1. Identificación',value='Tu **cuenta de Discord** se registra automáticamente. Escribe también tu **ID dentro del servidor** para que el equipo pueda identificarte.',inline=False)
     embed.add_field(name='🐛 2. Nombre y detalles del error',value='Escribe un **título breve** y completa los cuatro apartados del formulario:\n\n**Descripción:** qué sucede y qué debería suceder.\n**Cómo ocurrió:** pasos y acciones anteriores al fallo.\n**Sistema afectado:** inventario, vehículos, trabajos, scripts u otro.\n**Frecuencia:** siempre, a veces o una sola vez.',inline=False)
-    embed.add_field(name='📸 3. Fotos y videos del error',value='**Puedes adjuntar hasta 10 archivos de 60 MB cada uno.** Mezcla fotos y videos en el mismo formulario. También puedes pegar un enlace si Discord no te deja subirlos.\n\nLas fotos se muestran en el reporte y cada archivo tiene su enlace para abrirlo. Deben mostrar claramente el problema. **Hace falta al menos una foto, un video o el enlace de las pruebas para publicar.**',inline=False)
+    embed.add_field(name='📸 3. Fotos y videos del error',value=f'**Puedes adjuntar hasta {MAX_REPORT_FILES} archivos de {MAX_FILE_MB} MB cada uno.** Mezcla fotos y videos en el mismo formulario. Al enviar verás el peso de cada archivo, por ejemplo **2.4 MB / {MAX_FILE_MB} MB**, y el peso total. También puedes pegar un enlace si Discord no te deja subirlos.\n\nLas fotos se muestran en el reporte y cada archivo tiene su enlace para abrirlo. Deben mostrar claramente el problema. **Hace falta al menos una foto, un video o el enlace de las pruebas para publicar.**',inline=False)
     embed.add_field(name='📋 4. Revisión y seguimiento',value='Comprueba los datos antes de publicar. Cada error tendrá su propia publicación, un responsable y un historial de cambios.\n\n🔴 Pendiente → 🟠 En revisión → 🔵 En proceso → 🟢 Solucionado\n⚫ Cerrado: reporte finalizado, incompleto o duplicado.',inline=False)
     embed.add_field(name='Antes de enviar',value='Un reporte por error. Continúa en tu publicación si ya lo enviaste. No compartas contraseñas ni datos personales. **Owner, Programador y administradores** gestionan la revisión.',inline=False)
     embed.set_footer(text='La Venganza RP · Equipo de desarrollo · Panel oficial de reportes')

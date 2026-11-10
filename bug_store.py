@@ -7,7 +7,7 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 from bug_template import DETAILS_LIMIT,parse_details
-from bug_limits import MAX_CLIP_BYTES,MAX_STORED_CLIP_BYTES
+from bug_limits import MAX_CLIP_BYTES,MAX_STORED_CLIP_BYTES,MAX_FILE_MB
 from bug_files import ReportFiles,FILE_COUNT
 
 METADATA=f"""id,owner,data,step,status,thread,message,assignee,created,updated,filename,
@@ -69,6 +69,7 @@ class BugStore(ReportFiles):
             row=db.execute(f'SELECT {columns} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row:return None
             result=dict(row);result['files']=self.file_rows(db,rid,json.loads(row['data']).get('files_revision'))
+            result['attachment_status']=self.attachment_status(db,result)
             return result
     def media_token(self,rid):
         with self.db() as db:
@@ -113,7 +114,7 @@ class BugStore(ReportFiles):
                 if values.get('frequency') not in ('Siempre','A veces','Una sola vez'):raise ValueError('Elige con qué frecuencia pasa.')
                 data.update(frequency=values['frequency'],clip=clip_url(values.get('clip','')))
                 if not data['clip'] and not video and not row['video'] and not row['file_count']:raise ValueError('Faltan las pruebas, bro. Adjunta una foto o un video, o pega su enlace.')
-                if video is not None and (not video or len(video)>MAX_CLIP_BYTES):raise ValueError('El archivo debe pesar hasta 60 MB.')
+                if video is not None and (not video or len(video)>MAX_CLIP_BYTES):raise ValueError(f'El archivo debe pesar hasta {MAX_FILE_MB} MB.')
                 if video:self.check_capacity(db,rid,len(video))
             else:raise ValueError('Paso desconocido.')
             db.execute('''UPDATE lv_bugs SET data=?,step=?,updated=?,revision=revision+1,
@@ -142,7 +143,7 @@ class BugStore(ReportFiles):
             if not clip and not video and not row['video'] and not row['file_count']:raise ValueError('Faltan las pruebas, bro. Adjunta una foto o un video, o pega su enlace; el reporte no se envió.')
             sections=parse_details(values['details'])
             if video is not None:
-                if not video or len(video)>MAX_CLIP_BYTES or not filename:raise ValueError('Adjunta un archivo válido de hasta 60 MB.')
+                if not video or len(video)>MAX_CLIP_BYTES or not filename:raise ValueError(f'Adjunta un archivo válido de hasta {MAX_FILE_MB} MB.')
                 self.check_capacity(db,rid,len(video))
             data=json.loads(row['data']);data.update({key:values[key].strip() for key in limits});data['clip']=clip
             data.update(sections,report_schema=4,discord_username=values.get('discord_username',''))
@@ -158,7 +159,7 @@ class BugStore(ReportFiles):
         for key,limit in {'player_id':30,'title':100,'details':DETAILS_LIMIT}.items():
             if not values.get(key,'').strip() or len(values[key])>limit:raise ValueError('Completa el ID, el título y los detalles del problema.')
         sections=parse_details(values['details']);clip=clip_url(values.get('clip',''))
-        if not filename or not 0<size<=MAX_CLIP_BYTES:raise ValueError('El archivo debe pesar hasta 60 MB.')
+        if not filename or not 0<size<=MAX_CLIP_BYTES:raise ValueError(f'El archivo debe pesar hasta {MAX_FILE_MB} MB.')
         with self.db() as db:
             row=db.execute(f'SELECT {METADATA} FROM lv_bugs WHERE id=?',(rid,)).fetchone()
             if not row or row['owner']!=owner or row['status']!='borrador' or row['revision']!=revision:

@@ -15,7 +15,7 @@ from urllib.parse import quote, urlsplit
 
 from aiohttp import web
 
-from bug_limits import MAX_CLIP_BYTES,MAX_REPORT_FILES,FILE_TYPES
+from bug_limits import MAX_FILE_MB,MAX_REPORT_FILES,FILE_TYPES
 
 log = logging.getLogger('LaVenganzaRP.bugs')
 TYPES = FILE_TYPES
@@ -100,8 +100,8 @@ class ReportMedia:
         return app
 
     async def health(self, request):
-        return web.json_response(dict(status='ok', max_clip_mb=MAX_CLIP_BYTES // (1024 * 1024),
-            max_files=MAX_REPORT_FILES,photos=True,videos=True,
+        return web.json_response(dict(status='ok', max_clip_mb=MAX_FILE_MB,max_file_mb=MAX_FILE_MB,
+            max_files=MAX_REPORT_FILES,photos=True,videos=True,weight_counter=True,
             discord_connected=self.system.bot.is_ready(), release=os.getenv('RAILWAY_GIT_COMMIT_SHA', '')[:12]))
 
     async def clip(self, request):
@@ -158,7 +158,7 @@ class ReportMedia:
         await self.runner.setup()
         port = int(os.getenv('PORT', '8080'))
         await web.TCPSite(self.runner, '0.0.0.0', port).start()
-        log.info('BUGS media_ready port=%s max_clip_mb=60 max_files=10 photos=True videos=True streaming=True drafts_public=False', port)
+        log.info('BUGS media_ready port=%s max_clip_mb=%s max_files=10 photos=True videos=True streaming=True drafts_public=False', port,MAX_FILE_MB)
 
     async def close(self):
         if self.runner is not None:

@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from bug_limits import MAX_CLIP_BYTES
 from bug_store import BugStore
-from bug_ui import BugForm
+from bug_ui import BugForm,size_summary
 from bug_uploads import ClipUploads
 from bugs import FORUM
 import test_bug_media as mediafixtures
@@ -70,14 +70,15 @@ class MultiStoreTests(unittest.TestCase):
         item=selection()[0]
         revision=self.store.prepare_upload(self.rid,1,VALUES,revision,item['source'],'new.png',3)
         self.assertEqual(self.store.get(self.rid)['file_count'],2)
+        self.assertEqual(self.store.get(self.rid)['attachment_status'],[dict(filename='new.png',size=3,state='pending')])
         self.assertTrue(self.store.complete_upload(self.rid,revision,b'png'))
         row=self.store.get(self.rid)
         self.assertEqual(row['video'],b'png');self.assertEqual(row['file_count'],0)
         self.store.reserve(self.rid,1)
-    def test_ten_60_mb_files_reserve_total_space_and_eleven_or_oversize_are_refused(self):
+    def test_ten_120_mb_files_reserve_total_space_and_eleven_or_oversize_are_refused(self):
         with self.assertRaisesRegex(ValueError,'10 archivos'):
             self.store.prepare_files(self.rid,1,VALUES,0,selection(11))
-        with self.assertRaisesRegex(ValueError,'60 MB'):
+        with self.assertRaisesRegex(ValueError,'120 MB'):
             self.store.prepare_files(self.rid,1,VALUES,0,selection(size=MAX_CLIP_BYTES+1))
         self.store.prepare_files(self.rid,1,VALUES,0,selection(10,size=MAX_CLIP_BYTES))
         other=self.store.begin(2)
@@ -89,6 +90,26 @@ class MultiStoreTests(unittest.TestCase):
         self.store.fail_files(self.rid,revision,'download')
         self.assertFalse(self.store.pending_file_groups())
         with self.assertRaises(ValueError):self.store.reserve(self.rid,1)
+    def test_counter_totals_and_each_file_status_are_preserved_as_group_prepares(self):
+        selected=selection();selected[0]['size']=2_400_000;selected[1]['size']=3_600_000
+        revision=self.store.prepare_files(self.rid,1,VALUES,0,selected)
+        jobs=self.store.file_jobs(self.rid,revision)
+        first=size_summary(self.store.get(self.rid,include_video=False)['attachment_status'])
+        for text in ('2/10 archivos','6.0 MB','2.4 MB / 120 MB','3.6 MB / 120 MB'):self.assertIn(text,first)
+        self.assertEqual(first.count('⏳'),2)
+        self.store.complete_file(self.rid,revision,jobs[0]['id'],b'p'*2_400_000)
+        partial=size_summary(self.store.get(self.rid,include_video=False)['attachment_status'])
+        self.assertEqual(partial.count('✅'),1);self.assertEqual(partial.count('⏳'),1)
+        with self.assertRaises(ValueError):self.store.reserve(self.rid,1)
+        self.store.complete_file(self.rid,revision,jobs[1]['id'],b'v'*3_600_000)
+        final=size_summary(BugStore(self.store.path).get(self.rid,include_video=False)['attachment_status'])
+        self.assertEqual(final.count('✅'),2);self.assertIn('6.0 MB',final)
+    def test_ten_maximum_files_have_clear_individual_limits_and_fit_one_discord_field(self):
+        files=[dict(filename='*'*100+'.png',size=MAX_CLIP_BYTES,state='complete') for _ in range(10)]
+        value=size_summary(files)
+        self.assertLessEqual(len(value),1024)
+        self.assertIn('Total: **1200.0 MB**',value)
+        self.assertEqual(value.count('120.0 MB / 120 MB'),10)
 
 
 class MultiServiceTests(unittest.IsolatedAsyncioTestCase):
