@@ -4,6 +4,11 @@ Abre **`/ajustes panel`** en La Venganza RP, fuera del canal exclusivo de perfil
 Es una aplicación dentro de Discord: menú por sistemas, valores actuales, botones
 para abrir formularios y enlaces a los canales correspondientes. No necesita una web.
 La respuesta es privada y solo puede manejarla el administrador que la abrió.
+Todos los pasos se muestran en **el mismo mensaje**: navegar, elegir la semana de
+Fotos, enviar formularios, revisar, guardar, cancelar, buscar y restaurar. Al guardar,
+esa misma tarjeta vuelve a la sección con sus valores actualizados. No se acumulan
+respuestas privadas nuevas por cada edición. Los formularios se siguen abriendo
+como ventanas de Discord, pero al enviarlos actualizan el panel del que salieron.
 
 ## Cómo cambiar un ajuste
 
@@ -16,6 +21,8 @@ Abrir el panel, navegar o enviar un formulario no guarda nada por sí solo. Ante
 guardar, el bot vuelve a consultar en Discord que conservas Administrador. Si alguien
 cambió esos valores mientras tenías abierto el formulario, pide revisarlos otra vez.
 Una confirmación repetida usa el mismo recibo y no vuelve a aplicar la operación.
+Las vistas previas largas tienen páginas dentro del mismo panel para conservar
+todo el texto. Los avisos de error y de guardado también reutilizan ese mensaje.
 
 El menú tiene 16 secciones y 22 formularios, contando los tres ajustes originales y
 el editor de productos:
@@ -96,10 +103,11 @@ los paneles afectados. El registro privado `ADMIN_SETTINGS` usa `ChangeLog.track
 los cambios no se anuncian en Registro Exclusive. La navegación principal expira
 en 14 minutos; basta con abrir otro panel.
 
-Para volver al código anterior, desplegar `1247aeeaaa085d8b0ea307c9e355df2fcd72ffd8`
-y conservar el volumen y su SQLite actual. Revertir código no restaura valores:
-usar primero el historial si hay que deshacerlos. La versión anterior ignora las
-claves nuevas y no procesa la cola nueva, pero conserva los precios, premios,
-horarios y otras claves ya compatibles. Si se cambió el filtro nativo de Discord,
-restaurar sus ajustes antes de revertir código. Conservar las tablas y archivos;
-no borrar mensajes, tickets, roles ni permisos para revertir el panel.
+Para volver al código anterior, desplegar `e3fdb971b691055af9b7da1e45daa57c2034d3e0`
+y conservar el volumen y su SQLite actual. Esa versión conserva los mismos ajustes,
+historial y cola, pero vuelve a crear respuestas privadas nuevas al enviar formularios.
+Este cambio de interfaz no necesita migración de datos. Revertir código no restaura
+valores: usar el historial si hay que deshacer un ajuste. Después de desplegar una
+versión, abrir `/ajustes panel` una vez para cargar sus botones nuevos. Conservar
+las tablas y archivos; no borrar mensajes, tickets, roles ni permisos para revertir
+el panel.

@@ -143,7 +143,9 @@ class SettingsUITests(SettingsFixtures,unittest.IsolatedAsyncioTestCase):
 
     def interaction(self,user=None,guild=GUILD):
         i=MagicMock();i.user=user or self.member;i.guild=self.guild;i.guild_id=guild
-        i.response.is_done.return_value=False;i.response.defer=AsyncMock();i.response.send_message=AsyncMock()
+        i.response.is_done.return_value=False
+        async def defer(**kwargs):i.response.is_done.return_value=True
+        i.response.defer=AsyncMock(side_effect=defer);i.response.send_message=AsyncMock()
         i.followup.send=AsyncMock();i.edit_original_response=AsyncMock()
         return i
 
@@ -175,7 +177,7 @@ class SettingsUITests(SettingsFixtures,unittest.IsolatedAsyncioTestCase):
         self.guild.fetch_member.return_value=SimpleNamespace(id=1,guild_permissions=discord.Permissions.none())
         click=self.interaction();await view.save.callback(click)
         self.assertEqual(self.store.snapshot(BASE)['revision'],0);self.bot.changes.tracked.assert_not_awaited()
-        self.assertIn('administradores',click.edit_original_response.call_args.kwargs['content'])
+        self.assertIn('administradores',str(click.edit_original_response.call_args.kwargs['view'].to_components()))
 
     async def test_stale_confirmation_cannot_overwrite_another_admins_hour(self):
         view=await self.preview();self.store.apply('schedule','21:00',0,2,'other',now=BASE)

@@ -9,7 +9,6 @@ import discord
 from settings_catalog import SECTIONS,BY_SECTION,BY_FORM,Form,Field,validate
 
 RED=0xD60000
-NONE=discord.AllowedMentions.none()
 log=logging.getLogger('LaVenganzaRP.settings')
 
 
@@ -25,30 +24,15 @@ def searchable(text):
  return ''.join(c for c in unicodedata.normalize('NFKD',text.casefold()) if unicodedata.category(c)!='Mn')
 
 
-class AppView(discord.ui.LayoutView):
- def __init__(self,system,owner,origin,state,section='home',*,page=0,query='',rows=(),details=None,notice=None):
+class PanelView(discord.ui.LayoutView):
+ """Every settings screen can replace the same Discord v2 message."""
+ def __init__(self,system,owner,origin,title,notice=None):
   super().__init__(timeout=840)
-  self.system,self.owner,self.origin,self.state=system,owner,origin,state
-  self.section,self.page,self.query,self.rows,self.details=section,page,query,list(rows),details
+  self.system,self.owner,self.origin=system,owner,origin
+  self.retired=False
   self.box=discord.ui.Container(accent_colour=RED);self.add_item(self.box)
-  title='⚙️ La Venganza RP · Centro de ajustes'
-  if section in BY_SECTION:
-   spec=BY_SECTION[section];title=f'{spec.emoji} {spec.title}'
-  elif section=='directory':title='🧰 Funciones del bot'
-  elif section=='catalog':title='🛍️ Productos de la tienda'
-  elif section=='history':title='🧾 Historial de ajustes'
-  elif section=='detail':title='🧾 Detalle del cambio'
   self.text('## '+title+('\n'+notice if notice else ''))
   self.box.add_item(discord.ui.Separator())
-  if section=='home':self.home()
-  elif section=='directory':self.directory()
-  elif section=='catalog':self.catalog()
-  elif section=='history':self.history()
-  elif section=='detail':self.detail()
-  else:self.module()
-  self.menu()
-  self.nav()
-  self.text('-# Solo tú puedes ver este panel · Los cambios requieren confirmación.')
 
  def text(self,text):self.box.add_item(discord.ui.TextDisplay(text))
 
@@ -63,20 +47,49 @@ class AppView(discord.ui.LayoutView):
   from settings_panel import private
   if i.user.id!=self.owner:
    await private(i,'Este panel pertenece a quien lo abrió. Usa /ajustes panel.');return False
+  if self.retired:
+   await i.response.defer();return False
   try:await self.system.authorize(i)
   except ValueError as error:await private(i,str(error));return False
   self.origin=i;return True
 
  async def on_error(self,i,error,item):
-  from settings_panel import private
   if not isinstance(error,ValueError):log.error('SETTINGS app_failed',exc_info=error)
-  await private(i,str(error) if isinstance(error,ValueError) else 'No pude abrir esa opción. Actualiza el panel e inténtalo otra vez.')
+  await self.system.fail(i,self.owner,str(error) if isinstance(error,ValueError) else
+   'No pude abrir esa opción. Vuelve al panel e inténtalo otra vez.',previous=self)
+
+ def retire(self):
+  self.retired=True;self.stop()
 
  async def on_timeout(self):
+  if self.retired:return
   expired=discord.ui.LayoutView()
   expired.add_item(discord.ui.Container(discord.ui.TextDisplay('⚙️ Este panel expiró. Usa **/ajustes panel** para abrir otro.'),accent_colour=RED))
   try:await self.origin.edit_original_response(view=expired)
   except discord.HTTPException:pass
+
+
+class AppView(PanelView):
+ def __init__(self,system,owner,origin,state,section='home',*,page=0,query='',rows=(),details=None,notice=None):
+  self.state=state
+  self.section,self.page,self.query,self.rows,self.details=section,page,query,list(rows),details
+  title='⚙️ La Venganza RP · Centro de ajustes'
+  if section in BY_SECTION:
+   spec=BY_SECTION[section];title=f'{spec.emoji} {spec.title}'
+  elif section=='directory':title='🧰 Funciones del bot'
+  elif section=='catalog':title='🛍️ Productos de la tienda'
+  elif section=='history':title='🧾 Historial de ajustes'
+  elif section=='detail':title='🧾 Detalle del cambio'
+  super().__init__(system,owner,origin,title,notice)
+  if section=='home':self.home()
+  elif section=='directory':self.directory()
+  elif section=='catalog':self.catalog()
+  elif section=='history':self.history()
+  elif section=='detail':self.detail()
+  else:self.module()
+  self.menu()
+  self.nav()
+  self.text('-# Solo tú puedes ver este panel · Los cambios requieren confirmación.')
 
  def home(self):
   self.text('Todo el bot en un solo lugar. **Elige un sistema en el menú de abajo** para ver sus ajustes y funciones.\n'
@@ -85,7 +98,7 @@ class AppView(discord.ui.LayoutView):
   self.text(f'**Server Up:** {self.state["values"]["daily_server_up_time"]} · Puerto Rico\n'
    f'**Fotos:** 🥇 {self.state["rewards"][0]:,} · 🥈 {self.state["rewards"][1]:,} · 🥉 {self.state["rewards"][2]:,} monedas\n'
    '**La configuración actual se conserva hasta que guardes un cambio.**')
-  async def search(i):await i.response.send_modal(SearchForm(self.system,self.owner))
+  async def search(i):await i.response.send_modal(SearchForm(self.system,self.owner,previous=self))
   self.row([self.button('Buscar una función',search,'🔎'),self.button('Ver todos los comandos',self.go('directory'),'🧰')])
 
  def module(self):
@@ -111,20 +124,19 @@ class AppView(discord.ui.LayoutView):
   controls=[]
   for form in BY_FORM.values():
    if form.section==self.section:
-    async def edit(i,key=form.key):await i.response.send_modal(SystemForm(self.system,self.owner,self.state,key))
+    async def edit(i,key=form.key):await i.response.send_modal(SystemForm(self.system,self.owner,self.state,key,previous=self))
     controls.append(self.button(form.title,edit,'⚙️',discord.ButtonStyle.primary))
   if self.section=='server':
    for kind,label in (('schedule','Hora del Server Up'),('text','Mensaje del Server Up')):
     async def old_form(i,kind=kind):
      from settings_panel import SettingsForm
-     await i.response.send_modal(SettingsForm(self.system,self.owner,self.state,kind))
+     await i.response.send_modal(SettingsForm(self.system,self.owner,self.state,kind,previous=self))
     controls.append(self.button(label,old_form,'📝'))
   if self.section=='photos':
    async def prizes(i):
-    from settings_panel import RewardScope,prizes
-    await i.response.send_message(embed=discord.Embed(title='📸 Premios de Fotos',color=RED,
-     description=f'**Esta semana:** {prizes(self.state["rewards"])}\n**Próxima semana:** {prizes(self.state["next_rewards"])}\n\nElige cuándo aplicarlos. Los premios ya pagados se conservan.'),
-     view=RewardScope(self.system,self.owner,i,self.state),ephemeral=True,allowed_mentions=NONE)
+    from settings_panel import RewardScope
+    await i.response.defer()
+    await self.system.present(i,RewardScope(self.system,self.owner,i,self.state),previous=self)
    controls.append(self.button('Cambiar premios del podio',prizes,'🏆'))
   if self.section=='economy':controls.append(self.button('Editar productos',self.go('catalog'),'🛍️'))
   if self.section=='activity':controls.append(self.button('Ver cambios guardados',self.go('history'),'🧾'))
@@ -145,8 +157,7 @@ class AppView(discord.ui.LayoutView):
   self.row([self.button('Inicio',self.go('home'),'🏠'),self.button('Actualizar',reload,'🔄'),self.button('Historial',self.go('history'),'🧾')])
 
  async def move(self,i,section,**kwargs):
-  await self.system.open(i,section,**kwargs)
-  self.stop()
+  await self.system.open(i,section,previous=self,**kwargs)
 
  def go(self,section):
   async def turn(i):await self.move(i,section)
@@ -170,7 +181,7 @@ class AppView(discord.ui.LayoutView):
   lines=[f'**{row["mention"]}**\n{row["description"]}' for row in shown]
   self.text('\n\n'.join(lines) if lines else 'No encontré funciones con esa búsqueda. Prueba con otra palabra.')
   self.text(f'-# {len(matches)} funciones · Página {self.page+1}')
-  async def search(i):await i.response.send_modal(SearchForm(self.system,self.owner))
+  async def search(i):await i.response.send_modal(SearchForm(self.system,self.owner,previous=self))
   self.row([self.button('Buscar',search,'🔎')]);self.pages(len(matches),10,'directory')
 
  def catalog(self):
@@ -180,7 +191,7 @@ class AppView(discord.ui.LayoutView):
   select=discord.ui.Select(placeholder='Elige el producto',options=[discord.SelectOption(label=r['name'][:100],value=r['sku'],description=f'{r["price"]:,} monedas · '+('Disponible' if r['active'] else 'Pausado')) for r in shown])
   async def chosen(i):
    product=next(r for r in shown if r['sku']==select.values[0])
-   await i.response.send_modal(SystemForm(self.system,self.owner,self.state,'product',product=product))
+   await i.response.send_modal(SystemForm(self.system,self.owner,self.state,'product',product=product,previous=self))
   select.callback=chosen;self.row([select])
   self.text(f'-# {len(rows)} productos · Página {self.page+1}');self.pages(len(rows),20,'catalog')
 
@@ -211,35 +222,37 @@ class AppView(discord.ui.LayoutView):
   self.text('Restaurar abre otra vista previa. Solo recupera estos ajustes; conserva compras, monedas, mensajes y archivos.')
   async def restore(i):
    from settings_panel import ConfirmSettings
-   await i.response.defer(ephemeral=True,thinking=True)
+   await i.response.defer()
    await self.system.authorize(i,refresh=True)
    draft=await self.system.restore_draft(row['op'])
-   await i.edit_original_response(embeds=self.system.review(draft),view=ConfirmSettings(self.system,self.owner,i,draft),allowed_mentions=NONE)
+   await self.system.present(i,ConfirmSettings(self.system,self.owner,i,draft),previous=self)
   self.row([self.button('Revisar restauración',restore,'↩️')])
 
 
 class SearchForm(discord.ui.Modal,title='Buscar una función'):
- def __init__(self,system,owner):
+ def __init__(self,system,owner,*,previous=None):
   super().__init__(timeout=600);self.system,self.owner=system,owner
+  self.previous=previous
   self.term=discord.ui.TextInput(placeholder='Ejemplo: ticket, precio, entrevista, respaldo',max_length=100)
   self.add_item(discord.ui.Label(text='¿Qué quieres hacer?',component=self.term))
  async def on_submit(self,i):
   if i.user.id!=self.owner:return
-  await i.response.defer(ephemeral=True,thinking=True)
+  await i.response.defer()
   await self.system.authorize(i,refresh=True)
-  await self.system.open(i,'directory',query=self.term.value)
+  await self.system.open(i,'directory',query=self.term.value,previous=self.previous)
  async def on_error(self,i,error):
-  from settings_panel import private
   log.error('SETTINGS search_failed',exc_info=error)
-  await private(i,'No pude completar la búsqueda. Vuelve a abrir /ajustes panel para intentarlo otra vez.')
+  await self.system.fail(i,self.owner,str(error) if isinstance(error,ValueError) else
+   'No pude completar la búsqueda. Vuelve al panel para intentarlo otra vez.',previous=self.previous)
 
 
 class SystemForm(discord.ui.Modal):
- def __init__(self,system,owner,state,key,*,product=None):
+ def __init__(self,system,owner,state,key,*,product=None,previous=None):
   spec=BY_FORM[key] if key!='product' else Form('product','economy','Precio y disponibilidad',
    'Solo cambia compras nuevas. Las compras ya cobradas conservan su precio.',(Field('price','Precio en monedas',0),Field('active','Disponible en la tienda',True,'bool')))
   super().__init__(title=spec.title[:45],timeout=600)
   self.system,self.owner,self.state,self.spec,self.product=system,owner,state,spec,product
+  self.previous=previous
   self.controls={}
   values=state['systems'][key] if key!='product' else product
   for field in spec.fields:
@@ -256,10 +269,10 @@ class SystemForm(discord.ui.Modal):
    self.add_item(discord.ui.Label(text=field.label[:45],description=(field.help or spec.description)[:100],component=control))
 
  async def on_submit(self,i):
-  from settings_panel import Draft,ConfirmSettings,ReloadView
-  await i.response.defer(ephemeral=True,thinking=True)
+  from settings_panel import Draft,ConfirmSettings,private
+  if i.user.id!=self.owner:return await private(i,'Este formulario pertenece a quien lo abrió.')
+  await i.response.defer()
   try:
-   if i.user.id!=self.owner:raise ValueError('Este formulario pertenece a quien lo abrió.')
    await self.system.authorize(i,refresh=True)
    values={}
    for field in self.spec.fields:
@@ -284,11 +297,10 @@ class SystemForm(discord.ui.Modal):
     if current['systems'][target]!=self.state['systems'][target]:raise ValueError('Estos ajustes cambiaron desde otro comando. Abre el formulario otra vez.')
     draft=Draft('system',values,current,target)
    await self.system.validate_runtime(i,draft)
-   await i.edit_original_response(embeds=self.system.review(draft),view=ConfirmSettings(self.system,self.owner,i,draft),allowed_mentions=NONE)
+   await self.system.present(i,ConfirmSettings(self.system,self.owner,i,draft),previous=self.previous)
   except ValueError as error:
-   await i.edit_original_response(content=str(error),view=ReloadView(self.system,self.owner,i))
+   await self.system.fail(i,self.owner,str(error),previous=self.previous)
 
  async def on_error(self,i,error):
-  from settings_panel import private
   log.error('SETTINGS system_form_failed',exc_info=error)
-  await private(i,'No pude abrir la vista previa. Tus ajustes siguen como estaban; vuelve al panel para intentarlo otra vez.')
+  await self.system.fail(i,self.owner,'No pude abrir la vista previa. Tus ajustes siguen como estaban; vuelve al panel para intentarlo otra vez.',previous=self.previous)

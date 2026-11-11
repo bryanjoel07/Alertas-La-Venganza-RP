@@ -50,7 +50,7 @@ class CenterTests(fixtures.SettingsFixtures,unittest.IsolatedAsyncioTestCase):
     async def preview(self,key,values,product=None):
         modal=SystemForm(self.system,1,self.store.snapshot(fixtures.BASE),key,product=product)
         i=self.interaction();self.fill(modal,values,i);await modal.on_submit(i)
-        self.assertTrue(i.response.defer.call_args.kwargs['ephemeral'])
+        self.assertFalse(i.response.defer.call_args.kwargs.get('thinking',False))
         self.assertIsInstance(i.edit_original_response.call_args.kwargs['view'],ConfirmSettings)
         return i.edit_original_response.call_args.kwargs['view']
 

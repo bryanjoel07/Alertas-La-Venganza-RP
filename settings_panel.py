@@ -14,7 +14,7 @@ from discord import app_commands
 from bot_settings import SettingsStore,TEXT_KEYS,friendly_hour,validate_values
 from daily_up import daily_up_embed
 from settings_catalog import BY_FORM,BY_SECTION,SECTIONS
-from settings_app import AppView as RootView,SystemForm,display,searchable
+from settings_app import AppView as RootView,PanelView,SystemForm,display,searchable
 
 log=logging.getLogger('LaVenganzaRP.settings')
 
@@ -28,6 +28,22 @@ def prizes(values):
     return ' · '.join(f'{medal} {n:,}' for medal,n in zip(('🥇','🥈','🥉'),values))+' monedas'
 
 
+def review_pages(embeds):
+    """Keep every preview field while respecting Discord's v2 text limit."""
+    pages=[];page=''
+    for embed in embeds:
+        blocks=[f'### {embed.title}' if embed.title else '',embed.description or '']
+        blocks.extend(f'**{f.name}**\n{f.value}' for f in embed.fields)
+        if embed.footer.text:blocks.append(embed.footer.text)
+        for block in filter(None,blocks):
+            for start in range(0,len(block),3200):
+                part=block[start:start+3200]
+                if page and len(page)+len(part)+2>3300:pages.append(page);page=''
+                page+=('\n\n' if page else '')+part
+    if page:pages.append(page)
+    return pages or ['Revisa el cambio antes de guardar.']
+
+
 @dataclass
 class Draft:
     kind:str
@@ -37,50 +53,44 @@ class Draft:
     token:str=field(default_factory=lambda:uuid.uuid4().hex)
 
 
-class SettingsView(discord.ui.View):
-    def __init__(self,system,owner,origin):
-        super().__init__(timeout=600);self.system,self.owner,self.origin=system,owner,origin
-
-    async def interaction_check(self,i):
-        if i.user.id!=self.owner:
-            await private(i,'Este panel pertenece a quien lo abrió. Usa /ajustes panel.');return False
-        try:await self.system.authorize(i)
-        except ValueError as error:await private(i,str(error));return False
-        self.origin=i;return True
-
-    async def on_timeout(self):
-        try:await self.origin.edit_original_response(content='Este panel expiró. Abre /ajustes panel para continuar.',embed=None,view=None)
-        except discord.HTTPException:pass
-
-    async def on_error(self,i,error,item):
-        if not isinstance(error,ValueError):log.error('SETTINGS interaction_failed',exc_info=error)
-        await private(i,str(error) if isinstance(error,ValueError) else 'No pude completar ese cambio. Abre /ajustes panel y vuelve a intentarlo.')
+class SettingsView(PanelView):
+    def __init__(self,system,owner,origin,*,title='⚙️ Ajustes de La Venganza RP',notice=None):
+        super().__init__(system,owner,origin,title,notice)
 
 
 class ReloadView(SettingsView):
-    @discord.ui.button(label='Volver al panel',emoji='⚙️')
-    async def reload(self,i,button):
-        await self.system.open(i,'home')
-        self.stop()
+    def __init__(self,system,owner,origin,notice=None):
+        super().__init__(system,owner,origin,notice=notice)
+        self.reload=self.button('Volver al panel',self.back,'⚙️');self.row([self.reload])
+
+    async def back(self,i):
+        await self.system.open(i,'home',previous=self)
 
 
-class RewardScope(ReloadView):
+class RewardScope(SettingsView):
     def __init__(self,system,owner,origin,state):
-        super().__init__(system,owner,origin);self.state=state
+        super().__init__(system,owner,origin,title='📸 Premios de Fotos');self.state=state
+        self.text(f'**Esta semana:** {prizes(state["rewards"])}\n**Próxima semana:** {prizes(state["next_rewards"])}\n\n'
+            'Elige cuándo aplicarlos. Los premios ya pagados se conservan.')
+        self.current=self.button('Esta semana',self.choose_current,'📅',discord.ButtonStyle.primary)
+        self.next_week=self.button('Próxima semana',self.choose_next,'🗓️',discord.ButtonStyle.primary)
+        self.row([self.current,self.next_week,self.button('Volver a Fotos',self.back,'↩️')])
 
-    @discord.ui.button(label='Esta semana',emoji='📅',style=discord.ButtonStyle.primary)
-    async def current(self,i,button):
-        await i.response.send_modal(SettingsForm(self.system,self.owner,self.state,'rewards',self.state['week']))
+    async def choose_current(self,i):
+        await i.response.send_modal(SettingsForm(self.system,self.owner,self.state,'rewards',self.state['week'],previous=self))
 
-    @discord.ui.button(label='Próxima semana',emoji='🗓️',style=discord.ButtonStyle.primary)
-    async def next_week(self,i,button):
-        await i.response.send_modal(SettingsForm(self.system,self.owner,self.state,'rewards',self.state['next_week']))
+    async def choose_next(self,i):
+        await i.response.send_modal(SettingsForm(self.system,self.owner,self.state,'rewards',self.state['next_week'],previous=self))
+
+    async def back(self,i):
+        await self.system.open(i,'photos',previous=self)
 
 
 class SettingsForm(discord.ui.Modal):
-    def __init__(self,system,owner,state,kind,target=None):
+    def __init__(self,system,owner,state,kind,target=None,*,previous=None):
         super().__init__(title={'rewards':'Premios de Fotos','schedule':'Hora del Server Up','text':'Mensaje del Server Up'}[kind],timeout=600)
         self.system,self.owner,self.state,self.kind,self.target=system,owner,state,kind,target
+        self.previous=previous
         self.fields=[]
         if kind=='rewards':
             rates=state['rewards'] if target==state['week'] else state['next_rewards']
@@ -95,9 +105,9 @@ class SettingsForm(discord.ui.Modal):
             self.fields.append(text);self.add_item(discord.ui.Label(text=label,description=description,component=text))
 
     async def on_submit(self,i):
-        await i.response.defer(ephemeral=True,thinking=True)
+        if i.user.id!=self.owner:return await private(i,'Este formulario pertenece a quien lo abrió.')
+        await i.response.defer()
         try:
-            if i.user.id!=self.owner:raise ValueError('Este formulario pertenece a quien lo abrió.')
             await self.system.authorize(i,refresh=True)
             values=[f.value for f in self.fields]
             values=values if self.kind=='rewards' else values[0] if self.kind=='schedule' else dict(zip(TEXT_KEYS,values))
@@ -106,27 +116,53 @@ class SettingsForm(discord.ui.Modal):
             if current['revision']!=self.state['revision']:
                 raise ValueError('Los ajustes cambiaron mientras tenías el formulario abierto. Vuelve al panel para revisarlos.')
             draft=Draft(self.kind,values,current,self.target)
-            await i.edit_original_response(embeds=self.system.review(draft),view=ConfirmSettings(self.system,self.owner,i,draft),
-                allowed_mentions=discord.AllowedMentions.none())
+            await self.system.present(i,ConfirmSettings(self.system,self.owner,i,draft),previous=self.previous)
         except ValueError as error:
-            await i.edit_original_response(content=str(error),view=ReloadView(self.system,self.owner,i))
+            await self.system.fail(i,self.owner,str(error),previous=self.previous)
 
     async def on_error(self,i,error):
         log.error('SETTINGS form_failed',exc_info=error)
-        await private(i,'No pude abrir la confirmación. Tus ajustes siguen como estaban; abre /ajustes panel otra vez.')
+        await self.system.fail(i,self.owner,'No pude abrir la confirmación. Tus ajustes siguen como estaban; vuelve al panel para intentarlo otra vez.',previous=self.previous)
 
 
 class ConfirmSettings(SettingsView):
     def __init__(self,system,owner,origin,draft):
-        super().__init__(system,owner,origin);self.draft=draft;self.lock=asyncio.Lock();self.done=False
+        super().__init__(system,owner,origin,title='Revisar cambios');self.draft=draft;self.lock=asyncio.Lock();self.done=False
+        self.pages=review_pages(system.review(draft));self.page=0
+        self.body=discord.ui.TextDisplay(self.pages[0]);self.box.add_item(self.body)
+        self.counter=discord.ui.TextDisplay(f'-# Página 1 de {len(self.pages)} · Todavía no se ha guardado el cambio.')
+        self.box.add_item(self.counter)
+        if len(self.pages)>1:
+            self.prev=self.button('Anterior',self.previous_page,'◀️');self.prev.disabled=True
+            self.next=self.button('Siguiente',self.next_page,'▶️');self.row([self.prev,self.next])
+        self.save=self.button('Guardar cambios',self.save_change,'✅',discord.ButtonStyle.success)
+        self.cancel=self.button('Cancelar',self.cancel_change)
+        self.row([self.save,self.cancel])
 
-    @discord.ui.button(label='Guardar cambios',emoji='✅',style=discord.ButtonStyle.success)
-    async def save(self,i,button):
+    async def turn(self,i,step):
         await i.response.defer()
-        if i.user.id!=self.owner:return await private(i,'Este cambio pertenece a quien abrió el panel.')
         async with self.lock:
-            if self.done:return await private(i,'Este cambio ya se guardó o se canceló.')
-            await i.edit_original_response(view=None)
+            if self.done or self.retired:return
+            self.page=min(max(self.page+step,0),len(self.pages)-1)
+            self.body.content=self.pages[self.page]
+            self.counter.content=f'-# Página {self.page+1} de {len(self.pages)} · Todavía no se ha guardado el cambio.'
+            self.prev.disabled=self.page==0;self.next.disabled=self.page==len(self.pages)-1
+            await self.system.present(i,self)
+
+    async def previous_page(self,i):await self.turn(i,-1)
+    async def next_page(self,i):await self.turn(i,1)
+
+    def section(self):
+        draft=self.draft
+        return BY_FORM[draft.target].section if draft.kind=='system' else 'economy' if draft.kind=='product' else 'photos' if draft.kind=='rewards' else 'server'
+
+    async def save_change(self,i):
+        if i.user.id!=self.owner:return await private(i,'Este cambio pertenece a quien abrió el panel.')
+        await i.response.defer()
+        async with self.lock:
+            if self.done:return
+            progress=SettingsView(self.system,self.owner,i,title='Guardando cambios',notice='Espera un momento…')
+            await self.system.present(i,progress,previous=self)
             try:
                 await self.system.authorize(i,refresh=True)
                 draft=self.draft
@@ -139,34 +175,32 @@ class ConfirmSettings(SettingsView):
                 state=await self.system.bot.changes.tracked('ADMIN_SETTINGS','Cambiar ajustes del bot desde Discord',apply,
                     request_id=draft.token,snapshot=snapshot)
                 self.done=True;self.stop()
-                await i.edit_original_response(content='✅ Ajustes guardados. Actualizando los paneles…',embeds=[],view=None,allowed_mentions=discord.AllowedMentions.none())
+                progress=await self.system.present(i,SettingsView(self.system,self.owner,i,notice='✅ Ajustes guardados. Actualizando los paneles…'),previous=progress)
                 synced=await self.system.flush(i.guild,draft)
                 state=await self.system.call('snapshot')
                 notice=f'✅ Guardado. Estos premios se usarán desde la semana del {draft.target}.' if draft.kind=='rewards' else '✅ Guardado. El cambio se usará en los próximos avisos.'
                 if draft.kind in ('system','product'):notice='✅ Ajustes guardados.'
                 if not synced:notice+=' La actualización del panel público sigue pendiente y se reintentará automáticamente.'
-                section=BY_FORM[draft.target].section if draft.kind=='system' else 'economy' if draft.kind=='product' else 'photos' if draft.kind=='rewards' else 'server'
-                await self.system.open(i,section,state=state,notice=notice)
+                await self.system.open(i,self.section(),state=state,notice=notice,previous=progress)
                 log.info('SETTINGS saved kind=%s actor=%s revision=%s target=%s',draft.kind,i.user.id,state['revision'],draft.target)
             except ValueError as error:
                 self.done=True;self.stop()
-                await i.edit_original_response(content=str(error),embeds=[],view=ReloadView(self.system,self.owner,i))
+                await self.system.fail(i,self.owner,str(error),previous=progress)
             except Exception:
                 log.exception('SETTINGS save_failed')
                 # A receipt distinguishes a committed change from a failed confirmation response.
                 receipt=await self.system.call('receipt',self.draft.token)
                 self.done=True;self.stop()
-                await i.edit_original_response(content='El cambio quedó guardado. Abre el panel para comprobarlo.' if receipt else
-                    'No se guardó el cambio. Abre el panel y vuelve a intentarlo.',embeds=[],view=ReloadView(self.system,self.owner,i))
+                await self.system.fail(i,self.owner,'El cambio quedó guardado. Vuelve al panel para comprobarlo.' if receipt else
+                    'No se guardó el cambio. Vuelve al panel e inténtalo otra vez.',previous=progress)
 
-    @discord.ui.button(label='Cancelar',style=discord.ButtonStyle.secondary)
-    async def cancel(self,i,button):
-        await i.response.defer()
+    async def cancel_change(self,i):
         if i.user.id!=self.owner:return await private(i,'Este cambio pertenece a quien abrió el panel.')
+        await i.response.defer()
         async with self.lock:
-            if self.done:return await private(i,'Este cambio ya se guardó o se canceló.')
+            if self.done:return
             self.done=True;self.stop()
-            await i.edit_original_response(content='Cancelado. Los ajustes siguen como estaban.',embeds=[],view=ReloadView(self.system,self.owner,i))
+            await self.system.open(i,self.section(),notice='Cancelado. Los ajustes siguen como estaban.',previous=self)
 
 
 class SettingsPanel:
@@ -203,6 +237,18 @@ class SettingsPanel:
         if i.guild_id!=self.guild_id or not i.guild:raise ValueError('Abre los ajustes desde La Venganza RP.')
         member=await i.guild.fetch_member(i.user.id) if refresh else i.user
         if not member.guild_permissions.administrator:raise ValueError('Este panel es solo para administradores del servidor.')
+
+    async def present(self,i,view,*,previous=None):
+        # A v2 message must stay v2: previews, errors and progress use components too.
+        await i.edit_original_response(content=None,embeds=[],view=view,allowed_mentions=discord.AllowedMentions.none())
+        view.origin=i
+        if previous is not None and previous is not view:previous.retire()
+        return view
+
+    async def fail(self,i,owner,message,*,previous=None):
+        if i.user.id!=owner:return await private(i,message)
+        if not i.response.is_done():await i.response.defer()
+        return await self.present(i,ReloadView(self,owner,i,notice=message),previous=previous)
 
     def embed(self,state):
         embed=discord.Embed(title='⚙️ Ajustes de La Venganza RP',color=0xD60000,
@@ -304,6 +350,24 @@ class SettingsPanel:
             view=RootView(self,0,None,state,section)
             if len(list(view.walk_children()))>40:raise RuntimeError('Una página supera el tamaño permitido de Discord.')
             view.to_components();view.stop()
+        previews=[Draft(kind,state['rewards'] if kind=='rewards' else state['values']['daily_server_up_time'] if kind=='schedule' else
+            {key:state['values'][key] for key in TEXT_KEYS},state,target) for kind,target in
+            (('schedule',None),('text',None),('rewards',state['week']))]
+        previews.extend(Draft('system',state['systems'][key],state,key) for key in BY_FORM)
+        products=await self.call('catalog')
+        if products:
+            product={key:products[0][key] for key in ('sku','name','price','active','revision')}
+            previews.append(Draft('product',dict(price=product['price'],active=bool(product['active'])),dict(state,product=product),product['sku']))
+        for draft in previews:
+            view=ConfirmSettings(self,0,None,draft)
+            for page in view.pages:
+                view.body.content=page
+                if view.content_length()>4000 or len(list(view.walk_children()))>40:
+                    raise RuntimeError('Una vista previa supera el tamaño permitido de Discord.')
+                view.to_components()
+            view.stop()
+        scope=RewardScope(self,0,None,state);scope.to_components();scope.stop()
+        log.info('SETTINGS panel_flow_verified same_message=True modal_ack=deferred_message_update previews_v2=%s reward_scope_v2=True paginated_preview=True old_views_retired=True',len(previews))
         log.info('SETTINGS app_verified sections=%s forms=%s functions=%s native_layout=True private=True owner_bound=True confirmation=True persistent_values=True catalog_prices=True history=True restore_preview=True queued_sync=True protected_roles_unchanged=True',len(SECTIONS),len(BY_FORM)+4,len(self.command_book))
         log.info('SETTINGS ready command="/ajustes panel" administrator_only=True private=True confirmation=True revision=%s '
             'current_rewards=%s next_rewards=%s daily_time=%s timezone=America/Puerto_Rico values_preserved=True forms_verified=True',
@@ -343,9 +407,9 @@ class SettingsPanel:
                 log.warning('SETTINGS public_sync_pending kind=%s target=%s error=%s',draft.kind,draft.target,type(error).__name__)
                 return False
 
-    async def open(self,i,section='home',*,page=0,query='',detail=None,state=None,notice=None):
+    async def open(self,i,section='home',*,page=0,query='',detail=None,state=None,notice=None,previous=None):
         await self.authorize(i)
-        if not i.response.is_done():await i.response.defer(ephemeral=True)
+        if not i.response.is_done():await i.response.defer()
         if section=='directory' and not self.command_book and hasattr(self.bot,'tree'):
             self.index_commands(await self.bot.tree.fetch_commands(guild=discord.Object(self.guild_id)))
         state=state or await self.call('snapshot')
@@ -358,7 +422,7 @@ class SettingsPanel:
         elif section not in ('home','directory') and section not in BY_SECTION:raise ValueError('Ese sistema no está en el panel.')
         if section=='directory':page=min(max(0,page),max(0,(len(self.functions(query))-1)//10))
         view=RootView(self,i.user.id,i,state,section,page=page,query=query,rows=rows,details=details,notice=notice)
-        await i.edit_original_response(content=None,embeds=[],view=view,allowed_mentions=discord.AllowedMentions.none())
+        return await self.present(i,view,previous=previous)
 
     def destination(self,section,state):
         if section=='rules':return state['systems']['rules']['source_channel']

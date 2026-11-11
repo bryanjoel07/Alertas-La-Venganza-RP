@@ -13,18 +13,17 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='settings-center-v24'
-SUMMARY=('Amplía /ajustes panel a un centro privado de ajustes con navegación nativa de Discord, 16 secciones y 22 formularios. '
-    'Muestra los valores actuales de servidor, tickets, economía, Fotos, minijuegos, feedback, sugerencias, errores, staff, directos, eventos, reuniones, seguridad, normas y respaldos. '
-    'Incluye búsqueda de comandos registrados, edición de precios y disponibilidad, historial y restauración de ajustes con vista previa. '
-    'Cada guardado requiere confirmación y permisos de Administrador comprobados de nuevo, evita sobrescribir cambios de otros comandos y conserva recibos y copias privadas. '
-    'Las actualizaciones de paneles públicos se guardan en una cola persistente con reintentos. Los ajustes nuevos usan los valores anteriores por defecto; abrir o instalar el panel no los cambia. '
-    'Conserva compras, saldos, archivos, casos, privacidad y el GIF compatible de Server Up. No cambia roles, permisos ni canales y no publica cambios en Registro Exclusive.')
-RESTORE=('Código anterior: 1247aeeaaa085d8b0ea307c9e355df2fcd72ffd8. Conservar SQLite en WAL y el volumen actual, incluyendo bot_setting_ops, bot_setting_jobs y las claves nuevas; no restaurar una base antigua. '
-    'Para deshacer un ajuste, usar primero /ajustes historial y Revisar restauración, comprobar el antes y después y confirmar solo el formulario o producto elegido. No restaura compras, saldos ni pagos ya hechos. '
-    'Revertir el código no deshace ajustes: precios, premios, horario y claves existentes siguen guardados; el código anterior ignora las claves nuevas y deja de procesar la cola nueva. '
-    'Si se cambió el filtro nativo de Discord, restaurar sus ajustes desde el panel antes de volver al código anterior; no modificar sus exenciones ni roles protegidos. '
-    'La versión anterior conserva el GIF compatible y el panel original de tres ajustes. No borrar archivos, tablas, mensajes, tickets, membresías ni permisos para revertir la interfaz.')
+RELEASE='settings-single-panel-v25'
+SUMMARY=('Corrige la acumulación de paneles privados al editar ajustes. Los formularios responden actualizando el mensaje de origen; '
+    'la elección de semana de Fotos, vistas previas, búsqueda, restauración, progreso, errores, cancelación y guardado usan el mismo panel nativo de Discord. '
+    'Las confirmaciones mantienen el formato v2 del mensaje y las vistas previas largas se paginan sin perder texto. '
+    'Se retiran las vistas reemplazadas para que sus temporizadores no sobrescriban la pantalla actual. '
+    'Conserva las 16 secciones, 22 formularios, confirmaciones, comprobaciones de Administrador, recibos, historial y reintentos. '
+    'No cambia valores guardados, horarios, premios, productos, saldos, sistemas públicos, canales ni permisos.')
+RESTORE=('Código anterior: e3fdb971b691055af9b7da1e45daa57c2034d3e0. Conservar el volumen y su SQLite actual; no restaurar una base antigua ni borrar tablas. '
+    'Esta versión solo cambia la interacción del panel y no necesita migración de datos. Volver al código anterior conserva ajustes, operaciones y cola de actualizaciones, '
+    'pero vuelve al comportamiento de crear respuestas privadas nuevas al enviar formularios. Después de cualquier despliegue, abrir /ajustes panel una vez para cargar sus botones nuevos. '
+    'No borrar mensajes históricos, archivos, compras, tickets, roles o permisos para revertir la interfaz. Los ajustes modificados por un administrador se deshacen por separado desde /ajustes historial con confirmación.')
 
 
 
