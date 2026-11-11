@@ -211,3 +211,13 @@ class SettingsUITests(SettingsFixtures,unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('default_member_permissions',command.to_dict())
         self.bot.tree=SimpleNamespace(fetch_commands=AsyncMock(return_value=[command]))
         await self.system.ready()
+
+    async def test_activity_marks_failed_workers_in_red_and_includes_native_loops(self):
+        failed=MagicMock();failed.cancelled.return_value=False;failed.done.return_value=True
+        failed.exception.return_value=ValueError('private details')
+        self.bot.settings_panel=SimpleNamespace(task=failed)
+        self.bot.live_alerts=SimpleNamespace(poll=SimpleNamespace(get_task=lambda:failed))
+        text=self.system.status_text()
+        self.assertIn('**Ajustes:** 🔴 Terminada con error',text)
+        self.assertIn('**Avisos de directos:** 🔴 Terminada con error',text)
+        self.assertNotIn('private details',text)

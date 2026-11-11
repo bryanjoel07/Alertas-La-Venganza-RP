@@ -161,7 +161,8 @@ class GameUiTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.path=Path(self.tmp.name)/'db'
   with closing(sqlite3.connect(self.path)) as db:db.executescript(SCHEMA)
-  self.bot=NS(user=NS(id=555));self.system=MinigameSystem(self.bot,self.path,55)
+  self.guild=NS(id=55,fetch_member=AsyncMock(return_value=NS(id=99)))
+  self.bot=NS(user=NS(id=555),get_guild=lambda gid:self.guild if gid==55 else None);self.system=MinigameSystem(self.bot,self.path,55)
   await self.system.call('initialize',QUESTIONS)
  async def asyncTearDown(self):self.tmp.cleanup()
  async def test_controls_survive_restart_and_form_fits_discord(self):
@@ -184,9 +185,30 @@ class GameUiTests(unittest.IsolatedAsyncioTestCase):
  async def test_answer_button_shows_countdown_instead_of_opening_another_form(self):
   row=await self.system.call('open',99,'roleplay');await self.system.call('answer',99,row['id'],'Wrong','first',555)
   self.system.member=AsyncMock()
-  i=NS(user=NS(id=99),response=NS(defer=AsyncMock(),send_modal=AsyncMock()))
+  i=NS(guild_id=55,channel_id=GENERAL,user=NS(id=99,bot=False),response=NS(defer=AsyncMock(),send_modal=AsyncMock()))
   with patch('minigames.reply',new=AsyncMock()) as send:await self.system.action(i,row['id'],'answer')
   i.response.send_modal.assert_not_awaited();self.assertIn('Próximo turno',send.call_args.args[1])
+ async def test_answer_button_opens_its_modal_without_waiting_for_discord_member_lookup(self):
+  row=await self.system.call('open',99,'roleplay')
+  self.guild.fetch_member.side_effect=AssertionError('Opening the modal must not wait for the Discord API')
+  i=NS(guild_id=55,channel_id=GENERAL,user=NS(id=99,bot=False),response=NS(send_modal=AsyncMock()))
+  await self.system.action(i,row['id'],'answer')
+  i.response.send_modal.assert_awaited_once();self.guild.fetch_member.assert_not_awaited()
+  form=i.response.send_modal.call_args.args[0]
+  self.assertIsInstance(form,AnswerForm);self.assertEqual(form.token,row['id'])
+ async def test_answer_modal_cannot_be_opened_for_someone_elses_question(self):
+  row=await self.system.call('open',99,'roleplay')
+  i=NS(guild_id=55,channel_id=GENERAL,user=NS(id=100,bot=False),response=NS(send_modal=AsyncMock()))
+  with self.assertRaises(ValueError):await self.system.action(i,row['id'],'answer')
+  i.response.send_modal.assert_not_awaited()
+ async def test_answer_submission_still_checks_membership_before_awarding_coins(self):
+  row=await self.system.call('open',99,'roleplay')
+  self.guild.fetch_member.side_effect=discord.NotFound(NS(status=404,reason='Not Found'),'Unknown Member')
+  i=NS(id=1,guild_id=55,channel_id=GENERAL,user=NS(id=99,bot=False))
+  with self.assertRaisesRegex(ValueError,'La Venganza RP'):await self.system.answer(i,row['id'],'MG')
+  self.guild.fetch_member.assert_awaited_once_with(99)
+  self.assertEqual((await self.system.call('get',row['id'],99))['status'],'active')
+  self.assertEqual(EconomyStore(self.path).account(99)['balance'],0)
  async def test_photo_is_bound_inside_embed_with_no_duplicate_content(self):
   question=next(q for q in load_bank() if q['id']=='foto01')
   row={'id':'a'*24,'payload':json.dumps(question)}

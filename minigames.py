@@ -27,12 +27,15 @@ class MinigameSystem:
   self.bank=await asyncio.to_thread(load_bank,True)
   await self.call('initialize',self.bank)
   self.bot.add_view(GamePanel(self));self.bot.add_dynamic_items(GameAction)
- async def member(self,i):
+ def context(self,i):
   if i.guild_id!=self.guild_id:raise ValueError('Estos juegos son de La Venganza RP.')
   if i.channel_id!=GENERAL:raise ValueError(f'Abre los minijuegos en <#{GENERAL}>. Allí está el panel para jugar.')
   if i.user.bot:raise ValueError('Los minijuegos son para los jugadores.')
   guild=self.bot.get_guild(self.guild_id)
   if guild is None:raise ValueError('El bot se está conectando. Inténtalo en un momento.')
+  return guild
+ async def member(self,i):
+  guild=self.context(i)
   try:return await guild.fetch_member(i.user.id)
   except discord.NotFound:raise ValueError('Tienes que estar en La Venganza RP para jugar.') from None
  async def command_play(self,i:discord.Interaction,modo:Literal['foto','roleplay','acertijo']='foto'):
@@ -63,8 +66,14 @@ class MinigameSystem:
    kwargs['file']=discord.File(image,filename='reto.png');embed.set_image(url='attachment://reto.png')
   await reply(i,embed=embed,view=controls(row['id'],['answer','hint','skip']),**kwargs)
  async def action(self,i,token,action):
-  if action!='answer':await i.response.defer(ephemeral=True,thinking=True)
-  await self.member(i);row=await self.call('get',token,i.user.id);q=json.loads(row['payload'])
+  if action=='answer':
+   # Discord requires the modal as the first response, before the 3-second deadline.
+   # Check context and session ownership now; fetch membership again on submission.
+   self.context(i)
+  else:
+   await i.response.defer(ephemeral=True,thinking=True)
+   await self.member(i)
+  row=await self.call('get',token,i.user.id);q=json.loads(row['payload'])
   if action=='answer':
    if row['status']!='active':
     await i.response.defer(ephemeral=True)

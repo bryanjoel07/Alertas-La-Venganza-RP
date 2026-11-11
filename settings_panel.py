@@ -4,7 +4,6 @@ from dataclasses import dataclass,field
 import logging
 import json
 import math
-import time
 import re
 import uuid
 
@@ -13,6 +12,7 @@ from discord import app_commands
 
 from bot_settings import SettingsStore,TEXT_KEYS,friendly_hour,validate_values
 from daily_up import daily_up_embed
+from diagnostics import runtime_tasks,task_state
 from settings_catalog import BY_FORM,BY_SECTION,SECTIONS
 from settings_app import AppView as RootView,PanelView,SystemForm,display,searchable
 
@@ -433,13 +433,7 @@ class SettingsPanel:
 
     def status_text(self):
         lines=['### Estado de los sistemas']
-        for attr,label in (('economy','Tienda'),('tickets','Tickets'),('photos','Fotos'),('bugs','Reportes'),('feedback','Feedback'),
-            ('suggestions','Sugerencias'),('rules','Normas'),('recruitment','Staff'),('meetings','Reuniones'),('event_features','Eventos'),('backups','Respaldos')):
-            module=getattr(self.bot,attr,None)
-            if module is None:continue
-            task=getattr(module,'task',None)
-            text='🟢 Activo' if task and not task.done() else '⚪ Sin tarea activa'
-            lines.append(f'**{label}:** {text}')
+        for label,task in runtime_tasks(self.bot):lines.append(f'**{label}:** {task_state(task)}')
         latency=getattr(self.bot,'latency',None)
         if isinstance(latency,(int,float)) and math.isfinite(latency):lines.append(f'**Respuesta de Discord:** {latency*1000:.0f} ms')
         lines.append('Los fallos de una actualización pública se reintentan y quedan visibles en el historial.')

@@ -1,8 +1,9 @@
 import tempfile
+import sqlite3
 import unittest
 from pathlib import Path
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock,patch
 
 from live_alerts import LiveAlerts
 from streamers import Streamers
@@ -69,3 +70,12 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             db.execute("UPDATE streamer_profiles SET saved_url=NULL")
         await self.tick()
         self.probe.assert_not_awaited()
+
+    async def test_temporary_settings_failure_keeps_the_monitor_available_for_the_next_cycle(self):
+        monitor=LiveAlerts(self.client,self.streamers,1,self.probe);monitor.init_db()
+        with patch('live_alerts.setting',side_effect=[sqlite3.OperationalError('database is locked'),True,True]):
+            with self.assertLogs('live_alerts',level='ERROR'):
+                await monitor.poll()
+            self.channel.send.assert_not_awaited()
+            await monitor.poll();await monitor.poll()
+        self.channel.send.assert_awaited_once()

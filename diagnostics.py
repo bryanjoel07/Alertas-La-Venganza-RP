@@ -44,6 +44,22 @@ def task_state(task):
     return '🔴 Terminada con error' if task.exception() is not None else '⚪ Terminada'
 
 
+def runtime_tasks(bot):
+    """List both asyncio workers and Discord loop tasks without exposing errors."""
+    result=[]
+    if hasattr(bot,'monitor_task'):result.append(('Monitor',bot.monitor_task))
+    for name,label in (('meetings','Reuniones'),('event_features','Eventos'),('economy','Tienda'),('tickets','Tickets'),
+        ('feedback','Feedback'),('bugs','Reportes'),('suggestions','Sugerencias'),('rules','Normas'),('photos','Fotos'),
+        ('recruitment','Solicitudes de staff'),('backups','Respaldos'),('settings_panel','Ajustes')):
+        system=getattr(bot,name,None)
+        if system is not None:result.append((label,getattr(system,'task',None)))
+    for name,attribute,label in (('live_alerts','poll','Avisos de directos'),('streamer_panel','install','Panel de creadores'),
+        ('obscenity_filter','install','Comprobación de AutoMod')):
+        loop=getattr(getattr(bot,name,None),attribute,None)
+        if loop is not None:result.append((label,loop.get_task()))
+    return result
+
+
 def at(value):
     return f'<t:{int(value)}:R>' if value is not None else 'Sin lectura en este proceso'
 
@@ -69,11 +85,14 @@ def status_embed(bot, path, database, backup, automation=None):
         wait = max(0, int(time.monotonic() - tracker.since)) if tracker.since is not None else 0
         monitor += f"\nCambio en confirmación: {states[tracker.pending]} · {wait}/90 s"
     embed.add_field(name='📡 Monitor FiveM', value=monitor, inline=False)
-    tasks = f"Monitor: {task_state(bot.monitor_task)}\nReuniones: {task_state(bot.meetings.task)}\nEventos: {task_state(bot.event_features.task)}\nÚltimo ciclo de reuniones: {at(bot.meetings.last_check_at)}\nÚltimo ciclo de eventos: {at(bot.event_features.last_check_at)}"
-    for name,label in (('economy','Tienda'),('tickets','Tickets'),('feedback','Feedback'),('bugs','Reportes'),('suggestions','Sugerencias'),('rules','Normas'),('photos','Fotos'),('recruitment','Solicitudes de staff'),('backups','Respaldos')):
-        system=getattr(bot,name,None)
-        if system is not None:tasks+=f'\n{label}: {task_state(system.task)}'
-    embed.add_field(name='🔄 Tareas automáticas', value=tasks, inline=False)
+    lines=[f'{label}: {task_state(task)}' for label,task in runtime_tasks(bot)]
+    lines.extend((f'Último ciclo de reuniones: {at(bot.meetings.last_check_at)}',f'Último ciclo de eventos: {at(bot.event_features.last_check_at)}'))
+    chunks=['']
+    for line in lines:
+        if len(chunks[-1])+len(line)+1>1000:chunks.append('')
+        chunks[-1]+=('\n' if chunks[-1] else '')+line
+    for index,chunk in enumerate(chunks):
+        embed.add_field(name='🔄 Tareas automáticas'+(' (continúa)' if index else ''),value=chunk,inline=False)
     location = discord.utils.escape_markdown(str(path)).replace('@', '@\u200b')[:350]
     if 'reason' in database:
         db_text = f"Ruta: {location}\n❌ {database['reason']}"

@@ -101,3 +101,18 @@ class DiagnosticTests(unittest.TestCase):
         task.exception.return_value = ValueError('private detail')
         self.assertEqual(task_state(task), '🔴 Terminada con error')
         self.assertNotIn('private detail', task_state(task))
+
+    def test_all_workers_including_discord_loops_report_failure_without_overflow_or_secrets(self):
+        failed=Mock();failed.cancelled.return_value=False;failed.done.return_value=True
+        failed.exception.return_value=ValueError('private detail')
+        bot=SimpleNamespace(is_ready=lambda:True,latency=0.1,started_monotonic=time.monotonic(),monitor_last_read=None,
+            monitor_last_error=None,tracker=None,monitor_task=failed)
+        for name in ('meetings','event_features','economy','tickets','feedback','bugs','suggestions','rules','photos','recruitment','backups','settings_panel'):
+            setattr(bot,name,SimpleNamespace(task=failed,last_check_at=None))
+        for name,attribute in (('live_alerts','poll'),('streamer_panel','install'),('obscenity_filter','install')):
+            setattr(bot,name,SimpleNamespace(**{attribute:SimpleNamespace(get_task=lambda:failed)}))
+        embed=status_embed(bot,str(self.path),read_database(self.path),read_backup(self.path))
+        text=str(embed.to_dict())
+        for label in ('Avisos de directos','Panel de creadores','AutoMod','Ajustes'):self.assertIn(label,text)
+        self.assertIn('🔴 Terminada con error',text);self.assertNotIn('private detail',text)
+        self.assertTrue(all(len(field.value)<=1024 for field in embed.fields));self.assertLessEqual(len(embed),6000)

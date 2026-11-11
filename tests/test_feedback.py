@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
@@ -178,6 +178,46 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.tickets.update(rid,status='nuevo',channel=400)
         self.tickets.claim(rid,2); self.tickets.transition(rid,'cerrado',2,'SOLUCIÓN PRIVADA')
         return rid
+
+    async def pending_cycle(self):
+        self.bot.wait_until_ready=AsyncMock()
+        self.bot.is_closed=MagicMock(side_effect=[False,True])
+        self.system.ready=AsyncMock()
+        with patch('feedback.asyncio.sleep',new=AsyncMock()):await self.system.loop()
+
+    async def test_a_failed_publication_does_not_block_other_feedback_or_duplicate_retries(self):
+        healthy=self.system.store.save(3,5,'Bien atendido','public',staff=2,topic='Ayuda por voz',now=1000)
+        failed=self.system.store.save(1,4,'Gracias','public',staff=2,topic='Otra ayuda',now=1001)
+        original=self.channel.send.side_effect;attempts=0
+        async def fail_first(**kwargs):
+            nonlocal attempts
+            attempts+=1
+            if attempts==1:raise discord.HTTPException(SimpleNamespace(status=503,reason='Unavailable'),'Temporal')
+            return await original(**kwargs)
+        self.channel.send.side_effect=fail_first
+        await self.pending_cycle()
+        self.assertEqual(self.system.store.get(healthy)['publish_state'],'posted')
+        self.assertEqual(self.system.store.get(failed)['publish_state'],'sending')
+        self.assertEqual(self.system.store.get(failed)['comment'],'Gracias')
+        self.assertEqual(len(self.messages),1)
+        self.channel.send.side_effect=original
+        await self.pending_cycle();await self.pending_cycle()
+        self.assertEqual(self.system.store.get(failed)['publish_state'],'posted')
+        self.assertEqual(len(self.messages),2)
+
+    async def test_a_failed_removal_does_not_block_other_removals_or_new_feedback(self):
+        failed=self.system.store.save(1,3,'Primera opinión','public',staff=2,topic='Ayuda',now=1000)
+        healthy=self.system.store.save(3,4,'Segunda opinión','public',staff=2,topic='Ayuda',now=1001)
+        await self.system.publish(failed);await self.system.publish(healthy)
+        first=self.messages[self.system.store.get(failed)['message']]
+        first.delete.side_effect=discord.Forbidden(SimpleNamespace(status=403,reason='Forbidden'),'Missing permissions')
+        self.system.store.hide(failed,1,'Retirada');self.system.store.hide(healthy,3,'Retirada')
+        pending=self.system.store.save(4,5,'Nueva opinión','public',staff=2,topic='Ayuda',now=1002)
+        await self.pending_cycle()
+        self.assertEqual(self.system.store.get(failed)['publish_state'],'removing')
+        self.assertEqual(self.system.store.get(healthy)['publish_state'],'withdrawn')
+        self.assertEqual(self.system.store.get(pending)['publish_state'],'posted')
+        self.assertEqual(self.system.store.get(failed)['comment'],'Primera opinión')
 
     async def test_panel_is_persistent_and_does_not_repeat_a_completed_permission_grant(self):
         await self.system.ready()

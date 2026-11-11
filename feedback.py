@@ -71,14 +71,23 @@ class FeedbackSystem:
         while not self.bot.is_closed():
             try:
                 await self.ready()
-                for row in await self.call('removals'):
-                    async with self.io_lock:
-                        await self.remove_post(row)
-                for row in await self.call('rows', pending=True, limit=10):
-                    await self.publish(row['id'])
+                await self.maintenance()
             except Exception:
                 log.exception('FEEDBACK retry_pending')
             await asyncio.sleep(300)
+
+    async def maintenance(self):
+        for row in await self.call('removals'):
+            try:
+                async with self.io_lock:
+                    await self.remove_post(row)
+            except Exception:
+                log.exception('FEEDBACK removal_retry_pending id=%s; continuing other opinions',row['id'])
+        for row in await self.call('rows',pending=True,limit=10):
+            try:
+                await self.publish(row['id'])
+            except Exception:
+                log.exception('FEEDBACK publication_retry_pending id=%s; continuing other opinions',row['id'])
 
     async def member(self, i, admin=False):
         if i.guild_id not in (None, self.guild_id):

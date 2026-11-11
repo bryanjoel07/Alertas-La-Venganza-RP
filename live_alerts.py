@@ -92,8 +92,8 @@ class LiveAlerts:
 
     @tasks.loop(minutes=2)
     async def poll(self):
-        if not setting(self.streamers.path,'streams','alerts_enabled'):return
         try:
+            if not await asyncio.to_thread(setting,self.streamers.path,'streams','alerts_enabled'):return
             channel = self.client.get_channel(CHANNEL)
             perms = channel.permissions_for(channel.guild.me) if channel and channel.guild.id == self.guild else None
             ready = bool(perms and perms.view_channel and perms.send_messages and perms.embed_links and perms.read_message_history)
@@ -109,7 +109,7 @@ class LiveAlerts:
                     if isinstance(result, Exception):
                         log.warning("Aviso de directo pendiente: %s", type(result).__name__)
         except Exception:
-            log.exception("No se pudo comprobar el canal de directos")
+            log.exception("No se pudo completar el monitor de directos; se reintentará en el próximo ciclo")
 
     @poll.before_loop
     async def before(self):

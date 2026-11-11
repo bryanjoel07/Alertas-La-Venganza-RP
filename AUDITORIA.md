@@ -84,3 +84,24 @@ El propietario confirmó que v22 seguía sin mostrar la imagen. Su registro ten�
 El original de 7,083,987 bytes queda intacto. Se prepara `server-up-discord.gif`: 4,578,413 bytes, 400 × 225, cien fotogramas y diez segundos de animación, SHA-256 `04b3a386b94cc4baf08ac6debb7cad1cfe510b33d941535868c90a0f12fbf09a`. La conversión usa FFmpeg con `fps=10`, `palettegen=max_colors=96:reserve_transparent=0` y `paletteuse=dither=none`; no requiere FFmpeg ni Pillow en producción. El adjunto nativo tiene nombre nuevo para que Discord vuelva a procesarlo. La copia HTTPS queda como alternativa y debe pasar el mismo criterio de dimensiones. Las rutas anteriores se conservan.
 
 Las pruebas comprueban expresamente que HTTP 200 con dimensiones cero no marque el caso como completado, que pueda reintentarse, que se preserve el estado previo y que la alternativa de un aviso futuro no duplique mensajes ni menciones. La reparación actual afecta únicamente a la imagen del mismo aviso.
+
+## Revisión de errores — 11 de noviembre de 2026, v28
+
+Base revisada: `c5bb46d5e1145bba90ce9d23522f912d45112583`, que incluye las últimas correcciones de participantes de tickets. Se actualizó la copia local antes de modificar código. El despliegue de referencia `41c0010a-f976-4fee-bd4a-ca37530aee48` estaba en SUCCESS, con una réplica activa y ninguna caída o incidencia de Railway.
+
+La consulta de errores y trazas de ese despliegue no devolvió excepciones de ejecución. La muestra reciente de registros abarca del 11 de noviembre a las 10:35 a las 17:41 UTC. Se conservaron las advertencias previas de audio opcional, un tipo de canal no reconocido y el ticket cerrado #6 cuyo canal ya no existe; no se borran registros para ocultarlas. El timeout de la lectura directa de FiveM conserva el respaldo del panel Connect. En las seis horas consultadas, la CPU media fue 0.00173 núcleos y la máxima 0.01597; la memoria media fue 0.097 GB y la máxima 0.102 GB. Estas muestras no muestran falta de recursos ni miden una mejora tras los cambios.
+
+Las 685 pruebas de la versión actual pasaron antes de modificar la lógica. El análisis estático de los módulos no encontró nombres indefinidos. La revisión de rutas de error reprodujo los siguientes fallos en pruebas locales, sin provocarlos en producción:
+
+| Fallo comprobado | Corrección |
+| --- | --- |
+| Una excepción al leer los ajustes de directos escapaba del bloque de recuperación y podía terminar ese monitor. | Lectura dentro del bloque de recuperación y mediante `asyncio.to_thread`; el ciclo siguiente puede continuar y conserva la deduplicación por sesión. |
+| Una publicación de Feedback fallida impedía procesar las siguientes. Una retirada fallida detenía las demás retiradas y las publicaciones. | Recuperación por opinión, con su ID en el registro y continuación de las otras operaciones. La opinión fallida conserva su estado pendiente y su contenido. |
+| El botón Responder del minijuego consultaba por HTTP al miembro antes de abrir el formulario, consumiendo el plazo inicial de Discord. | Comprobaciones rápidas de contexto, propietario de la pregunta y turno antes de abrir; la comprobación actualizada del miembro sigue siendo obligatoria al enviar la respuesta, antes de cualquier pago. |
+| La sección de actividad de Ajustes mostraba una tarea con excepción como si simplemente no estuviera activa. El diagnóstico omitía los bucles nativos y la sincronización de ajustes. | Ambos usan la misma lista de tareas y el mismo estado: error, cancelación, ejecución o finalización. No muestran los mensajes privados de las excepciones. Los campos largos del diagnóstico se dividen para respetar el límite de Discord. |
+
+Las pruebas de directos, publicaciones y retiradas de Feedback, y apertura del formulario fallaron con la lógica anterior. Tras las correcciones, pasan **693 pruebas**. Comprueban continuación de Feedback después de errores, reintentos sin publicaciones duplicadas, conservación de datos, recuperación del monitor, propiedad de las preguntas y comprobación de pertenencia antes de pagar monedas. También validan errores visibles en el diagnóstico sin divulgar detalles ni superar los límites del mensaje. La suite completa mantiene tickets, reportes, permisos protegidos, economía, premios, archivos y el panel único de ajustes.
+
+Las pruebas usan bases temporales y mensajes simulados. No se enviaron anuncios de prueba, se gastaron monedas ni se crearon casos de jugadores en el Discord real. No se cambian dependencias de producción, esquemas, horarios, precios, permisos ni configuración del servidor.
+
+Para revertir esta corrección, desplegar `c5bb46d5e1145bba90ce9d23522f912d45112583` conservando el volumen y la base actuales. Los estados pendientes y recibos deben mantenerse: volver al código anterior no revierte acciones legítimas ni pagos ya realizados. No restaurar una base antigua para revertir el código.
