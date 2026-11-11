@@ -153,21 +153,25 @@ class TicketMemberTests(unittest.IsolatedAsyncioTestCase):
   self.system.member_directory.load=AsyncMock(side_effect=DirectoryUnavailable())
   await self.system.action(self.i,self.rid,'people')
   sent=self.i.response.send_message.call_args or self.i.followup.send.call_args
-  self.assertTrue(sent.kwargs['ephemeral']);self.assertNotIn('view',sent.kwargs)
+  self.assertTrue(sent.kwargs['ephemeral'])
+  picker=sent.kwargs['view']
+  self.assertEqual(len(picker.children),1)
+  self.assertIsInstance(picker.children[0],discord.ui.UserSelect)
+  self.assertIn('no está disponible',picker.content())
   self.channel.set_permissions.assert_not_awaited()
  async def test_picker_pages_and_search_include_offline_members_and_unicode_names(self):
   members=[self.member(n) for n in range(100,160)]
   members[-1].display_name='𝕽𝖆𝖒𝖔𝖓';members[-1].status=discord.Status.offline
   picker=TicketMemberPicker(self.system,5,self.rid,members)
-  self.assertEqual(len(picker.children[0].options),25)
-  self.assertNotIn('159',[o.value for o in picker.children[0].options])
-  picker.page=2;picker.build();self.assertEqual(len(picker.children[0].options),10)
+  self.assertEqual(len(picker.children[1].options),25)
+  self.assertNotIn('159',[o.value for o in picker.children[1].options])
+  picker.page=2;picker.build();self.assertEqual(len(picker.children[1].options),10)
   form=TicketMemberSearch(picker);form.query._value='ramon'
   await form.on_submit(self.i)
   self.assertEqual(picker.page,0)
-  self.assertEqual([o.value for o in picker.children[0].options],['159'])
-  picker.query='159';picker.build();self.assertEqual([o.value for o in picker.children[0].options],['159'])
-  picker.query='Nobody';picker.build();self.assertTrue(picker.children[0].disabled)
+  self.assertEqual([o.value for o in picker.children[1].options],['159'])
+  picker.query='159';picker.build();self.assertEqual([o.value for o in picker.children[1].options],['159'])
+  picker.query='Nobody';picker.build();self.assertTrue(picker.children[1].disabled)
  async def test_picker_is_bound_to_actor_and_rechecks_access_and_ticket_state(self):
   picker=TicketMemberPicker(self.system,5,self.rid,[self.guest])
   self.i.user=self.guest;self.assertFalse(await picker.interaction_check(self.i))
@@ -176,12 +180,28 @@ class TicketMemberTests(unittest.IsolatedAsyncioTestCase):
   self.assertFalse(await picker.interaction_check(self.i))
  async def test_selection_adds_one_person_then_clears_the_private_picker(self):
   picker=TicketMemberPicker(self.system,5,self.rid,[self.guest])
-  select=picker.children[0];select._values=['7']
+  select=picker.children[1];select._values=['7']
   await select.callback(self.i)
   self.assertEqual(self.system.store.people(self.rid),[7])
   self.assertIsNone(self.i.edit_original_response.call_args.kwargs['view'])
   self.assertEqual(self.i.edit_original_response.call_args.kwargs['allowed_mentions'].to_dict(),discord.AllowedMentions.none().to_dict())
   self.assertTrue(picker.is_finished())
+ async def test_native_search_adds_member_outside_the_displayed_page(self):
+  picker=TicketMemberPicker(self.system,5,self.rid,[self.member(n) for n in range(100,130)]+[self.guest])
+  search=picker.children[0]
+  self.assertIsInstance(search,discord.ui.UserSelect)
+  self.assertNotIn('7',[option.value for option in picker.children[1].options])
+  search._values=[self.guest]
+  await search.callback(self.i)
+  self.assertEqual(self.system.store.people(self.rid),[7])
+  self.assertIsNone(self.i.edit_original_response.call_args.kwargs['view'])
+ async def test_native_search_revalidates_ineligible_member_with_no_directory(self):
+  self.guest.bot=True
+  picker=TicketMemberPicker(self.system,5,self.rid,None)
+  search=picker.children[0];search._values=[self.guest]
+  with self.assertRaisesRegex(ValueError,'No puedes añadir'):await search.callback(self.i)
+  self.channel.set_permissions.assert_not_awaited()
+  self.assertFalse(picker.is_finished())
  async def test_existing_open_controls_are_backed_up_before_adding_the_button(self):
   row=self.system.store.get(self.rid)
   view=TicketControls.from_row(row)

@@ -766,8 +766,7 @@ class TicketSystem:
    self.member_ticket(i,rid)
    await i.response.defer(ephemeral=True,thinking=True)
    try:members=await self.member_directory.load(i.guild,force=True)
-   except DirectoryUnavailable:
-    return await reply(i,'No pude cargar la lista completa del servidor. Vuelve a intentarlo en un momento.')
+   except DirectoryUnavailable:members=None
    self.member_ticket(i,rid)
    picker=TicketMemberPicker(self,i.user.id,rid,members)
    return await reply(i,picker.content(),view=picker)

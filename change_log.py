@@ -13,17 +13,13 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='settings-single-panel-v25'
-SUMMARY=('Corrige la acumulación de paneles privados al editar ajustes. Los formularios responden actualizando el mensaje de origen; '
-    'la elección de semana de Fotos, vistas previas, búsqueda, restauración, progreso, errores, cancelación y guardado usan el mismo panel nativo de Discord. '
-    'Las confirmaciones mantienen el formato v2 del mensaje y las vistas previas largas se paginan sin perder texto. '
-    'Se retiran las vistas reemplazadas para que sus temporizadores no sobrescriban la pantalla actual. '
-    'Conserva las 16 secciones, 22 formularios, confirmaciones, comprobaciones de Administrador, recibos, historial y reintentos. '
-    'No cambia valores guardados, horarios, premios, productos, saldos, sistemas públicos, canales ni permisos.')
-RESTORE=('Código anterior: e3fdb971b691055af9b7da1e45daa57c2034d3e0. Conservar el volumen y su SQLite actual; no restaurar una base antigua ni borrar tablas. '
-    'Esta versión solo cambia la interacción del panel y no necesita migración de datos. Volver al código anterior conserva ajustes, operaciones y cola de actualizaciones, '
-    'pero vuelve al comportamiento de crear respuestas privadas nuevas al enviar formularios. Después de cualquier despliegue, abrir /ajustes panel una vez para cargar sus botones nuevos. '
-    'No borrar mensajes históricos, archivos, compras, tickets, roles o permisos para revertir la interfaz. Los ajustes modificados por un administrador se deshacen por separado desde /ajustes historial con confirmación.')
+RELEASE='ticket-member-search-v26'
+SUMMARY=('Añade un buscador de miembros de Discord al panel privado Añadir miembro del ticket. '
+    'La búsqueda directa funciona también cuando la lista por páginas no se puede cargar. '
+    'El filtro por apodo, usuario o ID recorre todo el directorio disponible, incluidos los desconectados. '
+    'Ambos selectores verifican el ticket, el invitado y los permisos de quien invita antes de dar acceso.')
+RESTORE=('Para recuperar el selector anterior, desplegar 797052afbe895c2db1ef92d74c0a381ec8a4ca27 y volver a abrir Añadir miembro. '
+    'Conservar el volumen y SQLite con los tickets y las invitaciones posteriores. Esta interfaz no requiere migración.')
 
 
 
