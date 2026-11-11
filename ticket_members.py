@@ -48,8 +48,15 @@ class TicketMemberPicker(SafeView):
  async def invite(self,i,uid):
   await i.response.defer()
   changed=await self.system.add_ticket_member(i,self.rid,uid)
-  await i.edit_original_response(content=(f'<@{uid}> ya tiene acceso al ticket #{self.rid}.' if changed
-    else f'<@{uid}> ya estaba añadido a este ticket.'),view=None,allowed_mentions=discord.AllowedMentions.none())
+  channel_id=self.system.store.get(self.rid)['channel']
+  text=(f'<@{uid}> añadido como participante de <#{channel_id}>.' if changed
+    else f'<@{uid}> ya figura como participante de <#{channel_id}>.')
+  try:await self.system.sync_member_panel(self.rid)
+  except (discord.HTTPException,ValueError):
+   logging.getLogger('LaVenganzaRP.tickets').exception('Ticket member panel update failed ticket=%s',self.rid)
+   text+=' El panel de participantes está pendiente de actualización.'
+  await i.edit_original_response(content=text+' Acceso de lectura y escritura verificado.',view=None,
+    allowed_mentions=discord.AllowedMentions.none())
   self.stop()
  def build(self):
   self.clear_items()

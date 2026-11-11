@@ -45,10 +45,14 @@ class TicketMemberTests(unittest.IsolatedAsyncioTestCase):
   self.channel=SimpleNamespace(id=100,category_id=50,overwrites=self.overwrites)
   def get_overwrite(member):return discord.PermissionOverwrite.from_pair(*self.overwrites.get(member,discord.PermissionOverwrite()).pair())
   self.channel.overwrites_for=get_overwrite
+  def effective(member):
+   if member.guild_permissions.administrator:return discord.Permissions.all()
+   return get_overwrite(member).pair()[0]
+  self.channel.permissions_for=effective
   async def grant(member,overwrite,reason):
    # The durable journal must contain the exact before-state before the first Discord write.
    record=self.bot.changes.journal.rows()[0]
-   self.assertEqual(json.loads(record['before_json'])['participants'],[])
+   self.assertEqual(json.loads(record['before_json'])['participants'],self.system.store.people(self.rid))
    self.overwrites[member]=overwrite;self.update_raw()
   self.channel.set_permissions=AsyncMock(side_effect=grant)
   self.system.channel=AsyncMock(return_value=self.channel)
@@ -85,6 +89,25 @@ class TicketMemberTests(unittest.IsolatedAsyncioTestCase):
   events=self.system.store.events(self.rid)
   self.assertFalse(await self.system.add_ticket_member(self.i,self.rid,7))
   self.assertEqual(self.system.store.events(self.rid),events);self.channel.set_permissions.assert_awaited_once()
+ async def test_previously_recorded_participant_with_missing_grant_is_repaired(self):
+  self.system.store.participant(self.rid,7,5,True)
+  events=self.system.store.events(self.rid)
+  self.assertTrue(await self.system.add_ticket_member(self.i,self.rid,7))
+  self.channel.set_permissions.assert_awaited_once()
+  self.assertTrue(self.channel.permissions_for(self.guest).send_messages)
+  self.assertEqual(self.system.store.events(self.rid),events)
+  fields=self.system.embed(self.system.store.get(self.rid)).fields
+  self.assertEqual([f.value for f in fields if f.name=='Participantes añadidos'],['<@7>'])
+ async def test_ordinary_ticket_lists_an_admin_as_an_explicit_participant(self):
+  self.guest.guild_permissions.administrator=True
+  self.assertTrue(await self.system.add_ticket_member(self.i,self.rid,7))
+  self.assertTrue(self.overwrites[self.guest].view_channel)
+  self.assertEqual(self.system.store.people(self.rid),[7])
+ async def test_blocked_effective_access_does_not_report_success(self):
+  self.channel.permissions_for=lambda member:discord.Permissions(view_channel=True,read_message_history=True,send_messages=False)
+  with self.assertRaisesRegex(ValueError,'no confirmó'):
+   await self.system.add_ticket_member(self.i,self.rid,7)
+  self.assertEqual(self.system.store.people(self.rid),[])
  async def test_stale_permissions_and_invalid_targets_cannot_grant_access(self):
   original=self.raw()
   self.members[5]=self.member(5)

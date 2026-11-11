@@ -13,13 +13,14 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='ticket-member-search-v26'
-SUMMARY=('Añade un buscador de miembros de Discord al panel privado Añadir miembro del ticket. '
-    'La búsqueda directa funciona también cuando la lista por páginas no se puede cargar. '
-    'El filtro por apodo, usuario o ID recorre todo el directorio disponible, incluidos los desconectados. '
-    'Ambos selectores verifican el ticket, el invitado y los permisos de quien invita antes de dar acceso.')
-RESTORE=('Para recuperar el selector anterior, desplegar 797052afbe895c2db1ef92d74c0a381ec8a4ca27 y volver a abrir Añadir miembro. '
-    'Conservar el volumen y SQLite con los tickets y las invitaciones posteriores. Esta interfaz no requiere migración.')
+RELEASE='ticket-member-access-v27'
+SUMMARY=('Los tickets normales añaden al invitado como participante y le conceden acceso individual al canal, '
+    'incluso si ya tiene acceso por su rol. El bot comprueba con Discord que pueda ver el canal, leer y escribir antes de confirmar. '
+    'Una invitación repetida repara un permiso que faltaba. El panel del ticket muestra los participantes añadidos. '
+    'El ticket 5 comprueba las dos invitaciones reportadas mientras sigan vigentes. Los reportes reservados mantienen el acceso por Administrador.')
+RESTORE=('Para volver a la interfaz anterior desplegar 0cb0bc9030d826a223cff2538df9dc21ade3cfea y conservar el volumen SQLite actual. '
+    'Las invitaciones y los permisos concedidos persisten. Para una reversión individual consultar los estados anterior y posterior '
+    'en el registro privado, verificar la autorización y cambiar solo el acceso de esa persona en ese ticket.')
 
 
 

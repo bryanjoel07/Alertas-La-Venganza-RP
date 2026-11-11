@@ -40,6 +40,9 @@ NIGHT_NOTICE='🌙 Recibimos tu ticket, bro. El equipo te responde cuando esté 
 STATE_LABELS={'creando':'Preparando','nuevo':'Nuevo','en_atencion':'En atención','esperando_jugador':'Esperando al jugador',
  'resuelto':'Resuelto','cerrado':'Cerrado','fallido':'Creación fallida'}
 
+TICKET_MEMBER_GRANTS=('view_channel','send_messages','read_message_history','attach_files','embed_links','use_application_commands')
+
+
 class PriorityPanelPending(Exception):
  """Priority is durable, but the public panel has not been confirmed yet."""
 
@@ -185,6 +188,11 @@ class TicketSystem:
   embed.add_field(name='Estado',value=STATE_LABELS.get(row['status'],row['status']))
   embed.add_field(name='Responsable',value=f"<@{row['assignee']}>" if row['assignee'] else 'Pendiente de asignación')
   embed.add_field(name='Prioridad',value=row['priority'])
+  invited=self.store.people(row['id'])
+  if invited:
+   names=', '.join(f'<@{uid}>' for uid in invited[:35])
+   if len(invited)>35:names+=f' (+{len(invited)-35})'
+   embed.add_field(name='Participantes añadidos',value=names,inline=False)
   for key,value in json.loads(row['form']).items():
    if value:embed.add_field(name=key[:1].upper()+key[1:],value=discord.utils.escape_markdown(value)[:1024],inline=False)
   if row.get('purchase_id'):embed.add_field(name='Compra vinculada',value=f"`{row['purchase_id']}` · Staff puede consultar /ticket compra",inline=False)
@@ -814,22 +822,87 @@ class TicketSystem:
      raise ValueError('No puedes añadir a esa persona a este ticket.')
     if row['department']=='staff' and not member.guild_permissions.administrator:
      raise ValueError('Los reportes contra staff solo permiten añadir administradores de Discord.')
-    if uid in self.store.people(rid):return False
-    channel=await self.channel(row)
-    grants=('view_channel','read_message_history','send_messages','attach_files','embed_links','use_application_commands')
-    overwrite=channel.overwrites_for(member)
-    for key in grants:setattr(overwrite,key,True)
-    async def add():
-     if not member.guild_permissions.administrator:
-      await channel.set_permissions(member,overwrite=overwrite,reason=f'Añadir miembro al ticket #{rid}; solicitado por {actor.id}')
-      verified=await self.channel(row)
-      actual=verified.overwrites_for(member)
-      if any(getattr(actual,key) is not True for key in grants):
-       raise ValueError('Discord no confirmó el acceso completo. Vuelve a intentarlo; el ticket sigue guardado.')
-     await self.call('participant',rid,uid,actor.id,True)
-    await self.tracked(row,f'Añadir miembro {uid} al ticket #{rid}',add)
-    log.info('TICKETS member_added ticket=%s member=%s actor=%s reserved=%s',rid,uid,actor.id,row['department']=='staff')
-    return True
+    return await self.ensure_ticket_member(row,member,actor.id)
+
+ async def ensure_ticket_member(self,row,member,actor_id):
+  """Caller holds the ticket locks and has validated this participant."""
+  rid,uid=row['id'],member.id
+  recorded=uid in self.store.people(rid)
+  channel=await self.channel(row)
+  reserved=row['department']=='staff'
+  overwrite=channel.overwrites_for(member)
+  needs_grant=not reserved and any(getattr(overwrite,key) is not True for key in TICKET_MEMBER_GRANTS)
+
+  def verify(current):
+   if not reserved and any(getattr(current.overwrites_for(member),key) is not True for key in TICKET_MEMBER_GRANTS):
+    raise ValueError('Discord no confirmó el permiso individual del miembro en este canal.')
+   effective=current.permissions_for(member)
+   if not all((effective.view_channel,effective.read_message_history,effective.send_messages)):
+    raise ValueError('Discord no confirmó que la persona pueda ver el canal, leer el historial y escribir. Comprueba si tiene un aislamiento temporal.')
+
+  async def add():
+   if needs_grant:
+    for key in TICKET_MEMBER_GRANTS:setattr(overwrite,key,True)
+    await channel.set_permissions(member,overwrite=overwrite,reason=f'Participante del ticket #{rid}; solicitado por {actor_id}')
+   verify(await self.channel(row))
+   if not recorded:await self.call('participant',rid,uid,actor_id,True)
+
+  if needs_grant or not recorded:
+   await self.tracked(row,f'Añadir o reparar miembro {uid} en ticket #{rid}',add)
+  else:verify(channel)
+  log.info('TICKETS member_access_verified ticket=%s channel=%s member=%s individual=%s recorded_before=%s grant_written=%s',
+    rid,channel.id,uid,not reserved,recorded,needs_grant)
+  return needs_grant or not recorded
+
+ async def sync_member_panel(self,rid):
+  async with self.panel_locks.setdefault(rid,asyncio.Lock()):
+   row=self.store.get(rid)
+   if not row or row.get('deleted_at') or not row['control_message']:return
+   channel=await self.channel(row)
+   message=await channel.fetch_message(row['control_message'])
+   if message.author.id!=self.bot.user.id:raise ValueError('El panel del ticket pertenece a otra cuenta.')
+   def roster(embeds):
+    return [f.value for e in embeds for f in e.fields if f.name=='Participantes añadidos']
+   desired=self.embed(row)
+   if roster(message.embeds)==roster([desired]):return
+   async def update():
+    await message.edit(embed=desired,allowed_mentions=discord.AllowedMentions.none())
+   async def snapshot():
+    current=await channel.fetch_message(message.id)
+    return dict(channel=channel.id,message=message.id,embeds=[e.to_dict() for e in current.embeds])
+   await self.bot.changes.tracked('TICKET_CONTROLS','Actualizar participantes del ticket',update,
+     request_id=f'{rid}:{message.id}:{time.time_ns()}',snapshot=snapshot)
+
+ async def verify_reported_invitations(self):
+  # Reconcile the invitations reported for this case only while they remain active in the roster.
+  if self.guild_id!=1244988345327550565:return
+  rid=5
+  async with self.case_lock(rid):
+   async with self.lock:
+    row=self.store.get(rid)
+    if (not row or row['channel']!=1569527961718358088 or row['department']=='staff'
+      or row['status'] not in ('nuevo','en_atencion','esperando_jugador','resuelto')
+      or row.get('deleted_at') or row.get('deletion_requested')):return
+    guild=self.bot.get_guild(self.guild_id)
+    for uid in (1385766075312115755,1166481827024883733):
+     receipt=f'member-access-v27:{rid}:{uid}'
+     if self.store.config(receipt):continue
+     if uid not in self.store.people(rid) or uid in (row['owner'],row.get('excluded')):continue
+     try:member=await guild.fetch_member(uid)
+     except discord.NotFound:continue
+     if member.bot:continue
+     try:
+      await self.ensure_ticket_member(row,member,self.bot.user.id)
+      self.store.config(receipt,'verified')
+     except (ValueError,discord.HTTPException):
+      log.exception('TICKETS reported_member_access_unconfirmed ticket=%s member=%s',rid,uid)
+    await self.sync_member_panel(rid)
+    if row['control_message']:
+     channel=await self.channel(row)
+     panel=await channel.fetch_message(row['control_message'])
+     shown=[f.value for e in panel.embeds for f in e.fields if f.name=='Participantes añadidos']
+     log.info('TICKETS reported_roster ticket=%s channel=%s panel=%s shown=%s',rid,channel.id,panel.id,shown)
+
  async def change_priority(self,i,rid,priority,reason):
   if i.guild_id!=self.guild_id:raise ValueError('Cambia la prioridad desde La Venganza RP.')
   async with self.lock:
@@ -1050,6 +1123,8 @@ class TicketSystem:
      self.store.config('selftest-backup:'+request,'verified')
      log.info('TICKETS external_backup_verified proofs_in_sqlite=True restore_verified=True')
     await self.bot.changes.tracked('TICKETS_DELETE_SELFTEST_REQUEST_ID','Verificar eliminación de ticket cerrado',self.delete_selftest)
+    try:await self.verify_reported_invitations()
+    except (ValueError,discord.HTTPException):log.exception('TICKETS reported_member_check_failed')
     self.prepared=True
     log.info('TICKETS ready panel=%s active_category=%s closed_category=%s persistent_controls=True',PANEL_CHANNEL,self.store.config('active_category'),self.store.config('closed_category'))
  async def recover(self,rid=None,create_missing=True):
@@ -1318,12 +1393,18 @@ class TicketSystem:
   @self.group.command(name='participante',description='Añadir o retirar una persona de un caso')
   async def participant(i:discord.Interaction,persona:discord.Member,añadir:bool,numero:int=None):
    await i.response.defer(ephemeral=True)
+   row=self.current(i,numero)
+   if añadir and row['status'] not in ('cerrado','fallido','creando'):
+    await self.add_ticket_member(i,row['id'],persona.id)
+    await self.sync_member_panel(row['id'])
+    return await reply(i,f"<@{persona.id}> figura como participante de <#{row['channel']}> con acceso verificado.")
    async with self.lock:
     row=self.current(i,numero);self.authorize(i.user,row,True)
     if persona.bot or persona.id in (row['owner'],row.get('excluded')):raise ValueError('Esa persona no puede añadirse ni retirarse con esta acción.')
     if row['department']=='staff' and not persona.guild_permissions.administrator:raise ValueError('Los reportes contra staff solo admiten administradores como participantes adicionales.')
     await self.call('participant',row['id'],persona.id,i.user.id,añadir)
     await self.apply_permissions(self.store.get(row['id']))
+   await self.sync_member_panel(row['id'])
    await reply(i,'Participantes actualizados y cambio registrado.')
   @self.group.command(name='transcripcion',description='Descargar la conversación sin notas internas')
   async def transcript(i:discord.Interaction,numero:int=None):
