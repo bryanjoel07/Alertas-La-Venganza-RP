@@ -1,4 +1,5 @@
 """Moderación de enlaces repetidos en canales distintos del mismo servidor."""
+from settings_catalog import read_value,value as setting
 import asyncio
 from contextlib import closing
 import hashlib
@@ -81,8 +82,10 @@ class SpamStore:
     def record(self, author, channel, message, posted, keys, now):
         with closing(sqlite3.connect(self.path, timeout=10)) as db, db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute("DELETE FROM spam_links WHERE posted < ?", (now - WINDOW,))
-            if not keys or posted < now - WINDOW or posted > now + 5:
+            window=read_value(db,'security','spam_minutes')*60
+            limit=read_value(db,'security','spam_channels')
+            db.execute("DELETE FROM spam_links WHERE posted < ?", (now - window,))
+            if not keys or posted < now - window or posted > now + 5:
                 return None
             evidence = {}
             for key in keys:
@@ -92,12 +95,12 @@ class SpamStore:
                 rows = db.execute("""SELECT channel,message,posted FROM spam_links
                     WHERE author=? AND link=? ORDER BY posted,message""", (author, key)).fetchall()
                 locations = {c for c, _, _ in rows}
-                if len(locations) < CHANNEL_LIMIT:
+                if len(locations) < limit:
                     continue
                 evidence[key] = [(c, mid) for c, mid, _ in rows]
             if not evidence or db.execute("""SELECT 1 FROM spam_cases WHERE author=? AND opened>=?
                                           AND id NOT IN (SELECT case_id FROM spam_review_only)""",
-                                          (author, now - WINDOW)).fetchone():
+                                          (author, now - window)).fetchone():
                 return None
             case = db.execute("INSERT INTO spam_cases(author,opened) VALUES (?,?)", (author, now)).lastrowid
             return case, evidence
@@ -201,9 +204,9 @@ class LinkSpamGuard:
                         and current.edited_at is None and link_keys(current.content) == {key}):
                     live.append(current)
             now = time.time()
-            live = sorted((m for m in live if 0 <= now - m.created_at.timestamp() <= WINDOW), key=lambda m: m.id)
+            live = sorted((m for m in live if 0 <= now - m.created_at.timestamp() <= setting(self.store.path,'security','spam_minutes')*60), key=lambda m: m.id)
             channels = {m.channel.id for m in live}
-            if len(channels) >= CHANNEL_LIMIT:
+            if len(channels) >= setting(self.store.path,'security','spam_channels'):
                 return key, live
         return None
 

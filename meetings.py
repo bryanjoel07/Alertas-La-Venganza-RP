@@ -1,4 +1,5 @@
 """Reuniones independientes de eventos; SQLite en hilos y vistas persistentes."""
+from settings_catalog import read_value
 import asyncio
 import io
 import hashlib
@@ -118,9 +119,11 @@ class MeetingStore:
             if not m:
                 return None
             starts = m["starts_at"]
+            if not read_value(db,'meeting_notices',m["kind"]):return None
             if now >= starts + START_GRACE:
                 return None
-            due = [s for s in REMINDER_LABELS if m["created_at"] <= starts - s <= now]
+            allowed=set(read_value(db,'meeting_notices','times'))
+            due = [s for s in REMINDER_LABELS if s in allowed and m["created_at"] <= starts - s <= now]
             if not due:
                 return None
             seconds = min(due)

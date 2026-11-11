@@ -275,7 +275,7 @@ class LaVenganzaBot(discord.Client):
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
         await asyncio.to_thread(self.changes.journal.initialize)
-        await self.settings_panel.call('initialize')
+        await self.settings_panel.start()
         await self.economy.start()
         await self.tickets.start()
         await self.feedback.start()
@@ -306,7 +306,7 @@ class LaVenganzaBot(discord.Client):
         loops=(self.obscenity_filter.install,self.streamer_panel.install,self.live_alerts.poll)
         loop_tasks=[loop.get_task() for loop in loops]
         for loop in loops:loop.cancel()
-        tasks = [task for task in (self.rules.task, self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.settings_panel.task, self.rules.task, self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         tasks=list({task for task in [*tasks,*loop_tasks] if task is not None and task is not asyncio.current_task()})
         for task in tasks:
             task.cancel()
@@ -321,8 +321,9 @@ fivem_probe = FiveMProbe()
 
 
 async def post_webhook(embed):
-    payload = {"username": "La Venganza RP | Alertas", "content": "@everyone",
-               "allowed_mentions": {"parse": ["everyone"]}, "embeds": [embed.to_dict()]}
+    mention=get_setting("panel.announcements.everyone","1")=="1"
+    payload = {"username": "La Venganza RP | Alertas", "content": "@everyone" if mention else None,
+               "allowed_mentions": {"parse": ["everyone"] if mention else []}, "embeds": [embed.to_dict()]}
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
         async with session.post(WEBHOOK_URL, json=payload) as response:
             if response.status not in (200, 204):
@@ -348,8 +349,9 @@ def make_alert(state, test=False):
 
 async def send_alert(state, test=False):
     channel = client.get_channel(ALERT_CHANNEL_ID) or await client.fetch_channel(ALERT_CHANNEL_ID)
-    await channel.send(content="@everyone", embed=make_alert(state, test),
-                       allowed_mentions=discord.AllowedMentions(everyone=True, users=False, roles=False, replied_user=False))
+    mention=get_setting("panel.announcements.everyone","1")=="1"
+    await channel.send(content="@everyone" if mention else None, embed=make_alert(state, test),
+                       allowed_mentions=discord.AllowedMentions(everyone=mention, users=False, roles=False, replied_user=False))
     log.info("Alerta enviada: %s | prueba=%s", state, test)
 
 

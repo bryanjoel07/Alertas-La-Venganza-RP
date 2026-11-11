@@ -1,4 +1,5 @@
 """Weekly photo entries and votes, kept in the bot's existing SQLite backups."""
+from settings_catalog import read_value
 from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
@@ -133,6 +134,11 @@ class PhotoStore:
             previous = db.execute('SELECT id FROM lv_photo_entries WHERE upload_key=?', (upload_key,)).fetchone()
             if previous:
                 return previous[0]
+            if not read_value(db,'photo_entries','accepting'):raise ValueError('Ahora mismo no estamos recibiendo fotos nuevas, bro. La votación de las que ya están sigue abierta.')
+            current_week=week_bounds(now)[0]
+            limit=read_value(db,'photo_entries','weekly_limit')
+            if limit and db.execute('SELECT COUNT(*) FROM lv_photo_entries WHERE author=? AND week=? AND active=1',(author,current_week)).fetchone()[0]>=limit:
+                raise ValueError(f'Ya llegaste al límite de {limit} fotos de esta semana, bro.')
             if db.execute("SELECT COUNT(*) FROM lv_photo_entries WHERE author=? AND post_mode='pending'", (author,)).fetchone()[0] >= 3:
                 raise ValueError('Tienes fotos pendientes de publicar. Espera un momento, bro.')
             total = db.execute('SELECT COALESCE(SUM(LENGTH(media)),0) FROM lv_photo_entries').fetchone()[0]

@@ -13,9 +13,18 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='server-up-rendered-gif-v23'
-SUMMARY='Corrige la comprobación insuficiente de v22: una descarga HTTP 200 con imagen de ancho y alto cero no cuenta como reparación. Conserva el GIF original y añade una copia animada de 4,578,413 bytes, 400 por 225 píxeles y diez segundos, preparada para Discord. El aviso utiliza un adjunto nativo con nombre nuevo; si Discord no reconoce su imagen, prueba la copia HTTPS del mismo GIF. Ambas rutas exigen dimensiones positivas en el embed y una respuesta GIF válida del proxy. Repara el aviso existente sin nuevos mensajes ni menciones, conserva las copias privadas antes y después y aplica la misma verificación a futuros anuncios. Mantiene texto, colores, horario, canales, permisos, roles y sistemas existentes.'
-RESTORE=('Código anterior: 4f704c50ebbec30f81cd7bf863418848d9582f29. Conservar SQLite en WAL y el volumen actual; no restaurar una base antigua. Conservar el adjunto ya publicado y verificado en Discord al revertir código: no requiere volver a editar el aviso. Si se usó la dirección alternativa de la copia compatible, mantener esa ruta o adjuntar assets/banners/server-up-discord.gif de esta versión al mismo mensaje antes de retirar la ruta. El archivo original assets/banners/server-up.gif permanece intacto. El registro privado SERVER_UP_GIF_RENDER conserva el estado previo; no reenviar el anuncio ni volver a mencionar @everyone para restaurar una imagen. La versión anterior mantiene la descarga pero no comprueba dimensiones, por lo que puede reproducir el fallo visual. No modificar roles, permisos, premios, saldos ni otros mensajes.')
+RELEASE='settings-center-v24'
+SUMMARY=('Amplía /ajustes panel a un centro privado de ajustes con navegación nativa de Discord, 16 secciones y 22 formularios. '
+    'Muestra los valores actuales de servidor, tickets, economía, Fotos, minijuegos, feedback, sugerencias, errores, staff, directos, eventos, reuniones, seguridad, normas y respaldos. '
+    'Incluye búsqueda de comandos registrados, edición de precios y disponibilidad, historial y restauración de ajustes con vista previa. '
+    'Cada guardado requiere confirmación y permisos de Administrador comprobados de nuevo, evita sobrescribir cambios de otros comandos y conserva recibos y copias privadas. '
+    'Las actualizaciones de paneles públicos se guardan en una cola persistente con reintentos. Los ajustes nuevos usan los valores anteriores por defecto; abrir o instalar el panel no los cambia. '
+    'Conserva compras, saldos, archivos, casos, privacidad y el GIF compatible de Server Up. No cambia roles, permisos ni canales y no publica cambios en Registro Exclusive.')
+RESTORE=('Código anterior: 1247aeeaaa085d8b0ea307c9e355df2fcd72ffd8. Conservar SQLite en WAL y el volumen actual, incluyendo bot_setting_ops, bot_setting_jobs y las claves nuevas; no restaurar una base antigua. '
+    'Para deshacer un ajuste, usar primero /ajustes historial y Revisar restauración, comprobar el antes y después y confirmar solo el formulario o producto elegido. No restaura compras, saldos ni pagos ya hechos. '
+    'Revertir el código no deshace ajustes: precios, premios, horario y claves existentes siguen guardados; el código anterior ignora las claves nuevas y deja de procesar la cola nueva. '
+    'Si se cambió el filtro nativo de Discord, restaurar sus ajustes desde el panel antes de volver al código anterior; no modificar sus exenciones ni roles protegidos. '
+    'La versión anterior conserva el GIF compatible y el panel original de tres ajustes. No borrar archivos, tablas, mensajes, tickets, membresías ni permisos para revertir la interfaz.')
 
 
 

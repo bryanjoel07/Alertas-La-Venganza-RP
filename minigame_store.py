@@ -1,4 +1,5 @@
 """Atomic minigame answers and 25-coin payments in the existing economy."""
+from settings_catalog import read_value
 from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
@@ -79,7 +80,7 @@ class MinigameStore:
  @staticmethod
  def _availability(db,user,stamp):
   row=db.execute('SELECT last_answer FROM lv_game_turns WHERE user=?',(user,)).fetchone()
-  next_at=row['last_answer']+ANSWER_INTERVAL if row else None
+  next_at=row['last_answer']+read_value(db,'games','interval_hours')*3600 if row else None
   return {'available':next_at is None or stamp>=next_at,'next_at':next_at,
    'last_answer':row['last_answer'] if row else None}
  def availability(self,user,now=None):
@@ -93,7 +94,8 @@ class MinigameStore:
    if active:
     payload=json.loads(active['payload'])
     if (payload['kind']==kind and not (skip and active['id']==previous)) or (previous and active['id']!=previous):return dict(active)
-    db.execute("UPDATE lv_game_sessions SET status='skipped',updated=? WHERE id=?",(stamp,active['id']))
+   if not read_value(db,'games',kind+'_enabled'):raise ValueError('Ese modo está pausado ahora mismo, bro. Puedes terminar una pregunta que ya tenías abierta.')
+   if active:db.execute("UPDATE lv_game_sessions SET status='skipped',updated=? WHERE id=?",(stamp,active['id']))
    eligible=db.execute('''SELECT q.id,q.payload FROM lv_game_questions q WHERE q.kind=? AND q.enabled=1
     AND NOT EXISTS (SELECT 1 FROM lv_game_wins w WHERE w.user=? AND w.question=q.id)''',(kind,user)).fetchall()
    if not eligible:return None
@@ -109,7 +111,7 @@ class MinigameStore:
    if receipt:
     if receipt['user']!=user or receipt['session']!=token:raise ValueError('Ese intento pertenece a otra pregunta.')
     result=json.loads(receipt['result']);result['replayed']=True
-    if result['state'] in {'correct','wrong'}:result.setdefault('next_at',receipt['created']+ANSWER_INTERVAL)
+    if result['state'] in {'correct','wrong'}:result.setdefault('next_at',receipt['created']+read_value(db,'games','interval_hours')*3600)
     return result
    session=self._session(db,token,user);question=json.loads(session['payload'])
    balance=db.execute('SELECT balance FROM eco_accounts WHERE user_id=?',(user,)).fetchone();balance=balance[0] if balance else 0
@@ -131,7 +133,7 @@ class MinigameStore:
       result['coins']=REWARD;result['balance']=balance+REWARD
      db.execute("UPDATE lv_game_sessions SET status='correct',updated=? WHERE id=?",(stamp,token))
     db.execute('INSERT INTO lv_game_turns VALUES (?,?) ON CONFLICT(user) DO UPDATE SET last_answer=excluded.last_answer',(user,stamp))
-    result['next_at']=stamp+ANSWER_INTERVAL
+    result['next_at']=stamp+read_value(db,'games','interval_hours')*3600
    db.execute('INSERT INTO lv_game_attempts VALUES (?,?,?,?,?)',(op,user,token,json.dumps(result),stamp))
    return result
  def progress(self,user):

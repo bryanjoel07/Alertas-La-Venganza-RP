@@ -1,4 +1,5 @@
 """Staff feedback; ticket ownership and duplicate checks share one SQLite transaction."""
+from settings_catalog import read_value
 from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
@@ -91,13 +92,15 @@ class FeedbackStore:
                 if row['department'] == 'staff':
                     visibility = 'private'
             else:
+                if not read_value(db,'feedback','outside_enabled'):raise ValueError('Las opiniones fuera de tickets están pausadas. Puedes valorar los tickets que te atendieron.')
                 if not staff or staff == owner:
                     raise ValueError('Elige a quien te atendió; no puedes valorarte tú mismo.')
                 if len(topic) < 3:
                     raise ValueError('Cuéntanos con qué te ayudaron.')
                 recent = db.execute("SELECT MAX(created) FROM lv_feedback WHERE owner=? AND source='outside'", (owner,)).fetchone()[0]
-                if recent is not None and stamp - recent < 86400:
-                    raise ValueError(f'Ya dejaste una opinión fuera de tickets hoy. Puedes enviar otra <t:{recent + 86400}:R>.')
+                cooldown=read_value(db,'feedback','outside_hours')*3600
+                if recent is not None and stamp - recent < cooldown:
+                    raise ValueError(f'Ya dejaste una opinión fuera de tickets hoy. Puedes enviar otra <t:{recent + cooldown}:R>.')
             cur = db.execute('''INSERT INTO lv_feedback(owner,staff,ticket,source,score,comment,topic,visibility,created,publish_state)
                 VALUES (?,?,?,?,?,?,?,?,?,?)''', (owner, staff, ticket, 'ticket' if ticket is not None else 'outside',
                 score, comment, topic, visibility, stamp, 'pending' if visibility == 'public' else 'private'))

@@ -1,4 +1,5 @@
 """Private /regla search over the owner's rules channel; Discord is read-only."""
+from settings_catalog import value as setting
 import asyncio
 import logging
 import time
@@ -44,6 +45,7 @@ class RuleResults(discord.ui.View):
 class RulesLookup:
  def __init__(self,bot,guild_id):
   self.bot,self.guild_id=bot,guild_id
+  self.source_id=CHANNEL_ID;self.cache_seconds=300
   self.index=();self.loaded_at=0;self.generation=0;self.invalid=True
   self.lock=asyncio.Lock();self.ready_lock=asyncio.Lock();self.prepared=False;self.task=None
   @app_commands.command(name='regla',description='Buscar una norma de La Venganza y abrir su mensaje oficial')
@@ -58,14 +60,18 @@ class RulesLookup:
   async def complete(i,current):return await self.autocomplete(i,current)
   self.command=command
  async def start(self):
+  panel=getattr(self.bot,'settings_panel',None)
+  if panel is not None:
+   self.source_id=await asyncio.to_thread(setting,panel.store.path,'rules','source_channel')
+   self.cache_seconds=60*await asyncio.to_thread(setting,panel.store.path,'rules','cache_minutes')
   if self.task is None or self.task.done():self.task=asyncio.create_task(self.loop(),name='official-rules-search')
  async def channel(self):
-  source=await self.bot.fetch_channel(CHANNEL_ID)
+  source=await self.bot.fetch_channel(self.source_id)
   if not isinstance(source,discord.TextChannel) or source.guild.id!=self.guild_id:
    raise ValueError('No encuentro el canal oficial de normas esperado.')
   return source
  def invalidate(self,guild,channel):
-  if guild==self.guild_id and channel==CHANNEL_ID:
+  if guild==self.guild_id and channel==self.source_id:
    self.invalid=True;self.generation+=1
  async def member(self,i):
   if i.guild_id!=self.guild_id:raise ValueError('Consulta las normas dentro de La Venganza RP.')
@@ -80,7 +86,7 @@ class RulesLookup:
   return source
  async def refresh(self,force=False):
   async with self.lock:
-   if not force and not self.invalid and self.loaded_at and time.monotonic()-self.loaded_at<300:return
+   if not force and not self.invalid and self.loaded_at and time.monotonic()-self.loaded_at<self.cache_seconds:return
    for attempt in range(2):
     generation=self.generation;source=await self.channel()
     messages=[m async for m in source.history(limit=None,oldest_first=True)]
@@ -97,6 +103,7 @@ class RulesLookup:
  async def show(self,i,view,edit=False):
   source=await self.member(i)
   await self.refresh()
+  if source.id!=self.source_id:raise ValueError('El canal de normas cambió durante la consulta. Abre la búsqueda otra vez.')
   explanation=topic_for(view.query)
   if explanation:return await self.show_explanation(i,source,explanation,edit=edit)
   selected=None
@@ -108,21 +115,22 @@ class RulesLookup:
    view.page=max(0,min(view.page,len(matches)-1));section,part,number,total=matches[view.page]
    try:message=await source.fetch_message(section.message)
    except discord.NotFound:
-    self.invalidate(self.guild_id,CHANNEL_ID);await self.refresh(force=True);continue
+    self.invalidate(self.guild_id,self.source_id);await self.refresh(force=True);continue
    if fingerprint(message)!=section.fingerprint:
-    self.invalidate(self.guild_id,CHANNEL_ID);await self.refresh(force=True);continue
+    self.invalidate(self.guild_id,self.source_id);await self.refresh(force=True);continue
    selected=section,part,number,total,len(matches);break
   if selected is None:
    if matches:raise ValueError('El staff está actualizando esa norma. Vuelve a consultar en un momento.')
    query=discord.utils.escape_mentions(discord.utils.escape_markdown(view.query))
    content=f'No encontré una norma que coincida con **{query}**, bro. Prueba otra palabra o revisa el canal de normas.'
    fallback=discord.ui.View(timeout=None)
-   fallback.add_item(discord.ui.Button(label='Abrir normas',url=f'https://discord.com/channels/{self.guild_id}/{CHANNEL_ID}'))
+   fallback.add_item(discord.ui.Button(label='Abrir normas',url=f'https://discord.com/channels/{self.guild_id}/{self.source_id}'))
    if edit:await i.edit_original_response(content=content,embed=None,view=fallback,allowed_mentions=NONE)
    else:await reply(i,content,view=fallback)
    return
   section,part,number,total,count=selected
-  url=f'https://discord.com/channels/{self.guild_id}/{CHANNEL_ID}/{section.message}'
+  if source.id!=self.source_id:raise ValueError('El canal de normas cambió durante la consulta. Abre la búsqueda otra vez.')
+  url=f'https://discord.com/channels/{self.guild_id}/{self.source_id}/{section.message}'
   embed=discord.Embed(title=f'📚 {section.heading}'[:256],color=RED,
     description=discord.utils.escape_mentions(part))
   embed.add_field(name='Fuente oficial',value=f'[Abrir el mensaje original]({url})',inline=False)
@@ -133,17 +141,18 @@ class RulesLookup:
   log.info('RULES result_verified query=%s source=%s section=%s page=%s/%s private=True',normalize(view.query),section.message,section.key,view.page+1,count)
  async def show_explanation(self,i,source,topic,edit=False):
   # This link is context for the approved explanation, rather than a quotation source.
-  url=f'https://discord.com/channels/{self.guild_id}/{CHANNEL_ID}'
+  url=f'https://discord.com/channels/{self.guild_id}/{self.source_id}'
   reference=next((row for row in search(self.index,'pk') if 'muerte' in normalize(row.heading)),None)
   if reference:
    try:message=await source.fetch_message(reference.message)
    except discord.NotFound:
-    self.invalidate(self.guild_id,CHANNEL_ID)
+    self.invalidate(self.guild_id,self.source_id)
     await self.refresh(force=True)
    else:
     url+=f'/{message.id}'
-    if fingerprint(message)!=reference.fingerprint:self.invalidate(self.guild_id,CHANNEL_ID)
+    if fingerprint(message)!=reference.fingerprint:self.invalidate(self.guild_id,self.source_id)
   embed=discord.Embed(title=f'📚 {topic.heading}',description=topic.body,color=RED)
+  if source.id!=self.source_id:raise ValueError('El canal de normas cambió durante la consulta. Abre la búsqueda otra vez.')
   embed.add_field(name='Reglamento del servidor',value=f'[Consultar las normas publicadas]({url})',inline=False)
   embed.set_footer(text='La Venganza RP · Explicación de administración')
   controls=discord.ui.View(timeout=None)
@@ -154,7 +163,7 @@ class RulesLookup:
  async def autocomplete(self,i,current):
   if i.guild_id!=self.guild_id or self.invalid:return []
   guild=self.bot.get_guild(self.guild_id)
-  source=guild.get_channel(CHANNEL_ID) if guild else None
+  source=guild.get_channel(self.source_id) if guild else None
   if source is None or not isinstance(i.user,discord.Member):return []
   permission=source.permissions_for(i.user)
   if not permission.view_channel or not permission.read_message_history:return []
@@ -178,7 +187,7 @@ class RulesLookup:
    for query in ('ck','pk'):
     hits=search(self.index,query)
     if not hits:
-     log.info('RULES query_not_present topic=%s source=%s',query,CHANNEL_ID);continue
+     log.info('RULES query_not_present topic=%s source=%s',query,self.source_id);continue
     first=hits[0];message=await source.fetch_message(first.message)
     if fingerprint(message)!=first.fingerprint:raise RuntimeError('Las normas cambiaron durante la verificación inicial.')
     log.info('RULES query_verified topic=%s results=%s first_message=%s first_heading=%s original_text=True',query,len(hits),first.message,first.heading)
@@ -190,7 +199,7 @@ class RulesLookup:
     if topic_for(key) is not topic or len(topic.body)>4096:raise RuntimeError('No se confirmó la explicación solicitada para '+key)
     log.info('RULES explanation_verified topic=%s title=%s separate_topic=True owner_requested=True channel_messages_unchanged=True',key,topic.heading)
    self.prepared=True
-   log.info('RULES ready channel=%s sections=%s command=/regla autocomplete=True private=True live_source_verified=True roles_unchanged=True messages_unchanged=True',CHANNEL_ID,len(self.index))
+   log.info('RULES ready channel=%s sections=%s command=/regla autocomplete=True private=True live_source_verified=True roles_unchanged=True messages_unchanged=True',self.source_id,len(self.index))
  async def loop(self):
   await self.bot.wait_until_ready()
   while not self.bot.is_closed():

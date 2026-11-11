@@ -85,6 +85,22 @@ class FilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('c.b.n.e.s',rule.trigger.keyword_filter);self.assertIn('c b n e s',rule.trigger.keyword_filter)
         await system.install();rule.edit.assert_awaited_once()
 
+    async def test_panel_can_disable_and_update_only_its_extra_words_preserving_manual_words_and_exemptions(self):
+        rule=self.rule(keywords=['palabra-manual'])
+        system,guild,settings,snapshots=self.setup_system(rule)
+        settings['panel.security.words']='palabradelpanel'
+        await system.install()
+        self.assertIn('palabradelpanel',rule.trigger.keyword_filter)
+        self.assertIn('palabra-manual',rule.trigger.keyword_filter)
+        settings['panel.security.words']=''
+        settings['panel.security.enabled']='0'
+        await system.install()
+        self.assertFalse(rule.enabled)
+        self.assertNotIn('palabradelpanel',rule.trigger.keyword_filter)
+        self.assertIn('palabra-manual',rule.trigger.keyword_filter)
+        self.assertIn('cbnes',rule.trigger.keyword_filter)
+        self.assertEqual(rule.exempt_role_ids,{30});self.assertEqual(rule.exempt_channel_ids,{40})
+
     async def test_manual_words_patterns_allow_list_exemptions_and_actions_are_preserved(self):
         alert=discord.AutoModRuleAction(channel_id=55)
         rule=self.rule(keywords=['palabra-personalizada'],patterns=[r'patronpersonal',OLD_ABBREVIATION_PATTERN],

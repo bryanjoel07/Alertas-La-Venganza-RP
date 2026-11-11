@@ -11,6 +11,7 @@ from aiohttp import web
 import discord
 
 from sqlite_runtime import transaction
+from settings_catalog import value as setting
 
 BANNER=Path(__file__).parent/'assets'/'banners'/'server-up.gif'
 DIGEST='69e8b6cba68d6824ba837ac8dbe0f3fe1ac588571f154ffd167e84fe1e484f23'
@@ -132,8 +133,9 @@ class ServerUpBanner:
     async def send(self,channel,embed):
         embed.set_image(url=ATTACHMENT)
         with closing(discord.File(RENDER_BANNER,filename=FILENAME)) as file:
-            message=await channel.send(content='@everyone',embed=embed,file=file,
-                allowed_mentions=discord.AllowedMentions(everyone=True,users=False,roles=False,replied_user=False))
+            mentions=await asyncio.to_thread(setting,self.path,'announcements','everyone')
+            message=await channel.send(content='@everyone' if mentions else None,embed=embed,file=file,
+                allowed_mentions=discord.AllowedMentions(everyone=mentions,users=False,roles=False,replied_user=False))
         try:rendering=await verify_image(channel,message.id,ATTACHMENT,message.content)
         except RuntimeError:rendering=await self.replace(channel,message,native=False)
         log.info('SERVER_UP image_verified message=%s mode=%s width=%s height=%s gif=True',message.id,rendering['mode'],rendering['width'],rendering['height'])

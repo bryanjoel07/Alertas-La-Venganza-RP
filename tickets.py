@@ -20,6 +20,7 @@ from photo_members import MemberDirectory,DirectoryUnavailable
 from ticket_members import TicketMemberPicker
 
 import discord
+from settings_catalog import value as setting
 from discord import app_commands
 from ticket_forms import FORMS
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
@@ -50,8 +51,10 @@ def is_staff_role(role):
 def closed_staff_roles(guild):
  return [role for role in guild.roles if is_staff_role(role)]
 
-def overnight(stamp):
- return datetime.fromtimestamp(stamp,PR).hour<8
+def overnight(stamp,start='00:00',end='08:00'):
+ local=datetime.fromtimestamp(stamp,PR);minute=local.hour*60+local.minute
+ a,b=(int(t.split(':')[0])*60+int(t.split(':')[1]) for t in (start,end))
+ return a<=minute<b if a<b else (minute>=a or minute<b) if a>b else False
 
 def escalation_roles(guild,row,channel):
  admins=[r for r in guild.roles if r.id!=guild.id and not r.managed and r.permissions.administrator]
@@ -373,7 +376,7 @@ class TicketSystem:
   try:await self.notify_new(self.store.get(rid),channel)
   except discord.HTTPException:log.warning('TICKETS notification_pending id=%s',rid)
   welcome=f'✅ Tu ticket está listo: <#{channel.id}>. Envía allí capturas o archivos. No menciones a todo el servidor.'
-  if overnight(self.store.get(rid)['created']):
+  if overnight(self.store.get(rid)['created'],setting(self.store.path,'ticket_notices','night_start'),setting(self.store.path,'ticket_notices','night_end')):
    welcome+='\n'+NIGHT_NOTICE
    try:await channel.send(NIGHT_NOTICE,allowed_mentions=discord.AllowedMentions.none())
    except discord.HTTPException:log.warning('TICKETS overnight_notice_pending id=%s',rid)
@@ -409,7 +412,8 @@ class TicketSystem:
     owner=await self.member(channel.guild,row['owner'])
    except (discord.HTTPException,ValueError):return False
    if not owner or owner.bot:return False
-   if not self.store.reserve_notice(rid,kind,episode,cooldown=PLAYER_NOTICE_COOLDOWN):return False
+   if not setting(self.store.path,'ticket_notices','dm_enabled'):return False
+   if not self.store.reserve_notice(rid,kind,episode,cooldown=setting(self.store.path,'ticket_notices','dm_minutes')*60):return False
    url=ticket_link(self.guild_id,row,message)
   try:
    notice=await owner.send(f"{text}\n{url}",allowed_mentions=discord.AllowedMentions.none(),suppress_embeds=True)
@@ -438,7 +442,7 @@ class TicketSystem:
     if reason:text+='\nMotivo: '+discord.utils.escape_markdown(reason)[:600]
    elif kind=='escalation':
     since=row.get('staff_wait_since')
-    if row['status'] not in ('nuevo','en_atencion') or since is None or now-since<ESCALATE_SECONDS:return False
+    if row['status'] not in ('nuevo','en_atencion') or since is None or now-since<setting(self.store.path,'ticket_attention','escalate_hours')*3600:return False
     recent=self.store.notice(rid,'urgent')
     if recent and recent['state']=='sent' and now-recent['attempted']<PLAYER_NOTICE_COOLDOWN:return False
     episode=str(since)

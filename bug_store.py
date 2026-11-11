@@ -1,4 +1,5 @@
 """Durable bug reports, evidence and audit trail in the bot's existing SQLite."""
+from settings_catalog import read_value
 from sqlite_runtime import transaction
 from contextlib import contextmanager
 import hashlib
@@ -89,8 +90,13 @@ class BugStore(ReportFiles):
         with self.db() as db:
             row=db.execute("SELECT id FROM lv_bugs WHERE owner=? AND status='borrador'",(owner,)).fetchone()
             if row:return row[0]
-            if db.execute("SELECT COUNT(*) FROM lv_bugs WHERE owner=? AND status NOT IN ('solucionado','cerrado')",(owner,)).fetchone()[0]>=3:
-                raise ValueError('Ya tienes 3 reportes pendientes. Continúa en esos, bro.')
+            if not read_value(db,'bugs','accepting'):raise ValueError('Ahora mismo no estamos recibiendo reportes nuevos. Tus reportes anteriores siguen disponibles.')
+            maximum=read_value(db,'bugs','max_open')
+            if db.execute("SELECT COUNT(*) FROM lv_bugs WHERE owner=? AND status NOT IN ('solucionado','cerrado')",(owner,)).fetchone()[0]>=maximum:
+                raise ValueError(f'Ya tienes {maximum} reportes pendientes. Continúa en esos, bro.')
+            wait=read_value(db,'bugs','cooldown_minutes')*60
+            recent=db.execute('SELECT MAX(created) FROM lv_bugs WHERE owner=?',(owner,)).fetchone()[0] if wait else None
+            if recent is not None and int(time.time())-recent<wait:raise ValueError(f'Puedes abrir otro reporte <t:{recent+wait}:R>.')
             now=int(time.time());return db.execute('INSERT INTO lv_bugs(owner,created,updated) VALUES (?,?,?)',(owner,now,now)).lastrowid
     def by_thread(self,thread):
         with self.db(readonly=True) as db:

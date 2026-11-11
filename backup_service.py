@@ -1,4 +1,5 @@
 """Respaldo diario persistente, operaciones manuales y avisos privados de fallo."""
+from settings_catalog import value as setting
 import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -103,7 +104,8 @@ class BackupService:
 
     def slot(self, now):
         local = now.astimezone(PR)
-        cutoff = local.replace(hour=self.hour, minute=self.minute, second=0, microsecond=0)
+        hour,minute=map(int,setting(self.path,'backups','time',f'{self.hour:02}:{self.minute:02}').split(':'))
+        cutoff = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
         return (local.date() if local >= cutoff else local.date() - timedelta(days=1)).isoformat()
 
     def _manifest(self, manifest):
@@ -236,6 +238,7 @@ class BackupService:
     async def tick(self, now=None):
         if not self.enabled or self.config_error:
             return
+        if not await asyncio.to_thread(setting,self.path,'backups','automatic',self.enabled):return
         self.last_check_at = int(datetime.now(timezone.utc).timestamp())
         if self.lock.locked() or (self.manual_task is not None and not self.manual_task.done()):
             return
@@ -258,7 +261,7 @@ class BackupService:
 
     async def describe(self):
         state = await asyncio.to_thread(self._copy)
-        return dict(enabled=self.enabled, time_pr=self.time_pr, config_error=self.config_error, phase=state.get('phase', 'not_run'), stage=state.get('stage'), last_success_at=state.get('last_success_at'), last_recovery_at=state.get('last_recovery_at'), error_stage=state.get('error_stage'), busy=self.lock.locked() or (self.manual_task is not None and not self.manual_task.done()), last_check_at=self.last_check_at, scheduler_active=self.task is not None and not self.task.done())
+        return dict(enabled=self.enabled and setting(self.path,'backups','automatic',self.enabled), time_pr=setting(self.path,'backups','time',self.time_pr), config_error=self.config_error, phase=state.get('phase', 'not_run'), stage=state.get('stage'), last_success_at=state.get('last_success_at'), last_recovery_at=state.get('last_recovery_at'), error_stage=state.get('error_stage'), busy=self.lock.locked() or (self.manual_task is not None and not self.manual_task.done()), last_check_at=self.last_check_at, scheduler_active=self.task is not None and not self.task.done())
 
     async def admin(self, interaction):
         if interaction.guild_id != self.guild_id or not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:

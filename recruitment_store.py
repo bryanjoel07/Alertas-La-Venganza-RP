@@ -1,4 +1,5 @@
 """Durable staff applications, decisions and notification receipts."""
+from settings_catalog import read_value
 from sqlite_runtime import transaction
 from contextlib import contextmanager
 import json
@@ -77,7 +78,8 @@ class RecruitmentStore:
    if row:return dict(row)
    if db.execute("SELECT value FROM lv_recruit_config WHERE key='open'").fetchone()[0]!='1':raise ValueError('Ahora mismo no estamos recibiendo solicitudes. Puedes consultar una que ya hayas enviado.')
    recent=db.execute('SELECT MAX(created) FROM lv_recruit_cases WHERE owner=?',(owner,)).fetchone()[0]
-   if recent and int(time.time())-recent<300:raise ValueError('Espera unos minutos antes de empezar otra solicitud.')
+   wait=read_value(db,'recruitment','cooldown_minutes')*60
+   if recent and int(time.time())-recent<wait:raise ValueError('Espera unos minutos antes de empezar otra solicitud.')
    stamp=int(time.time());rid=db.execute("INSERT INTO lv_recruit_cases(owner,status,created,updated) VALUES (?,'borrador',?,?)",(owner,stamp,stamp)).lastrowid
    return dict(self._row(db,rid))
  def save_step(self,rid,owner,step,values,revision):
@@ -167,7 +169,7 @@ class RecruitmentStore:
  def remind(self,now=None):
   stamp=int(time.time()) if now is None else now
   with self.db() as db:
-   for row in db.execute("SELECT * FROM lv_recruit_cases WHERE status='entrevista' AND interview_done=0 AND interview_at BETWEEN ? AND ?",(stamp,stamp+3600)).fetchall():
+   for row in db.execute("SELECT * FROM lv_recruit_cases WHERE status='entrevista' AND interview_done=0 AND interview_at BETWEEN ? AND ?",(stamp,stamp+read_value(db,'recruitment','interview_notice_minutes')*60)).fetchall():
     text=f'Recuerda tu entrevista para el staff: <t:{row["interview_at"]}:F> (<t:{row["interview_at"]}:R>).'
     self._notice(db,row,f'recordatorio:{row["interview_at"]}',text)
  def voice(self,rid=None):

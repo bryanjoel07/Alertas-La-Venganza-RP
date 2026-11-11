@@ -1,3 +1,4 @@
+from settings_catalog import value as setting
 import asyncio
 import hashlib
 import logging
@@ -91,6 +92,7 @@ class LiveAlerts:
 
     @tasks.loop(minutes=2)
     async def poll(self):
+        if not setting(self.streamers.path,'streams','alerts_enabled'):return
         try:
             channel = self.client.get_channel(CHANNEL)
             perms = channel.permissions_for(channel.guild.me) if channel and channel.guild.id == self.guild else None

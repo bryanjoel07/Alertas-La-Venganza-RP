@@ -19,6 +19,7 @@ async def announce_daily_up(now, state, confirmed_state, maintenance, get_settin
     hour,minute=map(int,parse_hour(get_setting('daily_server_up_time','18:30')).split(':'))
     if (local.hour, local.minute) != (hour,minute):
         return "outside_schedule"
+    if get_setting('panel.announcements.daily_enabled','1')!='1':return 'disabled'
     slot = local.date().isoformat()
     if get_setting(SLOT_KEY, "") >= slot:
         return "already_checked"

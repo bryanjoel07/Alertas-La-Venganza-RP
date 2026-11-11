@@ -63,6 +63,12 @@ El canal y su guía se reutilizan después de reiniciar.
 
 ### Guía, retos y probador
 
+Los administradores tienen **`/ajustes panel`**, un centro privado con 16 secciones,
+formularios con los valores actuales y confirmación antes de guardar. Incluye precios
+de la tienda, premios, horarios, atención de tickets y ajustes de los demás sistemas.
+**`/ajustes funciones`** busca los comandos registrados y **`/ajustes historial`** permite
+revisar cambios y preparar su restauración. Ver [AJUSTES.md](AJUSTES.md).
+
 - **📖┊𝐆𝐮𝐢𝐚-𝐃𝐞𝐥-𝐁𝐨𝐭** se crea en La Venganza con botones de enlace que abren los canales.
   Perfil y saldo llevan a Perfiles (`/perfil`); tienda, probador y retos llevan a Tienda Exclusive;
   creadores lleva a Solicitar Streamer. Los botones de navegación funcionan sin esperar respuesta del bot.

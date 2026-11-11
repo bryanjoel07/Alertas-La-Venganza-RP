@@ -1,4 +1,5 @@
 """Atomic community suggestions, votes and decisions in the existing SQLite backup."""
+from settings_catalog import read_value
 from sqlite_runtime import transaction
 from contextlib import contextmanager
 import hashlib
@@ -54,10 +55,12 @@ class SuggestionStore:
    if old:
     if old['owner']!=owner:raise ValueError('Esa solicitud pertenece a otro jugador.')
     return old['id']
+   if not read_value(db,'suggestions','accepting'):raise ValueError('Ahora mismo no estamos recibiendo ideas nuevas. Las anteriores siguen disponibles.')
    duplicate=db.execute("SELECT id FROM lv_suggestions WHERE owner=? AND fingerprint=? AND publication!='missing' AND status NOT IN ('hecha','rechazada')",(owner,fingerprint)).fetchone()
    if duplicate:raise ValueError(f"Ya enviaste esa idea, bro. Es la sugerencia #{duplicate['id']}.")
    recent=db.execute('SELECT MAX(created) FROM lv_suggestions WHERE owner=?',(owner,)).fetchone()[0]
-   if recent is not None and stamp-recent<60:raise ValueError('Dale un minuto antes de enviar otra idea, bro.')
+   wait=read_value(db,'suggestions','cooldown_minutes')*60
+   if recent is not None and stamp-recent<wait:raise ValueError(f'Espera {wait//60} minuto'+('s' if wait!=60 else '')+f' entre ideas, bro. Puedes enviar otra <t:{recent+wait}:R>.')
    counter=db.execute("SELECT value FROM lv_suggestion_config WHERE key='last_id'").fetchone()
    rid=max(int(counter[0]) if counter else 0,db.execute('SELECT COALESCE(MAX(id),0) FROM lv_suggestions').fetchone()[0])+1
    db.execute('INSERT INTO lv_suggestions(id,request,owner,title,description,benefit,fingerprint,created,updated) VALUES (?,?,?,?,?,?,?,?,?)',
@@ -98,6 +101,7 @@ class SuggestionStore:
    row=db.execute('SELECT status,publication FROM lv_suggestions WHERE id=?',(rid,)).fetchone()
    if not row or row['publication']!='published':raise ValueError('Esa idea ya no está disponible para votar.')
    if row['status'] in CLOSED:raise ValueError('Esta idea ya tiene una decisión final y sus votos están cerrados.')
+   if value and not read_value(db,'suggestions','voting'):raise ValueError('Las votaciones están pausadas. Puedes quitar un voto que ya habías dejado.')
    old=db.execute('SELECT value FROM lv_suggestion_votes WHERE suggestion=? AND user=?',(rid,user)).fetchone()
    if (old[0] if old else 0)==value:return False
    if value:db.execute('INSERT INTO lv_suggestion_votes VALUES (?,?,?,?) ON CONFLICT(suggestion,user) DO UPDATE SET value=excluded.value,updated=excluded.updated',(rid,user,value,int(time.time())))

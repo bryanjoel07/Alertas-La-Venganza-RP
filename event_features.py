@@ -1,4 +1,5 @@
 """Historial, clasificación histórica y recordatorios persistentes de eventos."""
+from settings_catalog import read_value
 import asyncio
 from contextlib import closing
 from datetime import datetime, timezone
@@ -67,7 +68,8 @@ class EventFeatureStore:
             starts = int(datetime.fromisoformat(row['starts_at']).timestamp())
             revision, baseline = self._schedule(db, event_id, starts, now)
             due = [s for s in EVENT_THRESHOLDS if starts - s <= now]
-            eligible = [s for s in due if starts - s > baseline]
+            allowed=set(read_value(db,'event_notices','times'))
+            eligible = [s for s in due if s in allowed and starts - s > baseline]
             chosen = min(eligible) if eligible and now < starts else None
             # El ciclo corre cada 30 s. Tolera un ciclo perdido sin anunciar eventos antiguos.
             if 0 in eligible and now < starts + 90:

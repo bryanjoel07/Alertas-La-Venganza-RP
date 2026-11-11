@@ -1,17 +1,105 @@
-# Panel de ajustes
+# Centro de ajustes
 
-Usar **`/ajustes panel`** en La Venganza RP, fuera del canal exclusivo de perfiles. La respuesta es privada y solo puede manejarla el administrador que la abrió. El bot comprueba de nuevo en Discord que conserva Administrador antes de guardar. No crea canales ni cambia roles o permisos.
+Abre **`/ajustes panel`** en La Venganza RP, fuera del canal exclusivo de perfiles.
+Es una aplicación dentro de Discord: menú por sistemas, valores actuales, botones
+para abrir formularios y enlaces a los canales correspondientes. No necesita una web.
+La respuesta es privada y solo puede manejarla el administrador que la abrió.
 
-- **📸 Premios de Fotos:** elegir esta semana o la próxima, escribir los premios del primer, segundo y tercer lugar y revisar la fecha y el total. Se admiten enteros entre 1 y 1.000.000, en orden de mayor a menor o iguales. Se mantienen hasta el siguiente cambio programado; no se cambian semanas cerradas ni premios ya pagados.
-- **🕒 Hora del Server Up:** acepta `18:30` o `6:30 p. m.`, siempre en Puerto Rico. Solo se revisa el minuto de esa hora. Guardar no envía una prueba ni repite un aviso ya revisado ese día. Si la hora ya pasó, se espera a la siguiente fecha; no se recuperan anuncios perdidos. Sigue requiriendo servidor arriba, estado confirmado y ausencia de mantenimiento.
-- **📝 Texto del Server Up:** editar título, cuerpo y pie. Se pueden usar `{enlace}`, `{servidor}` y `{hora}`. El cuerpo debe conservar `{enlace}`. Se comprueban llaves, campos y límites de Discord antes de ofrecer guardar. El banner rojo y la mención a todos del aviso siguen funcionando como estaban.
+## Cómo cambiar un ajuste
 
-El formulario solo crea una vista previa: **Guardar cambios** confirma y **Cancelar** descarta. Las vistas previas no mencionan a jugadores ni publican un Server Up. Cada panel dura diez minutos. Si otro administrador guarda antes, una confirmación antigua se rechaza para evitar sobrescribirle. Una confirmación duplicada usa el mismo recibo y no repite la operación.
+1. Elige un sistema en el menú.
+2. Abre su formulario. Los campos muestran los valores que ya estás usando.
+3. Envía el formulario para revisar el **antes y después**.
+4. Pulsa **Guardar cambios** o **Cancelar**.
 
-La configuración se guarda en el SQLite existente, sin reiniciar ni editar variables de Railway. `lv_photo_reward_rates` contiene los premios por fecha de inicio; las claves `daily_server_up_*` guardan horario y textos. `admin_settings_revision` evita cambios antiguos y `bot_setting_ops` conserva autor y valores exactos antes/después. El respaldo completo incluye estas tablas. No se modifican saldos al guardar: el cierre semanal paga con los premios que correspondan a su semana.
+Abrir el panel, navegar o enviar un formulario no guarda nada por sí solo. Antes de
+guardar, el bot vuelve a consultar en Discord que conservas Administrador. Si alguien
+cambió esos valores mientras tenías abierto el formulario, pide revisarlos otra vez.
+Una confirmación repetida usa el mismo recibo y no vuelve a aplicar la operación.
 
-Fotos, tienda y guía se refrescan después de confirmar. Si Discord no responde, la configuración ya guardada permanece y los paneles públicos se reintentan en sus ciclos habituales. `ADMIN_SETTINGS` guarda la copia privada de cada operación mediante `ChangeLog.tracked`; no se anuncian cambios en Registro Exclusive.
+El menú tiene 16 secciones y 22 formularios, contando los tres ajustes originales y
+el editor de productos:
 
-Para revertir el código, usar `bdc5114e9522d75e298ea5ab1561450b652cc45d`, conservando SQLite. Esa versión ignora los ajustes nuevos y usa 500/300/150, 18:30 y textos originales: revisar primero los premios programados y pausar el concurso si deben mantenerse para un cierre próximo. Conservar tablas y claves nuevas, en particular `daily_server_up_slot`; no restaurar una base antigua ni recalcular premios pagados. Para deshacer un ajuste con esta versión, guardar sus valores anteriores como un cambio nuevo después de revisarlos.
+| Sección | Qué puedes ajustar o consultar |
+| --- | --- |
+| Servidor y avisos | Hora, título, cuerpo y pie del Server Up; activar el aviso diario y las menciones a todos en avisos, mantenimiento y Server Up. |
+| Tickets | Casos abiertos por jugador, recordatorios, aviso al encargado, espera al jugador, horario de madrugada, mensajes privados y límites para guardar pruebas. |
+| Tienda y monedas | Precio y disponibilidad de cada producto; premios de eventos. Acceso a los comandos de economía y perfil. |
+| Fotos | Premios del podio desde esta semana o la próxima; recibir fotos nuevas y límite semanal por jugador. |
+| Minijuegos | Tiempo entre respuestas y modos disponibles. El premio sigue siendo 25 monedas por acierto. |
+| Feedback | Permitir valoraciones fuera de tickets y tiempo entre ellas. |
+| Sugerencias | Recibir ideas, tiempo entre propuestas y permitir votos. |
+| Reportes de errores | Recibir reportes, máximo pendiente por jugador y tiempo entre reportes. |
+| Solicitudes de staff | Abrir postulaciones, tiempo entre solicitudes y aviso de entrevista. |
+| Creadores y directos | Seguidores mínimos para verificaciones nuevas y avisos de directos. |
+| Eventos | Elegir recordatorios; acceso a los comandos de gestión. |
+| Reuniones | Elegir recordatorios y activarlos para staff o comunidad. |
+| Seguridad | Filtro de palabras, palabras adicionales y detección de enlaces repetidos entre canales. |
+| Normas y guía | Canal oficial de normas, frecuencia de actualización del índice, título y bienvenida de la guía. |
+| Respaldos | Activar copias automáticas y su horario con la conexión ya configurada; consultar su estado. |
+| Historial y diagnóstico | Tareas del bot, cambios guardados, antes y después y restauración con confirmación. |
 
-El commit inmediatamente anterior, `c63c8df5b3dc5c7dc85c63158acfb19fa3d28a8c`, conserva los datos y el panel, pero puede registrar un falso error de permisos durante la verificación porque el SDK omite ese campo en `to_dict`. La versión actual verifica la propiedad recibida directamente de Discord.
+**`/ajustes funciones buscar:…`** permite buscar por nombre o descripción entre los
+comandos que Discord tiene registrados. Desde cada sección también puedes abrir sus
+funciones y pulsar el nombre del comando para usarlo. Cada comando conserva sus permisos.
+
+## Valores y límites
+
+Las horas son de **Puerto Rico**. El Server Up acepta `18:30` o `6:30 p. m.`. Guardar
+su horario no envía un aviso de prueba ni repite uno ya revisado ese día. Si la hora
+ya pasó, espera al siguiente día. Conserva la comprobación de servidor arriba y de
+mantenimiento, el banner animado y el enlace de conexión.
+
+Los textos del Server Up admiten `{enlace}`, `{servidor}` y `{hora}`; el cuerpo debe
+conservar `{enlace}`. La vista previa no menciona a nadie. Los premios de Fotos
+siguen siendo enteros de 1 a 1.000.000, de mayor a menor o iguales. No se cambian
+semanas cerradas ni premios ya pagados. Cero fotos por semana significa sin límite.
+
+Cambiar precios solo afecta compras nuevas. Conserva saldos, compras pagadas,
+inventarios, stock, entregas pendientes y contenido de productos. Las pruebas de
+reportes siguen siendo obligatorias y conservan el límite de **diez archivos de
+120 MB cada uno**. Ese dato aparece como información, no como un límite editable
+que Discord pueda ignorar. Los límites de respaldo de tickets se configuran por
+separado; no pueden quedar por debajo de las pruebas ya guardadas.
+
+Pausar nuevas fotos, ideas, reportes o postulaciones conserva lo recibido. Los
+borradores admitidos pueden terminarse. Pausar un modo de minijuego conserva la
+pregunta ya empezada. Los reportes contra staff mantienen su acceso reservado.
+La aceptación de solicitudes sigue dejando la asignación de roles a administración.
+
+El filtro mantiene su lista base, palabras manuales y exenciones. Solo administra
+sus palabras adicionales y su estado de activación. El canal de normas necesita
+ser un canal de texto del servidor que el bot pueda leer; el buscador comprueba
+también los permisos de cada jugador antes de mostrar información.
+
+El panel no muestra claves ni contraseñas. Para activar respaldos automáticos debe
+existir una conexión válida de Drive en Railway. Cambiar el horario no configura
+esa conexión. No se ofrecen controles para cambiar roles o permisos protegidos.
+
+## Historial y recuperación
+
+**`/ajustes historial`** muestra fecha, autor y estado de cada cambio. Abre uno para
+revisar sus valores y pulsa **Revisar restauración** si quieres recuperar el ajuste
+anterior. El bot prepara otra vista previa con los valores actuales: todavía debes
+confirmarla. Solo restaura ese formulario o ese precio y disponibilidad; no restaura
+una base antigua ni modifica compras, saldos o premios ya pagados.
+
+Los ajustes y recibos se guardan en el SQLite existente. `admin_settings_revision`
+evita sobrescribir cambios antiguos; `bot_setting_ops` conserva autor y valores
+antes y después. `bot_setting_jobs` guarda actualizaciones pendientes de Discord.
+Las copias completas de SQLite incluyen estos datos.
+
+Si Discord falla después de guardar, el panel indica que su actualización está
+pendiente. El bot la reintenta cada 30 segundos y después de reiniciar, usando la
+configuración más reciente y sin guardar el mismo cambio de nuevo. Solo refresca
+los paneles afectados. El registro privado `ADMIN_SETTINGS` usa `ChangeLog.tracked`;
+los cambios no se anuncian en Registro Exclusive. La navegación principal expira
+en 14 minutos; basta con abrir otro panel.
+
+Para volver al código anterior, desplegar `1247aeeaaa085d8b0ea307c9e355df2fcd72ffd8`
+y conservar el volumen y su SQLite actual. Revertir código no restaura valores:
+usar primero el historial si hay que deshacerlos. La versión anterior ignora las
+claves nuevas y no procesa la cola nueva, pero conserva los precios, premios,
+horarios y otras claves ya compatibles. Si se cambió el filtro nativo de Discord,
+restaurar sus ajustes antes de revertir código. Conservar las tablas y archivos;
+no borrar mensajes, tickets, roles ni permisos para revertir el panel.

@@ -52,8 +52,9 @@ class MinigameSystem:
   await self.show_question(i,row)
  async def show_question(self,i,row):
   q=json.loads(row['payload'])
+  hours=int(self.store.config('interval_hours') or 12)
   embed=discord.Embed(title={'foto':'📸 ¿Conoces Los Santos?','roleplay':'🎭 ¿Qué tanto sabes de rol?','acertijo':'🧩 A ver si te sale…'}[q['kind']],
-   description=q['prompt']+'\n\nPulsa **Responder** y escribe tu respuesta.\n🪙 **25 monedas si aciertas.**\n⏳ Tienes un intento cada 12 horas, aciertes o no.',color=RED)
+   description=q['prompt']+f'\n\nPulsa **Responder** y escribe tu respuesta.\n🪙 **25 monedas si aciertas.**\n⏳ Tienes un intento cada {hours} horas, aciertes o no.',color=RED)
   embed.set_footer(text=('Recreación de un lugar de GTA V · ' if q['kind']=='foto' else '')+'Un premio por pregunta y jugador · Tu progreso se guarda')
   kwargs={}
   if q.get('image'):
@@ -92,7 +93,7 @@ class MinigameSystem:
    return await reply(i,'Esa ya la acertaste y su premio está guardado. Vamos con la siguiente.',view=controls(token,['next']))
   embed=discord.Embed(title='✅ ¡Esa es!',color=RED,description=f'**{q["answer"]}**\n{q["explanation"]}\n\n🪙 **+{result["coins"]} monedas**\nTu saldo de la tienda: **{result["balance"]:,} monedas**.')
   embed.add_field(name='Tu próximo turno',value=f'<t:{result["next_at"]}:F> · <t:{result["next_at"]}:R>',inline=False)
-  embed.set_footer(text='Un intento cada 12 horas entre los tres modos · Monedas para la Tienda Exclusive')
+  embed.set_footer(text=f'Un intento cada {int(self.store.config("interval_hours") or 12)} horas entre los tres modos · Monedas para la Tienda Exclusive')
   await reply(i,embed=embed,view=controls(token,['next']))
   log.info('MINIGAME paid question=%s user=%s coins=%s receipt=%s replayed=%s',q['id'],i.user.id,result['coins'],i.id,result.get('replayed',False))
  async def progress(self,i):
@@ -147,9 +148,10 @@ class MinigameSystem:
   if channel.guild.id!=self.guild_id:raise ValueError('General no pertenece al servidor indicado.')
   message=await self.find_panel(channel)
   counts={kind:sum(q['kind']==kind for q in self.bank) for kind in KINDS}
+  hours=int(self.store.config('interval_hours') or 12)
   embed=discord.Embed(title='🧩 Un rato de juegos, bro',color=RED,
    description=f'📸 **Adivina el lugar:** {counts["foto"]} imágenes de sitios de GTA V.\n🎭 **Roleplay:** {counts["roleplay"]} preguntas para poner a prueba lo que sabes.\n🧩 **Acertijos:** {counts["acertijo"]} para darle al coco.\n\n'
-   '**Cada acierto te da 25 monedas para la tienda.**\n⏳ **Un intento cada 12 horas: hasta dos al día entre los tres modos.**\nEl tiempo empieza al enviar tu respuesta, aciertes o no. Abrir una pregunta o pedir una pista no gasta el turno.\nCada pregunta paga una sola vez por jugador. Tus respuestas y progreso son privados.\n\nElige un modo para empezar 👇')
+   f'**Cada acierto te da 25 monedas para la tienda.**\n⏳ **Un intento cada {hours} horas entre los tres modos.**\nEl tiempo empieza al enviar tu respuesta, aciertes o no. Abrir una pregunta o pedir una pista no gasta el turno.\nCada pregunta paga una sola vez por jugador. Tus respuestas y progreso son privados.\n\nElige un modo para empezar 👇')
   embed.set_footer(text=MARKER)
   if message:
    if message.author.id!=self.bot.user.id:raise ValueError('El mensaje guardado no pertenece a este bot.')

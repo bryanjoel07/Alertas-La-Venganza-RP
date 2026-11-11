@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from string import Formatter
 import time
+from settings_catalog import BY_FORM,read_form,validate as validate_system,write_form,exists
 from zoneinfo import ZoneInfo
 
 PR=ZoneInfo('America/Puerto_Rico')
@@ -37,6 +38,10 @@ def ensure_settings_schema(db):
     db.execute('''CREATE TABLE IF NOT EXISTS bot_setting_ops(
         op TEXT PRIMARY KEY,actor INTEGER NOT NULL,kind TEXT NOT NULL,target TEXT,
         values_json TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,created INTEGER NOT NULL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS bot_setting_jobs(op TEXT PRIMARY KEY,state TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,updated INTEGER NOT NULL,error_type TEXT)''')
+    db.execute('CREATE INDEX IF NOT EXISTS bot_setting_jobs_state ON bot_setting_jobs(state)')
+    db.execute('CREATE INDEX IF NOT EXISTS bot_setting_ops_created ON bot_setting_ops(created)')
 
 
 def photo_rewards_in(db,week):
@@ -127,7 +132,8 @@ class SettingsStore:
         return dict(revision=int(self.get_in(db,'admin_settings_revision','0')),
             values={key:self.get_in(db,key,value) for key,value in DEFAULTS.items()},
             week=week,next_week=next_week,rewards=list(photo_rewards_in(db,week)),next_rewards=list(photo_rewards_in(db,next_week)),
-            daily_slot=self.get_in(db,'daily_server_up_slot',''))
+            daily_slot=self.get_in(db,'daily_server_up_slot',''),
+            systems={key:read_form(db,key) for key in BY_FORM})
 
     def snapshot(self,now=None):
         with self.db(readonly=True) as db:return self.snapshot_in(db,int(time.time()) if now is None else now)
@@ -137,8 +143,16 @@ class SettingsStore:
             row=db.execute('SELECT * FROM bot_setting_ops WHERE op=?',(op,)).fetchone()
             return dict(row) if row else None
 
-    def apply(self,kind,values,expected_revision,actor,op,target=None,now=None):
-        values=validate_values(kind,values);now=int(time.time()) if now is None else now
+    def apply(self,kind,values,expected_revision,actor,op,target=None,now=None,expected_fields=None):
+        if kind=='system':values=validate_system(target,values)
+        elif kind=='product':
+            if not isinstance(values,dict) or set(values)!={'price','active'} or type(values['active']) is not bool:
+                raise ValueError('Revisa el precio y la disponibilidad del producto.')
+            text=str(values['price']).strip()
+            if not text.isdecimal() or not 0<=int(text)<=1000000:raise ValueError('El precio debe ser un entero entre 0 y 1,000,000 monedas.')
+            values=dict(price=int(text),active=values['active'])
+        else:values=validate_values(kind,values)
+        now=int(time.time()) if now is None else now
         encoded=json.dumps(values,ensure_ascii=False,sort_keys=True)
         with self.db() as db:
             previous=db.execute('SELECT * FROM bot_setting_ops WHERE op=?',(op,)).fetchone()
@@ -149,7 +163,20 @@ class SettingsStore:
             before=self.snapshot_in(db,now)
             if before['revision']!=expected_revision:
                 raise ValueError('Alguien cambió los ajustes mientras tenías el panel abierto. Abre /ajustes panel otra vez para revisarlos.')
-            if kind=='rewards':
+            if kind=='system':
+                if expected_fields is not None and before['systems'][target]!=expected_fields:
+                    raise ValueError('Estos ajustes cambiaron desde otro comando. Abre el formulario otra vez.')
+                if target=='ticket_files' and exists(db,'lv_ticket_blobs'):
+                    used=db.execute('SELECT COALESCE(SUM(length(data)),0) FROM lv_ticket_blobs').fetchone()[0]
+                    if used>values['max_total_mb']*1048576:raise ValueError('Ese límite queda por debajo de las pruebas ya guardadas. Se conservan todos los archivos.')
+                write_form(db,target,values)
+            elif kind=='product':
+                row=db.execute('SELECT sku,name,price,active,revision FROM eco_products WHERE sku=?',(target,)).fetchone()
+                if not row:raise ValueError('Ese producto ya no está en el catálogo.')
+                before['product']=dict(row)
+                if expected_fields is not None and dict(row)!=expected_fields:raise ValueError('El producto cambió. Abre su formulario otra vez.')
+                db.execute('UPDATE eco_products SET price=?,active=?,revision=revision+1 WHERE sku=?',(values['price'],int(values['active']),target))
+            elif kind=='rewards':
                 if target not in (before['week'],before['next_week']):raise ValueError('Esa semana ya pasó. Abre el panel otra vez.')
                 if target==before['week'] and db.execute("SELECT 1 FROM sqlite_master WHERE name='lv_photo_weeks'").fetchone():
                     current=db.execute('SELECT state,ends,podium_closed FROM lv_photo_weeks WHERE week=?',(target,)).fetchone()
@@ -163,6 +190,31 @@ class SettingsStore:
                 for key,value in updates.items():db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',(key,value))
             db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',('admin_settings_revision',str(expected_revision+1)))
             after=self.snapshot_in(db,now)
+            if kind=='product':after['product']=dict(db.execute('SELECT sku,name,price,active,revision FROM eco_products WHERE sku=?',(target,)).fetchone())
             db.execute('INSERT INTO bot_setting_ops VALUES (?,?,?,?,?,?,?,?)',
                 (op,actor,kind,target,encoded,json.dumps(before,ensure_ascii=False),json.dumps(after,ensure_ascii=False),now))
+            db.execute('INSERT INTO bot_setting_jobs(op,updated) VALUES (?,?)',(op,now))
             return after
+
+    def history(self,limit=8,offset=0):
+        with self.db(readonly=True) as db:
+            return [dict(r) for r in db.execute('SELECT o.*,j.state AS sync_state,j.error_type FROM bot_setting_ops o LEFT JOIN bot_setting_jobs j ON j.op=o.op ORDER BY o.created DESC,o.rowid DESC LIMIT ? OFFSET ?',(limit,offset))]
+
+    def pending(self):
+        with self.db(readonly=True) as db:
+            return [dict(r) for r in db.execute("SELECT o.* FROM bot_setting_jobs j JOIN bot_setting_ops o ON o.op=j.op WHERE j.state='pending' ORDER BY o.created LIMIT 8")]
+
+    def job_status(self,op):
+        with self.db(readonly=True) as db:
+            row=db.execute('SELECT state FROM bot_setting_jobs WHERE op=?',(op,)).fetchone()
+            return row['state'] if row else None
+
+    def synced(self,op,error=None):
+        with self.db() as db:
+            db.execute('UPDATE bot_setting_jobs SET state=?,attempts=attempts+1,updated=?,error_type=? WHERE op=?',
+                ('pending' if error else 'done',int(time.time()),error,op))
+
+    def catalog(self):
+        with self.db(readonly=True) as db:
+            if not exists(db,'eco_products'):return []
+            return [dict(r) for r in db.execute('SELECT sku,name,price,active,revision,kind FROM eco_products ORDER BY active DESC,price,name')]

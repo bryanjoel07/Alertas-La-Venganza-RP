@@ -244,7 +244,7 @@ class FeedbackSystem:
             '🔒 Tú eliges: **publicarlo aquí** o dejarlo **solo para administración**.\n\n'
             'Los reportes contra staff siempre quedan privados. Habla de la atención sin compartir datos ni pruebas de tu caso.')
         embed.add_field(name='Cómo va la atención', value=f"**{data['average']:.1f}/5** · {data['total']} opiniones públicas" if data['total'] else 'Todavía no hay opiniones públicas.', inline=False)
-        embed.add_field(name='Para que cuente de verdad', value='Una opinión por ticket. Fuera de tickets, una cada 24 horas. Solo sobre atención que recibiste; nadie puede valorarse a sí mismo.', inline=False)
+        embed.add_field(name='Para que cuente de verdad', value=f'Una opinión por ticket. Fuera de tickets, una cada {int(await self.call("config","outside_hours") or 24)} horas. Solo sobre atención que recibiste; nadie puede valorarse a sí mismo.', inline=False)
         embed.set_thumbnail(url=self.bot.user.display_avatar.url)
         embed.set_footer(text=PANEL_MARKER)
         return embed

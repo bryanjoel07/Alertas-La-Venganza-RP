@@ -1,5 +1,8 @@
 """Filtro nativo de Discord para lenguaje obsceno en La Venganza RP."""
 import logging
+import asyncio
+import json
+import uuid
 import re
 import unicodedata
 
@@ -154,6 +157,7 @@ class ObscenityFilter:
         self.get_setting, self.set_setting = get_setting, set_setting
         self.last_status = None
         self.report_checked=False
+        self.settings_lock=asyncio.Lock()
 
     def status(self, message):
         if self.last_status != message:
@@ -161,8 +165,8 @@ class ObscenityFilter:
             self.last_status = message
 
     @staticmethod
-    def desired(rule):
-        keywords=sorted(set(WORDS)|set(rule.trigger.keyword_filter if rule else []))
+    def desired(rule,extras=(),managed=()):
+        keywords=sorted(set(WORDS)|(set(rule.trigger.keyword_filter if rule else [])-set(managed))|set(extras))
         # Keep the patterns already accepted by Discord. Abbreviation variants are
         # native keywords, avoiding incompatible regex rewrites on an existing rule.
         patterns=list(rule.trigger.regex_patterns) if rule else list(PATTERNS)
@@ -176,8 +180,8 @@ class ObscenityFilter:
         return trigger,actions
 
     @staticmethod
-    def matches(rule,trigger,actions):
-        return (rule.enabled and rule.event_type==discord.AutoModRuleEventType.message_send
+    def matches(rule,trigger,actions,enabled=True):
+        return (rule.enabled==enabled and rule.event_type==discord.AutoModRuleEventType.message_send
             and rule.trigger.type==discord.AutoModRuleTriggerType.keyword
             and set(rule.trigger.keyword_filter)==set(trigger.keyword_filter)
             and set(rule.trigger.regex_patterns)==set(trigger.regex_patterns)
@@ -206,6 +210,10 @@ class ObscenityFilter:
 
     @tasks.loop(minutes=2)
     async def install(self):
+        async with self.settings_lock:
+            await self.sync_settings()
+
+    async def sync_settings(self):
         guild = self.client.get_guild(self.guild_id)
         if guild is None or guild.me is None or not guild.me.guild_permissions.manage_guild:
             self.status("pendiente de Gestionar servidor")
@@ -220,8 +228,13 @@ class ObscenityFilter:
                 return
             if rule and (rule.trigger.type!=discord.AutoModRuleTriggerType.keyword or rule.event_type!=discord.AutoModRuleEventType.message_send):
                 self.status('la regla guardada tiene otro tipo; se conserva');return
-            trigger,actions=self.desired(rule)
-            if rule is None or not self.matches(rule,trigger,actions):
+            extras=tuple(w for w in (self.get_setting('panel.security.words') or '').splitlines() if w)
+            managed=set(json.loads(self.get_setting('obscenity_managed_extras') or '[]'))
+            baseline=set(rule.trigger.keyword_filter if rule else [])-managed-set(WORDS)
+            owned=(set(extras)-baseline-set(WORDS))
+            enabled=(self.get_setting('panel.security.enabled') or '1')=='1'
+            trigger,actions=self.desired(rule,extras,managed)
+            if rule is None or not self.matches(rule,trigger,actions,enabled):
                 target=rule.id if rule else None
                 async def snapshot():
                     current=await guild.fetch_automod_rules()
@@ -230,21 +243,22 @@ class ObscenityFilter:
                     return {'guild':guild.id,'rule':found.to_dict() if found else None}
                 async def update():
                     if rule:
-                        result=await rule.edit(trigger=trigger,actions=actions,enabled=True,
+                        result=await rule.edit(trigger=trigger,actions=actions,enabled=enabled,
                             reason='Actualizar abreviaturas del filtro de palabras obscenas')
                     else:
                         result=await guild.create_automod_rule(name=NAME,event_type=discord.AutoModRuleEventType.message_send,
-                            trigger=trigger,actions=actions,enabled=True,
+                            trigger=trigger,actions=actions,enabled=enabled,
                             reason='Filtro acordado de palabras obscenas para La Venganza RP')
                     verified=await guild.fetch_automod_rule(result.id)
-                    if verified.creator_id!=self.client.user.id or not self.matches(verified,trigger,actions):
+                    if verified.creator_id!=self.client.user.id or not self.matches(verified,trigger,actions,enabled):
                         raise ValueError('Discord no confirmó la actualización del filtro; se reintentará.')
                     return verified
                 rule=await self.client.changes.tracked('OBSCENITY_FILTER','Actualizar el bloqueo de palabras obscenas',update,
-                    request_id=f'{self.guild_id}:abbreviations-v2.1',snapshot=snapshot)
+                    request_id=f'{self.guild_id}:settings:{uuid.uuid4().hex}',snapshot=snapshot)
             self.set_setting("obscenity_rule_id",str(rule.id))
+            self.set_setting("obscenity_managed_extras",json.dumps(sorted(owned)))
             self.status(f'regla verificada id={rule.id} palabras={len(rule.trigger.keyword_filter)} '
-                f'cbnes={"cbnes" in rule.trigger.keyword_filter} bloqueo=True exenciones_conservadas=True')
+                f'cbnes={"cbnes" in rule.trigger.keyword_filter} bloqueo={enabled} exenciones_conservadas=True')
             await self.inspect_report(guild,rule)
             self.install.stop()
         except discord.HTTPException as exc:

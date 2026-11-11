@@ -1,4 +1,5 @@
 """Weekly challenges, private fitting room and the persistent bot guide."""
+from settings_catalog import value as setting
 import asyncio
 import json
 import logging
@@ -189,8 +190,8 @@ class CommunityFeatures:
 
     def guide_embed(self):
         store = self.economy.store
-        embed = discord.Embed(title='📖 GUÍA DEL BOT | LA VENGANZA RP',color=0xD60000,
-            description='Pulsa un botón para abrir el canal correspondiente.\nAllí encontrarás los comandos y paneles para usar cada función.')
+        embed = discord.Embed(title=setting(store.path,'guide','title'),color=0xD60000,
+            description=setting(store.path,'guide','intro'))
         for title,body in (
             ('👤 Perfil y saldo',f"En <#{store.config('profiles_channel')}> usa `/perfil`: muestra saldo, cosméticos, eventos y podios. **Mi perfil** y **Mi saldo** te llevan a ese canal. Usa **Actualizar** después de comprar."),
             ('🪙 Retos y monedas',f"En <#{store.config('shop_channel')}> pulsa **Retos y monedas** en el panel de la tienda o usa `/retos`: hasta **450 🪙 semanales** por actividad confirmada. Una inscripción o estar AFK no cuenta."),
