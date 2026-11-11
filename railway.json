@@ -1,8 +1,8 @@
+
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK",
-    "buildCommand": "env -i PATH=\"$PATH\" HOME=/tmp python -m unittest discover -s tests"
+    "builder": "RAILPACK"
   },
   "deploy": {
     "startCommand": "python bot.py",
