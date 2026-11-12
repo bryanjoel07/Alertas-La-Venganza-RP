@@ -588,6 +588,7 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import AsyncMock
         bot = self.bot.LaVenganzaBot()
         bot.tree.sync = AsyncMock(return_value=[])
+        bot.tree.fetch_commands = AsyncMock(return_value=[])
         with patch.object(self.bot, 'client', bot):
             async with bot:
                 await bot.setup_hook()

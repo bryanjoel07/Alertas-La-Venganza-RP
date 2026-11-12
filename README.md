@@ -52,6 +52,35 @@ Consulta [AUDITORIA.md](AUDITORIA.md) para evidencia, pruebas, mediciones y lím
 
 ## Comandos
 
+### Acceso a las funciones del bot
+
+Los 108 comandos tienen una política de acceso que se valida al ejecutarlos.
+Los botones y formularios administrativos comprueban también los permisos y la
+propiedad del panel; guardar un ajuste vuelve a consultar los roles actuales.
+
+| Cuenta o rol | Funciones del bot |
+| --- | --- |
+| Miembros | Perfil, tienda y compras propias, fotos y votos, juegos, sugerencias, reportes, postulaciones y sus propios tickets |
+| Soporte y Moderador | Tareas de atención, revisión de postulaciones y gestión de los casos que tienen autorizados |
+| Owner, Programador, Jefe de Staff, Súper Admin y Admin | Administración del bot: ajustes, eventos, economía, alertas, respaldos y demás controles administrativos |
+| Rol delegado de economía | Solo administración económica y premios de Fotos; no recibe acceso a ajustes generales, respaldos ni historial privado del bot |
+| Rol encargado de un departamento | Solo las tareas de tickets para los casos de su departamento |
+
+Los rangos administrativos se reconocen por sus **IDs**, sin activar el permiso
+Administrador de Discord ni modificar sus roles. Los miembros que ya tienen ese
+permiso global conservan el acceso administrativo al bot. Un nombre de rol como
+«Admin» o «Soporte» no concede privilegios por sí solo.
+
+Los reportes reservados contra staff mantienen su regla especial: autor y
+administradores de Discord. Las reuniones mantienen los cuatro roles autorizados
+indicados más abajo y exigen acceso al canal. Las consultas de tickets, opiniones,
+solicitudes e inventarios conservan además sus comprobaciones de propietario y caso.
+
+Discord no permite ocultar individualmente todos los subcomandos de un grupo
+mixto. Aunque una opción se muestre en el selector, la comprobación interna impide
+que un miembro ejecute funciones reservadas. La sincronización de comandos conserva
+una copia anterior y posterior en `BOT_COMMAND_ACCESS`, consultable con `/cambios`.
+
 ### Canal Perfiles
 
 El bot crea **👤┊𝐏𝐞𝐫𝐟𝐢𝐥𝐞𝐬** en la categoría de La Venganza configurada para la tienda.
@@ -90,24 +119,24 @@ revisar cambios y preparar su restauración. Ver [AJUSTES.md](AJUSTES.md).
 
 | Comando | Función | Acceso |
 | --- | --- | --- |
-| `/testalert` | DOWN o RESTORED claramente identificado como simulación | Administrador Discord |
-| `/simular-ciclo` | Prueba del ciclo y dos alertas simuladas, sin registrar caídas | Administrador Discord |
-| `/historial-caidas` | Últimas diez caídas, estado, duración e ID | Administrador Discord |
-| `/mantenimiento iniciar` | Motivo, anuncio, registro y suspensión del monitor | Administrador Discord |
-| `/mantenimiento finalizar` | Anuncio, lectura del panel y reactivación | Administrador Discord |
-| `/evento crear` | Formulario en dos pasos, banner opcional en el segundo, vista previa y publicación explícita | Administrador Discord |
-| `/evento editar` | Nombre, fecha, hora, lugar y descripción; conserva inscritos | Administrador Discord |
-| `/evento premios` | Tres premios y cupos; no reduce por debajo de los inscritos | Administrador Discord |
-| `/evento banner` | Cambia imagen del anuncio | Administrador Discord |
+| `/testalert` | DOWN o RESTORED claramente identificado como simulación | Administración del bot |
+| `/simular-ciclo` | Prueba del ciclo y dos alertas simuladas, sin registrar caídas | Administración del bot |
+| `/historial-caidas` | Últimas diez caídas, estado, duración e ID | Administración del bot |
+| `/mantenimiento iniciar` | Motivo, anuncio, registro y suspensión del monitor | Administración del bot |
+| `/mantenimiento finalizar` | Anuncio, lectura del panel y reactivación | Administración del bot |
+| `/evento crear` | Formulario en dos pasos, banner opcional en el segundo, vista previa y publicación explícita | Administración del bot |
+| `/evento editar` | Nombre, fecha, hora, lugar y descripción; conserva inscritos | Administración del bot |
+| `/evento premios` | Tres premios y cupos; no reduce por debajo de los inscritos | Administración del bot |
+| `/evento banner` | Cambia imagen del anuncio | Administración del bot |
 | `/perfil jugador` | Tarjeta propia o de otro jugador; páginas y descarga de eventos | Miembros con acceso al canal de eventos |
-| `/respaldo crear` | Copia en Drive y recuperación de prueba en segundo plano | Administrador Discord |
-| `/respaldo probar` | Descarga de Drive y restauración aislada de una copia registrada | Administrador Discord |
-| `/estado-bot` | Diagnóstico privado del proceso, monitor, tareas, base y respaldo | Administrador Discord |
+| `/respaldo crear` | Copia en Drive y recuperación de prueba en segundo plano | Administración del bot |
+| `/respaldo probar` | Descarga de Drive una copia registrada y prueba su restauración aislada | Administración del bot |
+| `/estado-bot` | Diagnóstico privado del proceso, monitor, tareas, base y respaldo | Administración del bot |
 | `/evento historial pagina` | Resultados de eventos finalizados, cinco por página | Miembros con acceso al canal de eventos |
 | `/evento ranking` | Top 10 por participaciones, con podios y desempate estable | Miembros con acceso al canal de eventos |
-| `/evento participantes` | Lista de inscritos (con límite de texto original) | Administrador Discord |
-| `/evento finalizar` | Tres miembros diferentes, podio y cierre de inscripciones | Administrador Discord |
-| `/evento cerrar` | Elimina anuncio, banner y botones; conserva datos | Administrador Discord |
+| `/evento participantes` | Lista de inscritos (con límite de texto original) | Administración del bot |
+| `/evento finalizar` | Tres miembros diferentes, podio y cierre de inscripciones | Administración del bot |
+| `/evento cerrar` | Elimina anuncio, banner y botones; conserva datos | Administración del bot |
 | `/reunion crear tipo` | Staff o General, formulario y publicación al enviarlo | Roles autorizados |
 | `/reunion editar reunion_id` | Cambia datos sin perder confirmaciones ni asistencia | Roles autorizados |
 | `/reunion cancelar reunion_id` | Elimina panel principal; conserva registros y lista de confirmaciones | Roles autorizados |
@@ -253,7 +282,7 @@ antes de disponer del volumen. Inscripción o podio no demuestra asistencia real
 
 ## Diagnóstico privado
 
-`/estado-bot` requiere permiso Administrador y responde de forma efímera. Muestra conexión
+`/estado-bot` requiere administración del bot y responde de forma efímera. Muestra conexión
 a Discord, latencia, tiempo activo del proceso, último estado FiveM confirmado, mantenimiento,
 cambio pendiente y tiempos de última lectura/error del monitor. También muestra el estado
 de las tres tareas automáticas y la última revisión iniciada de avisos de reuniones/eventos.
@@ -389,7 +418,7 @@ La rotación cambia los lunes a las **6:30 p. m. de Puerto Rico**. Incluye dos a
 - **Comprar.** Pulsa **Ver catálogo** en el panel o abre `/tienda`, selecciona el artículo y confirma su precio en monedas. Para un color personalizado, una frase o un prefijo, escribe el valor antes del cobro. El bot guarda la compra, equipa el cosmético y entrega el rol o la sala cuando corresponde. Puedes cambiar los cosméticos desde `/inventario`. Si falla la entrega en Discord después del pago, el bot la reintenta sin volver a cobrar.
 - **Salas.** La sala dura siete días desde su entrega. El propietario puede usar `/sala` para elegir el nombre y administrar invitados. Al vencer, el bot retira los accesos, intenta avisar por privado y elimina la sala cuando sale el último usuario.
 - **Staff.** `/economia catalogo`, `producto` y `rotacion` permiten consultar y programar la tienda. Los códigos de catálogo se conservan en las compras. `ajustar` y `devolver` exigen un motivo. `registro` permite auditar operaciones y `pendientes` reintentar entregas ya cobradas. Los fallos temporales se reintentan cada minuto.
-- **Configuración.** Un administrador puede usar `/economia destinos` para configurar la categoría de tienda, la categoría de voz, el registro privado y un rol administrativo delegado. Para que el rol delegado pueda invocar el comando, habilítalo en los permisos de la integración de Discord. Por defecto se usan la categoría de La Venganza para tienda y voz y el permiso Administrador para los controles de economía.
+- **Configuración.** Un administrador del bot puede usar `/economia destinos` para configurar la categoría de tienda, la categoría de voz, el registro privado y un rol administrativo delegado. Para que el rol delegado pueda invocar el comando, habilítalo en los permisos de la integración de Discord. Por defecto se usan la categoría de La Venganza para tienda y voz y los rangos administrativos para los controles de economía. Ciudadanos y @everyone no pueden delegarse como administradores económicos.
 
 
 El registro privado de versiones y operaciones del bot se consulta con `/cambios historial` y `/cambios detalle`. Consulta [REGISTRO_CAMBIOS.md](REGISTRO_CAMBIOS.md) para las copias y las instrucciones de restauración.

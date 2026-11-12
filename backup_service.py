@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 
 from backup import snapshot
 from backup_meta import atomic_json, record_backup, status_path
@@ -264,7 +265,7 @@ class BackupService:
         return dict(enabled=self.enabled and setting(self.path,'backups','automatic',self.enabled), time_pr=setting(self.path,'backups','time',self.time_pr), config_error=self.config_error, phase=state.get('phase', 'not_run'), stage=state.get('stage'), last_success_at=state.get('last_success_at'), last_recovery_at=state.get('last_recovery_at'), error_stage=state.get('error_stage'), busy=self.lock.locked() or (self.manual_task is not None and not self.manual_task.done()), last_check_at=self.last_check_at, scheduler_active=self.task is not None and not self.task.done())
 
     async def admin(self, interaction):
-        if interaction.guild_id != self.guild_id or not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
+        if interaction.guild_id != self.guild_id or not isinstance(interaction.user, discord.Member) or not is_bot_admin(interaction.user):
             raise app_commands.CheckFailure('Solo administradores autorizados pueden gestionar respaldos.')
         return True
 

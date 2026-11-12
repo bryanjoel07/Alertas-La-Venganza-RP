@@ -100,7 +100,7 @@ concede permisos con el alcance drive.file.
 
 ### 4. Ejecutar una prueba real antes de activar el horario
 
-1. En Discord, con permiso Administrador, ejecuta **`/respaldo crear`**.
+1. En Discord, con un rango de administración del bot, ejecuta **`/respaldo crear`**.
 2. El bot responde de forma privada que empezó y después confirma el resultado. Espera:
    la operación trabaja en segundo plano y no bloquea los eventos/reuniones.
 3. Revisa **`/estado-bot`**: Drive debe figurar verificado y recuperación verificada.
@@ -120,7 +120,7 @@ anteriores se conservan aunque una nueva prueba falle.
 - `/respaldo probar`: descarga de la copia de Drive registrada más reciente y prueba aislada.
 - `/estado-bot`: diagnóstico privado de programación, operación, copia y recuperación.
 
-Solo administradores del servidor original pueden ejecutar estos comandos. No se entregan
+Solo los rangos de administración del bot en el servidor original pueden ejecutar estos comandos. No se entregan
 los archivos de SQLite a Discord. Las notificaciones de fallo van al canal Staff indicado.
 Si Discord no permite enviar el aviso o la entrega es incierta, se registra el fallo en logs;
 consulta `/estado-bot`. No se reenvían avisos inciertos repetidamente. Si el almacenamiento

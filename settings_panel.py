@@ -9,6 +9,7 @@ import uuid
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 
 from bot_settings import SettingsStore,TEXT_KEYS,friendly_hour,validate_values
 from daily_up import daily_up_embed
@@ -236,7 +237,7 @@ class SettingsPanel:
     async def authorize(self,i,refresh=False):
         if i.guild_id!=self.guild_id or not i.guild:raise ValueError('Abre los ajustes desde La Venganza RP.')
         member=await i.guild.fetch_member(i.user.id) if refresh else i.user
-        if not member.guild_permissions.administrator:raise ValueError('Este panel es solo para administradores del servidor.')
+        if not is_bot_admin(member):raise ValueError('Este panel es solo para administradores del bot.')
 
     async def present(self,i,view,*,previous=None):
         # A v2 message must stay v2: previews, errors and progress use components too.

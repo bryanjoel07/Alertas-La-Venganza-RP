@@ -10,19 +10,22 @@ import time
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='updated-bot-guide-v32'
-SUMMARY=('Actualiza el panel del canal Guía del Bot y /guia con las funciones actuales. Incluye Ver votantes con '
-    'nombres completos, Añadir miembro y Remover miembro en tickets, minijuegos, Feedback, sugerencias, errores, '
-    'normas y postulaciones. Añade accesos directos y conserva los enlaces anteriores. Los premios, el horario de '
-    'Server Up y la presentación personalizada se leen de los ajustes existentes. Actualiza el mismo mensaje, '
-    'con una copia privada anterior y posterior; conserva votos, fotos, tickets, saldos y permisos.')
-RESTORE=('Código anterior: 2bf882983829efa031fe95aa08bcfa9a67b46980. Conservar /data y su SQLite actual. '
-    'Revertir código vuelve a generar la guía anterior al sincronizarla. Para restaurar el panel manualmente, '
-    'consultar BOT_GUIDE y reponer solo los embeds y componentes anteriores en el mismo mensaje. '
-    'No restaurar bases antiguas, borrar canales o mensajes, ni modificar votos, premios, horarios o roles.')
+RELEASE='bot-command-role-access-v33'
+SUMMARY=('Revisa los 108 comandos del bot y añade una política de acceso por función. Ciudadanos conserva las '
+    'funciones de jugadores; Soporte y Moderadores, sus tareas de staff; Owner, Programador, Jefe de Staff, '
+    'Súper Admin y Admin pueden administrar el bot por el ID de su rol sin recibir Administrador de Discord. '
+    'Unifica las comprobaciones de comandos, paneles y formularios administrativos y elimina la confianza '
+    'en nombres de roles para reconocer staff. Conserva delegaciones de economía y departamentos, '
+    'la privacidad reservada de tickets, también en Feedback y el historial de cambios, y los roles de reuniones. Registra la sincronización '
+    'de comandos antes/después. No modifica roles, membresías ni accesos personales de canales.')
+RESTORE=('Código anterior: 5103ff64b0c61a8bc10ef50edf1f7b616dc3b53b. Conservar /data y su SQLite actual. '
+    'Revertir código recupera las comprobaciones anteriores y sincroniza la visibilidad anterior de los comandos. '
+    'Consultar BOT_COMMAND_ACCESS para comparar los metadatos antes/después. No restaurar bases antiguas, '
+    'cambiar permisos o membresías de roles, modificar overwrites de canales, ni borrar votos, tickets o saldos.')
 
 
 
@@ -111,8 +114,28 @@ class ChangeLog:
         self.register()
 
     def authorize(self,i):
-        if i.guild_id!=self.guild_id or not i.user.guild_permissions.administrator:
+        if i.guild_id!=self.guild_id or not is_bot_admin(i.user):
             raise app_commands.CheckFailure('Solo administradores del servidor pueden consultar estas copias.')
+
+    def can_read(self, member, row):
+        if not is_bot_admin(member):return False
+        if member.guild_permissions.administrator:return True
+        tickets=set()
+        def inspect(value):
+            if isinstance(value,dict):
+                if value.get('department')=='staff':return False
+                ticket=value.get('ticket')
+                if isinstance(ticket,(int,str)) and str(ticket).isdigit():tickets.add(int(ticket))
+                return all(inspect(item) for item in value.values())
+            if isinstance(value,list):return all(inspect(item) for item in value)
+            return True
+        try:
+            if not all(inspect(json.loads(row[key])) for key in ('before_json','after_json')):return False
+            for rid in tickets:
+                ticket=self.bot.tickets.store.get(rid)
+                if not ticket or ticket['department']=='staff':return False
+        except (ValueError,KeyError,AttributeError):return False
+        return True
 
     def register(self):
         @self.group.command(name='historial',description='Ver qué cambió y cuándo')
@@ -120,6 +143,7 @@ class ChangeLog:
             self.authorize(i)
             await i.response.defer(ephemeral=True)
             rows=await asyncio.to_thread(self.journal.rows,10,(pagina-1)*10)
+            rows=[row for row in rows if await asyncio.to_thread(self.can_read,i.user,row)]
             lines=[f"**#{r['id']} · {r['title']}**\n<t:{r['created']}:f> · {r['status']}\n{r['summary'][:180]}" for r in rows]
             await i.followup.send(embed=discord.Embed(title='🧾 Historial de cambios',description=('\n\n'.join(lines) or 'No hay cambios en esta página.')[:4000],color=0xBE2335),ephemeral=True,
                                   allowed_mentions=discord.AllowedMentions.none())
@@ -131,6 +155,8 @@ class ChangeLog:
             row=await asyncio.to_thread(self.journal.get,registro)
             if not row:
                 return await i.followup.send('Ese registro no existe.',ephemeral=True)
+            if not await asyncio.to_thread(self.can_read,i.user,row):
+                raise app_commands.CheckFailure('Ese registro contiene información de un caso reservado para administradores de Discord.')
             export=dict(row)
             export['before']=json.loads(export.pop('before_json'))
             export['after']=json.loads(export.pop('after_json'))

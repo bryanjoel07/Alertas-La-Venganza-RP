@@ -6,6 +6,7 @@ import time
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 
 from suggestion_store import SuggestionStore,STATES,CLOSED
 from suggestion_ui import SuggestionAction,IdeaForm,StateForm,MyIdeas,DeleteIdea,panel_controls,idea_controls,reply,failed,NONE
@@ -57,7 +58,7 @@ class SuggestionSystem:
   if base is None:base=await self.target()
   if not base.permissions_for(member).view_channel or not base.permissions_for(member).read_message_history:
    raise ValueError('Necesitas acceso al canal de Sugerencias para usar este sistema.')
-  if admin and not (member.guild_permissions.administrator or {r.id for r in member.roles}&PROTECTED):
+  if admin and not is_bot_admin(member):
    raise ValueError('Solo Owner, Programador y administradores pueden gestionar las ideas.')
   return member
  def embed(self,row):

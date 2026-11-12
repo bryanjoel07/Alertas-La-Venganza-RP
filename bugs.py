@@ -8,10 +8,10 @@ import re
 import time
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 from bug_store import BugStore,STATES
 from bug_ui import BugAction,BugForm,StatePicker,buttons,failed,size_summary
 from feedback_ui import reply,RED,NONE
-from tickets_store import PROTECTED
 from bug_uploads import ClipUploads
 from bug_media import ReportMedia
 from bug_limits import IMAGE_TYPES,MAX_REPORT_FILES,MAX_FILE_MB,BYTES_PER_MB
@@ -48,7 +48,7 @@ class BugSystem:
         cached=guild.get_channel(FORUM) if not admin and hasattr(guild,'get_channel') else None
         forum=cached if isinstance(cached,discord.ForumChannel) else await self.forum()
         if not forum.permissions_for(member).view_channel:raise ValueError('No tienes acceso al foro Reportes.')
-        if admin and not (member.guild_permissions.administrator or {r.id for r in member.roles}&PROTECTED):
+        if admin and not is_bot_admin(member):
             raise ValueError('Solo Owner, Programador y administradores pueden gestionar estos reportes.')
         return member
     async def forum(self):

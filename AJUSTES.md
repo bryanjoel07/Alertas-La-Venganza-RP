@@ -18,7 +18,7 @@ como ventanas de Discord, pero al enviarlos actualizan el panel del que salieron
 4. Pulsa **Guardar cambios** o **Cancelar**.
 
 Abrir el panel, navegar o enviar un formulario no guarda nada por sí solo. Antes de
-guardar, el bot vuelve a consultar en Discord que conservas Administrador. Si alguien
+guardar, el bot vuelve a consultar en Discord que conservas un rango de administración del bot. Si alguien
 cambió esos valores mientras tenías abierto el formulario, pide revisarlos otra vez.
 Una confirmación repetida usa el mismo recibo y no vuelve a aplicar la operación.
 Las vistas previas largas tienen páginas dentro del mismo panel para conservar

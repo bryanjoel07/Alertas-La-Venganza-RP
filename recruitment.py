@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 from recruitment_store import RecruitmentStore, ACTIVE, LABELS
 from recruitment_survey import RecruitmentSource,survey_recruitment
 from recruitment_ui import (RecruitPanel,RecruitAction,ApplicationForm,TextForm,InterviewForm,
@@ -215,10 +216,10 @@ class RecruitmentSystem:
   @self.group.command(name='abrir',description='Administración: abrir o pausar las solicitudes nuevas')
   async def intake(i:discord.Interaction,abierto:bool):
    await i.response.defer(ephemeral=True);member=await self.member(i)
-   if not member.guild_permissions.administrator:raise ValueError('Solo administradores de Discord pueden abrir o pausar las solicitudes.')
+   if not is_bot_admin(member):raise ValueError('Solo la administración del bot puede abrir o pausar las solicitudes.')
    async def confirm(next_i):
     member=await self.member(next_i)
-    if not member.guild_permissions.administrator:raise ValueError('Ya no tienes permisos de administrador.')
+    if not is_bot_admin(member):raise ValueError('Ya no tienes un rol de administración del bot.')
     async def operation():
      await self.call('config','open','1' if abierto else '0');await self.panel()
     await self.tracked('Abrir o pausar reclutamiento',f'intake:{next_i.id}',operation,('apply',),extra=lambda:self.intake_state())

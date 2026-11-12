@@ -10,6 +10,7 @@ from typing import Literal
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin, delegated_economy
 
 from economy_delivery import LABELS, Delivery
 from economy_store import BANNERS, PR, EconomyStore, clean_label
@@ -402,10 +403,8 @@ class Economy:
             self.task = asyncio.create_task(self.loop(), name="la-venganza-exclusive")
 
     def authorized(self, i):
-        staff = self.store.config("admin_role")
         if i.guild_id != self.guild.id or not (
-            i.user.guild_permissions.administrator
-            or any(str(r.id) == staff for r in i.user.roles)
+            is_bot_admin(i.user) or delegated_economy(i, self.store)
         ):
             raise ValueError("Se requiere un administrador de La Venganza RP.")
 
@@ -1080,13 +1079,13 @@ class Economy:
         ):
             if (
                 i.guild_id != self.guild.id
-                or not i.user.guild_permissions.administrator
+                or not is_bot_admin(i.user)
             ):
                 raise ValueError(
-                    "Solo un administrador del servidor puede cambiar permisos o canales."
+                    "Solo un administrador del bot puede cambiar estos destinos o delegaciones."
                 )
             if administrador:
-                if administrador.is_default() or administrador.managed:
+                if administrador.is_default() or administrador.managed or administrador.id == 1245009164070158409:
                     raise ValueError("Elige un rol de Staff.")
                 self.store.config("admin_role", administrador.id, i.user.id)
             if registro:

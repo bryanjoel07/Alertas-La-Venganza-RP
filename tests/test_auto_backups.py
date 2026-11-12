@@ -214,6 +214,8 @@ class AutoBackupTests(unittest.IsolatedAsyncioTestCase):
         interaction = Mock()
         interaction.guild_id = GUILD
         interaction.user = Mock(spec=discord.Member)
+        interaction.user.bot = False
+        interaction.user.roles = []
         interaction.user.guild_permissions.administrator = False
         with self.assertRaises(discord.app_commands.CheckFailure):
             await self.service.admin(interaction)

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import discord
 from discord import app_commands
+from bot_access import admin_check
 
 from stream_proof import public_link, supported_url, live_target
 from streamer_panel import ApprovedButtons, ProofButtons
@@ -152,7 +153,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         return role and role.is_assignable() and role.permissions.value == 0
 
     @app_commands.command(description="Elige el rol de creador y el mínimo de seguidores")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(admin_check)
     async def configurar(self, interaction: discord.Interaction, rol: discord.Role,
                          minimo: app_commands.Range[int, 1, 10000000] = 50):
         if not self.safe_role(rol):
@@ -171,7 +172,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         await self.issue_code(interaction)
 
     @app_commands.command(description="Registrar un creador aprobado por administración y activar sus avisos")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(admin_check)
     async def registrar(self, interaction: discord.Interaction, jugador: discord.Member, enlace: str):
         if jugador.bot:
             return await interaction.response.send_message("Selecciona un jugador, no un bot.", ephemeral=True)
@@ -346,7 +347,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         await interaction.followup.send(msg, ephemeral=True, **self.approved_controls(self.request(interaction.guild_id, interaction.user.id)))
 
     @app_commands.command(description="Lista privada de pruebas pendientes para administración")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(admin_check)
     async def pendientes(self, interaction: discord.Interaction, pagina: app_commands.Range[int, 1, 10000] = 1):
         with self.db() as db:
             rows = db.execute("SELECT * FROM streamer_requests WHERE guild=? AND state='pendiente' ORDER BY checked,id LIMIT 2 OFFSET ?",
@@ -355,7 +356,7 @@ class Streamers(app_commands.Group, name="streamer", description="Solicitudes pa
         await interaction.response.send_message("\n".join(lines) or "Sin solicitudes pendientes en esta página.", ephemeral=True)
 
     @app_commands.command(description="Resuelve una prueba revisada en la plataforma (solo administración)")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(admin_check)
     @app_commands.describe(revision="Referencia que muestra /streamer pendientes", aprobar="Confirmas titularidad, contenido de la ciudad y directo público",
                            seguidores="Conteo comprobado en la plataforma", canal="URL pública del perfil verificado para aprobación manual")
     async def revisar(self, interaction: discord.Interaction, revision: str, aprobar: bool,

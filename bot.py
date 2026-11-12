@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import aiohttp
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin, install_command_access
 from meetings import MeetingSystem, meeting_error
 from storage import database_path
 from sqlite_runtime import configure_database
@@ -297,7 +298,13 @@ class LaVenganzaBot(discord.Client):
         await self.meetings.start()
         await self.event_features.start()
         await self.backups.start()
-        commands = await self.tree.sync(guild=GUILD)
+        install_command_access(self.tree, GUILD)
+        async def command_snapshot():
+            return {'commands': [command.to_dict() for command in await self.tree.fetch_commands(guild=GUILD)]}
+        async def sync_commands():
+            return await self.tree.sync(guild=GUILD)
+        commands = await self.changes.tracked('BOT_COMMAND_ACCESS', 'Permisos de comandos por roles del bot',
+            sync_commands, request_id='bot-command-access-v1', snapshot=command_snapshot)
         log.info("Comandos sincronizados: %s", ", ".join(c.name for c in commands))
         if self.monitor_task is None or self.monitor_task.done():
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
@@ -500,7 +507,7 @@ async def monitor_server():
 async def only_admin(interaction):
     if not interaction.guild or interaction.guild.id != GUILD_ID:
         raise app_commands.CheckFailure("Servidor no autorizado")
-    if not interaction.user.guild_permissions.administrator:
+    if not is_bot_admin(interaction.user):
         raise app_commands.MissingPermissions(["administrator"])
     return True
 

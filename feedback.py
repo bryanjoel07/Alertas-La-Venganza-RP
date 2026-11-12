@@ -9,6 +9,7 @@ import unicodedata
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 
 from feedback_store import FeedbackStore
 from feedback_ui import (RED, NONE, controls, reply, EntryChoice, Picker, FeedbackForm, FeedbackAction,
@@ -101,7 +102,7 @@ class FeedbackSystem:
             raise ValueError('Tienes que estar en La Venganza RP para dejar feedback.') from None
         if member.bot:
             raise ValueError('El feedback es para los jugadores.')
-        if admin and not member.guild_permissions.administrator:
+        if admin and not is_bot_admin(member):
             raise ValueError('Esto solo lo puede ver administración.')
         return member
 
@@ -209,10 +210,11 @@ class FeedbackSystem:
             await i.response.defer(ephemeral=True)
         member = await self.member(i)
         row = await self.call('get', rid)
-        if not row or (member.id != row['owner'] and not member.guild_permissions.administrator and (row['visibility'] != 'public' or row['hidden_at'])):
+        if not row or (member.id != row['owner'] and not is_bot_admin(member) and (row['visibility'] != 'public' or row['hidden_at'])):
             raise ValueError('Esa opinión es privada o no está disponible.')
+        await self.reserved_access(member, row)
         embed = await self.review_embed(row)
-        if row['ticket'] and (member.id == row['owner'] or member.guild_permissions.administrator):
+        if row['ticket'] and (member.id == row['owner'] or is_bot_admin(member)):
             embed.add_field(name='Tu caso' if member.id == row['owner'] else 'Caso relacionado', value=f"Ticket #{row['ticket']}", inline=False)
         view = Withdraw(self, member.id, rid) if row['owner'] == member.id and not row['hidden_at'] else None
         await reply(i, 'Si eliges «Retirar opinión», dejará de aparecer en el canal y en los resultados.' if view else None, embed=embed, view=view)
@@ -220,8 +222,9 @@ class FeedbackSystem:
     async def stats(self, i, *, admin=False, staff=None, days=None, page=1):
         if not i.response.is_done():
             await i.response.defer(ephemeral=True)
-        await self.member(i, admin=admin)
-        data = await self.call('summary', public=not admin, staff=staff, days=days)
+        member = await self.member(i, admin=admin)
+        filters = dict(include_reserved=False) if admin and not member.guild_permissions.administrator else {}
+        data = await self.call('summary', public=not admin, staff=staff, days=days, **filters)
         embed = self.results_embed(data)
         if admin and not data['total']:
             embed.description = 'No hay opiniones con este filtro.'
@@ -229,7 +232,7 @@ class FeedbackSystem:
         if staff:
             embed.description = f'Opiniones sobre <@{staff}>.\n' + (embed.description or '')
         if admin:
-            for row in await self.call('rows', staff=staff, days=days, limit=5, offset=(page-1)*5):
+            for row in await self.call('rows', staff=staff, days=days, limit=5, offset=(page-1)*5, **filters):
                 embed.add_field(name=f"#{row['id']} · {stars(row['score'])} · "+('Pública' if row['visibility']=='public' else 'Privada'),
                     value=f"<@{row['owner']}> → "+(f"<@{row['staff']}>" if row['staff'] else 'Equipo de staff')+
                     f" · <t:{row['created']}:d>\n"+discord.utils.escape_markdown(row['comment'][:140] or 'Sin comentario.')+f"\n`/feedback ver numero:{row['id']}`", inline=False)
@@ -375,7 +378,7 @@ class FeedbackSystem:
     async def reply_form(self, i, rid):
         member = await self.member(i)
         row = await self.call('get', rid)
-        if not row or row['hidden_at'] or row['visibility'] != 'public' or row['owner'] == member.id or not (member.guild_permissions.administrator or (row['staff'] == member.id and is_staff(member))):
+        if not row or row['hidden_at'] or row['visibility'] != 'public' or row['owner'] == member.id or not (is_bot_admin(member) or (row['staff'] == member.id and is_staff(member))):
             raise ValueError('Solo quien atendió al jugador o administración puede responder esta opinión pública.')
         if row['response']:
             raise ValueError('Esta opinión ya tiene una respuesta.')
@@ -384,9 +387,9 @@ class FeedbackSystem:
     async def respond(self, i, rid, text):
         member = await self.member(i)
         row = await self.call('get', rid)
-        if not row or not (member.guild_permissions.administrator or (row['staff'] == member.id and is_staff(member))):
+        if not row or not (is_bot_admin(member) or (row['staff'] == member.id and is_staff(member))):
             raise ValueError('Ya no tienes acceso para responder esta opinión.')
-        await self.call('respond', rid, member.id, clean(text), admin=member.guild_permissions.administrator)
+        await self.call('respond', rid, member.id, clean(text), admin=is_bot_admin(member))
         try:
             await self.publish(rid)
         except Exception:
@@ -396,6 +399,9 @@ class FeedbackSystem:
     async def withdraw(self, i, rid, reason, admin=False):
         await i.response.defer(ephemeral=True)
         member = await self.member(i, admin=admin)
+        row = await self.call('get', rid)
+        if row:
+            await self.reserved_access(member, row)
         async with self.io_lock:
             async def snapshot():
                 return dict(feedback=await self.call('get', rid))
@@ -413,6 +419,11 @@ class FeedbackSystem:
                 pending = True
         await reply(i, 'La opinión dejó de contar. Estoy reintentando quitarla del canal.' if pending else 'La opinión ya no aparece en el canal ni en los resultados.')
         await self.refresh_safely()
+
+    async def reserved_access(self, member, row):
+        if (row['ticket'] and member.id != row['owner'] and not member.guild_permissions.administrator
+                and await self.call('reserved', row['ticket'])):
+            raise ValueError('La opinión de este reporte reservado solo está disponible para su autor y administradores de Discord.')
 
     async def remove_post(self, row):
         if not row['hidden_at']:

@@ -56,6 +56,11 @@ class FeedbackStore:
             row = db.execute('SELECT * FROM lv_feedback WHERE id=?', (rid,)).fetchone()
             return dict(row) if row else None
 
+    def reserved(self, ticket):
+        with self.db(readonly=True) as db:
+            row = db.execute('SELECT department FROM lv_tickets WHERE id=?', (ticket,)).fetchone()
+            return row is None or row['department'] == 'staff'
+
     @staticmethod
     def ticket_row(db, rid, owner, unrated=True):
         row = db.execute('SELECT * FROM lv_tickets WHERE id=?', (rid,)).fetchone()
@@ -111,8 +116,10 @@ class FeedbackStore:
             self.event(db, rid, owner, 'enviar', visibility)
             return rid
 
-    def rows(self, *, owner=None, staff=None, public=False, days=None, pending=False, limit=25, offset=0):
+    def rows(self, *, owner=None, staff=None, public=False, days=None, pending=False, limit=25, offset=0, include_reserved=True):
         where, args = [], []
+        if not include_reserved:
+            where.append("(ticket IS NULL OR EXISTS (SELECT 1 FROM lv_tickets t WHERE t.id=lv_feedback.ticket AND t.department!='staff'))")
         for column, value in (('owner', owner), ('staff', staff)):
             if value is not None:
                 where.append(column + '=?'); args.append(value)
@@ -128,8 +135,10 @@ class FeedbackStore:
         with self.db(readonly=True) as db:
             return [dict(r) for r in db.execute(sql + ' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?', (*args, limit, offset))]
 
-    def summary(self, *, public=True, staff=None, days=None):
+    def summary(self, *, public=True, staff=None, days=None, include_reserved=True):
         where, args = ['hidden_at IS NULL'], []
+        if not include_reserved:
+            where.append("(ticket IS NULL OR EXISTS (SELECT 1 FROM lv_tickets t WHERE t.id=lv_feedback.ticket AND t.department!='staff'))")
         if public:
             where.append("visibility='public'")
         if staff is not None:

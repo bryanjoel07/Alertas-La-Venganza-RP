@@ -22,6 +22,7 @@ from ticket_members import TicketMemberPicker,TicketMemberRemovePicker
 import discord
 from settings_catalog import value as setting
 from discord import app_commands
+from bot_access import is_bot_admin
 from ticket_forms import FORMS
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
 from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,PriorityForm,RatingForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
@@ -48,8 +49,7 @@ class PriorityPanelPending(Exception):
 
 
 def is_staff_role(role):
- name=''.join(c for c in unicodedata.normalize('NFKD',getattr(role,'name','')).casefold() if c.isalnum())
- return role.id in ALL_STAFF or name in {'owner','programador','superadmin','admin','moderador','soporte','jefedeadmin','jefedeadmins','jefedeadministracion','jefeadmin','jefedestaff'}
+ return role.id in ALL_STAFF
 
 def closed_staff_roles(guild):
  return [role for role in guild.roles if is_staff_role(role)]
@@ -172,7 +172,7 @@ class TicketSystem:
    raise ValueError('No tienes acceso a este caso.')
   return permitted
  def admin(self,member):
-  if member.guild.id!=self.guild_id or not member.guild_permissions.administrator:raise ValueError('Esta configuración requiere Administrador de Discord.')
+  if member.guild.id!=self.guild_id or not is_bot_admin(member):raise ValueError('Esta configuración requiere un rol de administración del bot.')
  async def channel(self,row):
   if row.get('deleted_at'):raise ValueError('El canal fue eliminado y ya no figura en las listas de tickets.')
   if not row['channel']:raise ValueError('El canal de este ticket todavía está en preparación. El staff puede usar /ticket recuperar.')
@@ -1528,6 +1528,7 @@ class TicketSystem:
   @self.group.command(name='recuperar',description='Reconciliar una creación o un archivo interrumpido')
   async def recover(i:discord.Interaction,numero:int,cancelar_reserva:bool=False):
    self.admin(i.user);await i.response.defer(ephemeral=True,thinking=True)
+   self.authorize(i.user,self.current(i,numero),staff=True)
    async with self.lock:await self.recover(numero,create_missing=not cancelar_reserva)
    row=self.current(i,numero)
    if row['status']=='creando' and not row['channel']:

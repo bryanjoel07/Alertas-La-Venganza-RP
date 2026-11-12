@@ -4,6 +4,7 @@ import unicodedata
 
 import discord
 from discord import app_commands
+from bot_access import command_access
 
 log = logging.getLogger('LaVenganzaRP.perfiles')
 NAME = '👤┊𝐏𝐞𝐫𝐟𝐢𝐥𝐞𝐬'
@@ -87,6 +88,15 @@ async def ensure_profiles(economy, guild):
 
 class ProfileTree(app_commands.CommandTree):
     async def interaction_check(self, interaction):
+        if getattr(self, 'bot_access_enabled', False):
+            try:
+                await command_access(interaction)
+            except app_commands.CheckFailure as error:
+                if interaction.type is discord.InteractionType.autocomplete:
+                    await interaction.response.autocomplete([])
+                else:
+                    await interaction.response.send_message(str(error), ephemeral=True)
+                return False
         economy = self.client.economy
         channel_id = economy.store.config('profiles_channel') if economy.ready else ''
         if channel_id and str(interaction.channel_id) == channel_id and interaction.command.name != 'perfil':

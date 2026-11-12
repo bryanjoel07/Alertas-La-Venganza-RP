@@ -139,7 +139,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.guild = SimpleNamespace(id=10, me=SimpleNamespace(id=500), fetch_member=AsyncMock(side_effect=lambda uid: self.members[uid]))
         for uid in (1,2,3,4):
             self.members[uid] = SimpleNamespace(id=uid, name=f'usuario{uid}', display_name=f'Jugador {uid}',
-                bot=False, guild=self.guild, roles=[SimpleNamespace(id=next(iter(ALL_STAFF)),name='Soporte')] if uid==2 else [],
+                bot=False, guild=self.guild, roles=[SimpleNamespace(id=1300627732954349619,name='Soporte')] if uid==2 else [],
                 guild_permissions=discord.Permissions(administrator=uid==3), display_avatar=SimpleNamespace(url='https://example.com/avatar.png'))
         self.channel = MagicMock(spec=discord.TextChannel)
         self.channel.id, self.channel.guild, self.channel.name, self.channel._overwrites = CHANNEL_ID, self.guild, '✨┊𝐅𝐞𝐞𝐝𝐛𝐚𝐜𝐤', []
@@ -256,6 +256,29 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.messages), 1)  # Only the channel panel.
         with self.assertRaises(ValueError):
             await self.system.detail(self.interaction(2), row['id'])
+
+    async def test_bot_admin_rank_cannot_read_or_remove_reserved_case_feedback(self):
+        rid = self.case('staff')
+        await self.system.submit(self.interaction(), 1, 'RESERVED PRIVATE COMMENT', 'private', ticket=rid)
+        row = self.system.store.rows(owner=1)[0]
+        self.members[3].guild_permissions = discord.Permissions.none()
+        self.members[3].roles = [SimpleNamespace(id=1300619682486947931, name='Admin')]
+        with self.assertRaises(ValueError):
+            await self.system.detail(self.interaction(3), row['id'])
+        with self.assertRaises(ValueError):
+            await self.system.withdraw(self.interaction(3), row['id'], 'Review', admin=True)
+        interaction = self.interaction(3)
+        await self.system.stats(interaction, admin=True)
+        payload = json.dumps(interaction.followup.send.call_args.kwargs['embed'].to_dict())
+        self.assertNotIn('RESERVED PRIVATE COMMENT', payload)
+        self.assertEqual(self.system.store.summary(public=False, include_reserved=False)['total'], 0)
+        await self.system.submit(self.interaction(), 4, 'AUTHORIZED PRIVATE COMMENT', 'private',
+            staff=2, topic='Ayuda ordinaria por voz')
+        interaction = self.interaction(3)
+        await self.system.stats(interaction, admin=True)
+        payload = json.dumps(interaction.followup.send.call_args.kwargs['embed'].to_dict())
+        self.assertIn('AUTHORIZED PRIVATE COMMENT', payload)
+        self.assertNotIn('RESERVED PRIVATE COMMENT', payload)
 
     async def test_dm_invite_works_after_ticket_channel_was_deleted(self):
         rid = self.case()

@@ -6,6 +6,7 @@ from typing import Literal
 
 import discord
 from discord import app_commands
+from bot_access import is_bot_admin
 
 from minigame_catalog import load_bank,ASSETS,KINDS
 from minigame_store import MinigameStore,REWARD,ANSWER_INTERVAL,AnswerWait,normalize
@@ -127,7 +128,7 @@ class MinigameSystem:
   @self.group.command(name='panel',description='Administración: recuperar el panel de juegos en General')
   async def panel(i:discord.Interaction):
    await i.response.defer(ephemeral=True,thinking=True);member=await self.member(i)
-   if not member.guild_permissions.administrator:raise ValueError('Solo la administración puede recuperar el panel.')
+   if not is_bot_admin(member):raise ValueError('Solo la administración puede recuperar el panel.')
    await self.ready(force=True,request=f'panel:{i.id}')
    await reply(i,'Panel comprobado en General. El progreso y los premios siguen guardados.')
   @self.group.error
