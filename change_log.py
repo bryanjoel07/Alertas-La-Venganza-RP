@@ -13,21 +13,18 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bot-error-audit-v28'
-SUMMARY=('Corrige fallos reproducidos durante la auditoría: una lectura fallida de ajustes ya no termina el monitor de directos, '
-    'y esa lectura se hace fuera del bucle principal de Discord. Feedback procesa y reintenta cada publicación o retirada por separado, '
-    'de modo que un error no bloquee las opiniones siguientes; conserva los registros y la recuperación contra duplicados. '
-    'Responder en minijuegos abre el formulario sin esperar una consulta HTTP de miembro: mantiene las comprobaciones de servidor, canal, '
-    'dueño de pregunta y turno, y vuelve a comprobar pertenencia antes de evaluar la respuesta y pagar las 25 monedas. '
-    'El diagnóstico y el panel de ajustes distinguen tareas fallidas e incluyen los bucles nativos de directos, creadores y AutoMod, '
-    'sin mostrar detalles privados de las excepciones ni exceder los límites de Discord. Conserva el panel único, '
-    'las invitaciones verificadas de tickets, roles, permisos, archivos, compras, saldos y configuración existente.')
-RESTORE=('Código anterior: c5bb46d5e1145bba90ce9d23522f912d45112583. Conservar el volumen y su SQLite actual. '
-    'Esta corrección no cambia esquemas, valores guardados ni permisos y no necesita migración inversa. '
-    'Revertir código devuelve el procesamiento anterior de Feedback, el monitor de directos y el botón de responder del minijuego; '
-    'no revierte publicaciones, retiradas autorizadas ni premios ya realizados. Conservar recibos y estados pendientes para su recuperación. '
-    'Después de desplegar, abrir /ajustes panel una vez para cargar sus botones nuevos. No borrar opiniones, archivos, tickets, '
-    'compras, roles, miembros, claves o tablas para revertir esta versión.')
+RELEASE='ticket-remove-member-v29'
+SUMMARY=('Añade Remover miembro junto a Añadir miembro en los tickets abiertos, incluidos los ya existentes. '
+    'El selector privado muestra solo participantes añadidos y permite buscarlos por nombre, usuario o ID. '
+    'Al retirar se comprueban el estado del caso y los permisos actuales del staff; se conservan el autor, el responsable '
+    'y los accesos de staff y administradores. Solo se retiran los permisos individuales de la invitación afectada, '
+    'se verifica la respuesta de Discord y después se actualizan los participantes y su historial. '
+    'La operación guarda copias privadas antes/después. Los roles y los accesos de otras personas se conservan.')
+RESTORE=('Código anterior: 0a7cf276af687e3b8ebb1f2e8fd46726e226cfd7. Conservar /data y su SQLite actual. '
+    'Revertir el código retira el botón nuevo al actualizar los controles; no devuelve invitaciones ya retiradas. '
+    'Para restaurar una retirada autorizada, comparar los participantes y permisos del caso en before/after de /cambios '
+    'y volver a añadir únicamente a esa persona al ticket indicado, con autorización. '
+    'No restaurar una base antigua ni modificar roles, otras cuentas, canales o pruebas para revertir esta versión.')
 
 
 

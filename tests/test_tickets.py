@@ -141,8 +141,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.store.update(self.rid,status='nuevo',channel=100)
  async def test_buttons_are_persistent_and_all_routes_have_unique_ids(self):
   view=TicketControls(self.rid)
-  self.assertTrue(view.is_persistent());self.assertEqual(len(view.children),5)
-  ids=[c.custom_id for c in view.children];self.assertEqual(len(set(ids)),5)
+  self.assertTrue(view.is_persistent());self.assertEqual(len(view.children),6)
+  ids=[c.custom_id for c in view.children];self.assertEqual(len(set(ids)),6)
   self.assertTrue(TicketPanel(self.system).is_persistent())
   for custom in ids:
    match=TicketAction.__discord_ui_compiled_template__.fullmatch(custom)
@@ -200,7 +200,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.channel=AsyncMock(return_value=channel);self.system.access=AsyncMock();self.system.notify_player=AsyncMock()
   self.bot.changes=ChangeLog(self.bot,self.system.store.path,10);self.bot.changes.journal.initialize()
   await self.system.action(self.i,self.rid,'claim')
-  expected=[f'lv:ticket:case:{self.rid}:{a}' for a in ('resolve','close','priority','people')]
+  expected=[f'lv:ticket:case:{self.rid}:{a}' for a in ('resolve','close','priority','people','removepeople')]
   self.assertEqual([c.custom_id for group in message.components for c in group.children],expected)
   self.assertEqual(self.system.store.get(self.rid)['assignee'],self.staff.id)
   channel.send.assert_not_awaited()
@@ -234,7 +234,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.channel=AsyncMock();self.system.access=AsyncMock()
   await picker.callback(self.i)
   response=self.i.followup.send.call_args or self.i.response.send_message.call_args
-  expected=[f'lv:ticket:case:{self.rid}:{a}' for a in ('resolve','close','priority','people')]
+  expected=[f'lv:ticket:case:{self.rid}:{a}' for a in ('resolve','close','priority','people','removepeople')]
   self.assertEqual([c.custom_id for c in response.kwargs['view'].children],expected)
   self.i.followup.send.reset_mock();self.i.response.send_message.reset_mock()
   await self.system.group.get_command('acceso').callback(self.i,self.rid)
@@ -248,10 +248,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([c.item.label for c in closed.children],['Valorar','Eliminar ticket'])
   self.system.store.transition(self.rid,'en_atencion',self.staff.id,'Reapertura')
   reopened=TicketControls.from_row(self.system.store.get(self.rid))
-  self.assertEqual([c.item.label for c in reopened.children],['Resolver','Cerrar','Prioridad','Añadir miembro'])
+  self.assertEqual([c.item.label for c in reopened.children],['Resolver','Cerrar','Prioridad','Añadir miembro','Remover miembro'])
   self.system.store.transfer(self.rid,'soporte',self.staff.id,'Dejar para asignar')
   unassigned=TicketControls.from_row(self.system.store.get(self.rid))
-  self.assertEqual([c.item.label for c in unassigned.children],['Reclamar','Resolver','Cerrar','Prioridad','Añadir miembro'])
+  self.assertEqual([c.item.label for c in unassigned.children],['Reclamar','Resolver','Cerrar','Prioridad','Añadir miembro','Remover miembro'])
 
  async def test_reserved_transfer_removes_former_participant_api_access(self):
   self.system.store.participant(self.rid,7,5)
@@ -488,7 +488,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 
  async def test_member_button_when_open_and_rating_only_after_close(self):
-  expected=[f'lv:ticket:case:{self.rid}:{action}' for action in ('claim','resolve','close','priority','people')]
+  expected=[f'lv:ticket:case:{self.rid}:{action}' for action in ('claim','resolve','close','priority','people','removepeople')]
   self.assertEqual([c.custom_id for c in TicketControls(self.rid).children],expected)
   self.assertEqual([c.custom_id for c in TicketControls(self.rid,True).children],[f'lv:ticket:case:{self.rid}:rate',f'lv:ticket:case:{self.rid}:delete'])
   self.assertFalse(TicketControls(self.rid,True,True).children)

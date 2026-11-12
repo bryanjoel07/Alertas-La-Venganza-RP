@@ -1,5 +1,6 @@
-"""Private, searchable member invitations for an existing ticket."""
+"""Private, searchable participant invitations and removals for an existing ticket."""
 import logging
+from types import SimpleNamespace
 
 import discord
 
@@ -20,7 +21,7 @@ class TicketMemberSearch(discord.ui.Modal):
   await i.response.edit_message(content=self.picker.content(),view=self.picker,allowed_mentions=discord.AllowedMentions.none())
  async def on_error(self,i,error):
   logging.getLogger('LaVenganzaRP.tickets').error('Ticket member search failed',exc_info=error)
-  await reply(i,'No pude buscar ahora. Vuelve a abrir Añadir miembro.')
+  await reply(i,'No pude buscar ahora. Vuelve a abrir el selector de miembros.')
 
 
 class TicketMemberPicker(SafeView):
@@ -89,6 +90,70 @@ class TicketMemberPicker(SafeView):
  async def interaction_check(self,i):
   try:
    if i.user.id!=self.actor:raise ValueError('Abre tu propio botón Añadir miembro para usar esta lista.')
+   self.system.member_ticket(i,self.rid)
+  except ValueError as error:
+   await reply(i,str(error));return False
+  return True
+
+
+class TicketMemberRemovePicker(SafeView):
+ def __init__(self,system,actor,rid,members):
+  super().__init__(timeout=300)
+  self.system,self.actor,self.rid=system,actor,rid
+  self.members={member.id:member for member in members or ()}
+  self.query='';self.page=0;self.build()
+ def filtered(self):
+  row=self.system.store.get(self.rid)
+  if not row:return []
+  excluded={row['owner'],row.get('assignee'),row.get('excluded'),self.system.bot.user.id}
+  people=[]
+  for uid in self.system.store.people(self.rid):
+   if uid in excluded:continue
+   member=self.members.get(uid) or SimpleNamespace(id=uid,name=str(uid),display_name=f'Usuario {uid}',global_name=None,bot=False)
+   if not member.bot and matches(member,self.query):people.append(member)
+  return people
+ def content(self):
+  rows=self.filtered();pages=max(1,(len(rows)+PAGE_SIZE-1)//PAGE_SIZE)
+  return (f'**Remover miembro del ticket #{self.rid}**\n'
+    'Elige a un participante añadido para retirar su invitación y sus permisos individuales.\n'
+    'El autor y el responsable se conservan. El staff y los administradores mantienen el acceso que les corresponde.\n'
+    f'\n{len(rows)} participantes · Página {self.page+1}/{pages}')
+ def build(self):
+  self.clear_items()
+  rows=self.filtered();pages=max(1,(len(rows)+PAGE_SIZE-1)//PAGE_SIZE)
+  self.page=max(0,min(self.page,pages-1))
+  visible=rows[self.page*PAGE_SIZE:(self.page+1)*PAGE_SIZE]
+  select=discord.ui.Select(row=0,placeholder='Elige a quién remover' if visible else 'No hay participantes para remover',
+    disabled=not visible,options=[discord.SelectOption(label=member.display_name[:100],value=str(member.id),
+      description=f'@{member.name} · {member.id}'[:100]) for member in visible]
+      or [discord.SelectOption(label='Sin resultados',value='none')])
+  async def choose(i):
+   if not select.values or select.values[0] not in {str(member.id) for member in visible}:
+    return await reply(i,'Elige a un participante de la lista.')
+   uid=int(select.values[0]);await i.response.defer()
+   result=await self.system.remove_ticket_member(i,self.rid,uid)
+   text=(f'<@{uid}> removido como participante del ticket #{self.rid}.' if result['removed']
+     else f'<@{uid}> ya no figuraba como participante del ticket #{self.rid}.')
+   if result['retains_access']:text+=' Conserva acceso por su función de staff, Administrador u otros permisos del canal.'
+   try:await self.system.sync_member_panel(self.rid)
+   except (discord.HTTPException,ValueError):
+    logging.getLogger('LaVenganzaRP.tickets').exception('Ticket member panel update failed ticket=%s',self.rid)
+    text+=' El panel de participantes está pendiente de actualización.'
+   await i.edit_original_response(content=text,view=None,allowed_mentions=discord.AllowedMentions.none())
+   self.stop()
+  select.callback=choose;self.add_item(select)
+  for label,step,disabled in [('Anterior',-1,self.page==0),('Siguiente',1,self.page>=pages-1)]:
+   button=discord.ui.Button(label=label,disabled=disabled,row=1)
+   async def move(i,step=step):
+    self.page+=step;self.build()
+    await i.response.edit_message(content=self.content(),view=self,allowed_mentions=discord.AllowedMentions.none())
+   button.callback=move;self.add_item(button)
+  search=discord.ui.Button(label='Filtrar participantes',emoji='🔎',row=1)
+  async def find(i):await i.response.send_modal(TicketMemberSearch(self))
+  search.callback=find;self.add_item(search)
+ async def interaction_check(self,i):
+  try:
+   if i.user.id!=self.actor:raise ValueError('Abre tu propio botón Remover miembro para usar esta lista.')
    self.system.member_ticket(i,self.rid)
   except ValueError as error:
    await reply(i,str(error));return False

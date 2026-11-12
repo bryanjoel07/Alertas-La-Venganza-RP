@@ -17,7 +17,7 @@ from access_layout import merged_raw
 from ticket_delete_backup import covers_ticket
 from discord_channels import fetch_channels
 from photo_members import MemberDirectory,DirectoryUnavailable
-from ticket_members import TicketMemberPicker
+from ticket_members import TicketMemberPicker,TicketMemberRemovePicker
 
 import discord
 from settings_catalog import value as setting
@@ -736,7 +736,7 @@ class TicketSystem:
   row=await self.call('get',rid)
   if not row:raise ValueError('Ese ticket no existe.')
   if i.guild_id!=self.guild_id:raise ValueError('Usa los controles en La Venganza RP.')
-  self.authorize(i.user,row,staff=action in ('claim','wait','resolve','note','transfer','priority','people','delete'))
+  self.authorize(i.user,row,staff=action in ('claim','wait','resolve','note','transfer','priority','people','removepeople','delete'))
   if action=='delete':
    if row.get('deleted_at'):return await reply(i,'El canal ya fue eliminado y no está disponible en las listas.')
    if row['status']!='cerrado':raise ValueError('Primero cierra el ticket. Solo después aparecerá la opción de eliminarlo.')
@@ -770,13 +770,14 @@ class TicketSystem:
     options=[discord.SelectOption(label=label,emoji=emoji,value=key) for key,(emoji,label,_) in DEPARTMENTS.items() if row['department']!='staff' or key=='staff']
     await reply(click,'Elige el departamento de destino.',view=ChoiceView(options,chosen,'Departamento de destino'))
    return await i.response.send_modal(TextForm('Transferir caso','Motivo de la transferencia',transfer_form))
-  if action=='people':
+  if action in ('people','removepeople'):
    self.member_ticket(i,rid)
    await i.response.defer(ephemeral=True,thinking=True)
    try:members=await self.member_directory.load(i.guild,force=True)
    except DirectoryUnavailable:members=None
    self.member_ticket(i,rid)
-   picker=TicketMemberPicker(self,i.user.id,rid,members)
+   picker_type=TicketMemberRemovePicker if action=='removepeople' else TicketMemberPicker
+   picker=picker_type(self,i.user.id,rid,members)
    return await reply(i,picker.content(),view=picker)
   if action=='priority':
    return await i.response.send_modal(PriorityForm(self,rid,row['priority']))
@@ -800,11 +801,11 @@ class TicketSystem:
    lines=[f"**{n+1}.** {discord.utils.escape_markdown(f['filename'])[:100]} · {f['state']} · ID `{f['attachment']}`" for n,f in enumerate(files)]
    return await reply(i,('\n'.join(lines)[:1700] or 'Todavía no hay archivos adjuntos.')+'\nDescarga una copia con `/ticket archivo` indicando el ID del archivo.')
  def member_ticket(self,i,rid,actor=None):
-  if i.guild_id!=self.guild_id:raise ValueError('Usa Añadir miembro desde La Venganza RP.')
+  if i.guild_id!=self.guild_id:raise ValueError('Gestiona los participantes desde La Venganza RP.')
   row=self.store.get(rid)
   if (not row or row['status'] not in ('nuevo','en_atencion','esperando_jugador','resuelto')
     or row.get('deleted_at') or row.get('deletion_requested') or json.loads(row['form']).get('selftest')):
-   raise ValueError('Solo puedes añadir miembros a un ticket abierto y disponible.')
+   raise ValueError('Solo puedes gestionar participantes de un ticket abierto y disponible.')
   self.authorize(actor or i.user,row,staff=True)
   return row
  async def add_ticket_member(self,i,rid,uid):
@@ -853,6 +854,45 @@ class TicketSystem:
   log.info('TICKETS member_access_verified ticket=%s channel=%s member=%s individual=%s recorded_before=%s grant_written=%s',
     rid,channel.id,uid,not reserved,recorded,needs_grant)
   return needs_grant or not recorded
+
+ async def remove_ticket_member(self,i,rid,uid):
+  self.member_ticket(i,rid)
+  async with self.case_lock(rid):
+   async with self.lock:
+    guild=self.bot.get_guild(self.guild_id)
+    if not guild:raise ValueError('No pude encontrar el servidor. Vuelve a intentarlo.')
+    try:actor=await guild.fetch_member(i.user.id)
+    except discord.NotFound:raise ValueError('Ya no tienes acceso a este servidor.') from None
+    row=self.member_ticket(i,rid,actor)
+    if uid in (row['owner'],row.get('assignee'),row.get('excluded'),self.bot.user.id):
+     raise ValueError('No puedes remover al autor, al responsable, a la persona excluida ni al bot con esta acción.')
+    try:member=await guild.fetch_member(uid)
+    except discord.NotFound:member=None
+    if member and (member.guild.id!=self.guild_id or member.bot):
+     raise ValueError('No puedes remover a esa persona con esta acción.')
+    if uid not in self.store.people(rid):return dict(removed=False,retains_access=False)
+    # A User is also accepted by Discord for an overwrite left by someone who departed.
+    target=member or discord.User(state=self.bot._connection,
+      data=dict(id=str(uid),username=str(uid),discriminator='0',avatar=None))
+    channel=await self.channel(row)
+    keep_staff_access=member is not None and can_staff(member,row,self.store)
+    overwrite=channel.overwrites_for(target)
+    revoke=not keep_staff_access and any(getattr(overwrite,key) is True for key in TICKET_MEMBER_GRANTS)
+    async def remove():
+     if revoke:
+      for key in TICKET_MEMBER_GRANTS:
+       if getattr(overwrite,key) is True:setattr(overwrite,key,None)
+      await channel.set_permissions(target,overwrite=None if overwrite.is_empty() else overwrite,
+        reason=f'Retirar participante del ticket #{rid}; solicitado por {actor.id}; accesos del staff conservados')
+     confirmed=await self.channel(row)
+     if not keep_staff_access and any(getattr(confirmed.overwrites_for(target),key) is True for key in TICKET_MEMBER_GRANTS):
+      raise ValueError('Discord no confirmó la retirada de los permisos individuales. La persona sigue registrada para poder reintentar.')
+     await self.call('participant',rid,uid,actor.id,False)
+     return member is not None and confirmed.permissions_for(member).view_channel
+    retains_access=await self.tracked(row,f'Remover miembro {uid} del ticket #{rid}',remove)
+    log.info('TICKETS member_removed_verified ticket=%s channel=%s member=%s retains_access=%s staff_access_preserved=%s',
+      rid,channel.id,uid,retains_access,keep_staff_access)
+    return dict(removed=True,retains_access=retains_access)
 
  async def sync_member_panel(self,rid):
   async with self.panel_locks.setdefault(rid,asyncio.Lock()):
@@ -1398,6 +1438,12 @@ class TicketSystem:
     await self.add_ticket_member(i,row['id'],persona.id)
     await self.sync_member_panel(row['id'])
     return await reply(i,f"<@{persona.id}> figura como participante de <#{row['channel']}> con acceso verificado.")
+   if not añadir and row['status'] not in ('cerrado','fallido','creando'):
+    result=await self.remove_ticket_member(i,row['id'],persona.id)
+    await self.sync_member_panel(row['id'])
+    text=f"<@{persona.id}> ya no figura como participante del ticket #{row['id']}."
+    if result['retains_access']:text+=' Conserva el acceso que le corresponde por otros permisos.'
+    return await reply(i,text)
    async with self.lock:
     row=self.current(i,numero);self.authorize(i.user,row,True)
     if persona.bot or persona.id in (row['owner'],row.get('excluded')):raise ValueError('Esa persona no puede añadirse ni retirarse con esta acción.')

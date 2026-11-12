@@ -79,12 +79,13 @@ class ClosedArchivePanel(SafeView):
 ACTIONS={'claim':('Reclamar','🙋'),'wait':('Solicitar pruebas','📎'),'resolve':('Resolver','✅'),
  'close':('Cerrar','🔒'),'reopen':('Reabrir','🔓'),'transcript':('Transcripción','📄'),
  'note':('Nota interna','📝'),'transfer':('Transferir','🔀'),'priority':('Prioridad','🚩'),
- 'people':('Añadir miembro','👥'),'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️')}
+ 'people':('Añadir miembro','👥'),'removepeople':('Remover miembro','➖'),
+ 'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️')}
 class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticket:case:(?P<ticket>[0-9]+):(?P<action>[a-z]+)'):
  def __init__(self,rid,action):
   label,emoji=ACTIONS[action]
   super().__init__(discord.ui.Button(label=label,emoji=emoji,custom_id=f'lv:ticket:case:{rid}:{action}',
-   style=discord.ButtonStyle.danger if action in ('close','delete') else discord.ButtonStyle.secondary))
+   style=discord.ButtonStyle.danger if action in ('close','delete','removepeople') else discord.ButtonStyle.secondary))
   self.rid,self.action=rid,action
  @classmethod
  async def from_custom_id(cls,i,item,match):return cls(int(match['ticket']),match['action'])
@@ -100,10 +101,10 @@ class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticke
 class TicketControls(discord.ui.View):
  def __init__(self,rid,closed=False,deleted=False,*,assigned=False):
   super().__init__(timeout=None)
-  actions=[] if deleted else ['rate','delete'] if closed else ['resolve','close','priority','people'] if assigned else ['claim','resolve','close','priority','people']
+  actions=[] if deleted else ['rate','delete'] if closed else ['resolve','close','priority','people','removepeople'] if assigned else ['claim','resolve','close','priority','people','removepeople']
   for n,action in enumerate(actions):
    item=TicketAction(rid,action)
-   item.item.row=n//4
+   item.item.row=1 if action in ('people','removepeople') else n//4
    self.add_item(item)
  @classmethod
  def from_row(cls,row):
