@@ -71,6 +71,13 @@ async def answer(i, text, **kwargs):
     return await sender(text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none(), **kwargs)
 
 
+def photo_user_label(user):
+    escape=lambda value:discord.utils.escape_markdown(discord.utils.escape_mentions(value))
+    name=getattr(user,'display_name',None) or getattr(user,'global_name',None) or user.name
+    username=escape(user.name)
+    return f"**{escape(name)}** · @{username}" if name!=user.name else f'@{username}'
+
+
 class PhotoButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:photo:(?P<entry>[0-9]+):(?P<action>vote|remove|voters)'):
     def __init__(self, entry, action, count=0, disabled=False):
         label,emoji={'vote':(f'Votar · {count}','❤️'),'remove':('Quitar voto','↩️'),'voters':('Ver votantes','👥')}[action]
@@ -173,10 +180,10 @@ class PhotoVotersPanel(discord.ui.View):
         self.next.disabled=self.page>=data['pages']-1
 
     def embed(self,row,data):
-        lines=[f"{data['page']*VOTERS_PAGE_SIZE+n}. <@{uid}>" for n,uid in enumerate(data['users'],1)]
+        lines=[f"{data['page']*VOTERS_PAGE_SIZE+n}. {data['names'][uid]}" for n,uid in enumerate(data['users'],1)]
         label='voto' if data['total']==1 else 'votos'
         embed=discord.Embed(title=f"👥 Votantes · Foto #{row['id']}",color=COLOR,
-            description=f"Foto de <@{row['author']}> · **{data['total']} {label}**\n"
+            description=f"Foto de {data['names'][row['author']]} · **{data['total']} {label}**\n"
                 f"[Ver la foto]({self.system.source_link(row)})\n\n"+('\n'.join(lines) or 'Esta foto todavía no tiene votos.'))
         embed.set_footer(text=f"Página {data['page']+1}/{data['pages']} · Solo tú ves este panel · Pulsa Actualizar para ver cambios")
         return embed
@@ -560,7 +567,30 @@ class PhotoSystem:
         except discord.NotFound:raise ValueError('La publicación de esta foto ya no está disponible.') from None
         if message.author.id!=self.bot.user.id:
             raise ValueError('La publicación de esta foto no pertenece al bot.')
-        return row,await self.call('voters',entry,page)
+        data=await self.call('voters',entry,page)
+        data['names']=await self.voter_names(channel,[row['author'],*data['users']])
+        return row,data
+
+    async def voter_names(self,channel,users):
+        try:members={member.id:member for member in await self.member_directory.load(channel.guild)}
+        except DirectoryUnavailable:members={}
+        semaphore=asyncio.Semaphore(4)
+
+        async def resolve(uid):
+            member=members.get(uid)
+            if member is not None:return uid,photo_user_label(member)
+            async with semaphore:
+                try:
+                    try:member=await channel.guild.fetch_member(uid)
+                    except discord.NotFound:member=await self.bot.fetch_user(uid)
+                except discord.NotFound:
+                    return uid,'Cuenta eliminada o no disponible'
+                except discord.HTTPException as error:
+                    log.warning('PHOTOS voter_name_pending user=%s status=%s',uid,error.status)
+                    return uid,'Nombre no disponible temporalmente · Pulsa Actualizar'
+                return uid,photo_user_label(member)
+
+        return dict(await asyncio.gather(*(resolve(uid) for uid in dict.fromkeys(users))))
 
     async def show_voters(self,i,entry):
         row,data=await self.voters_page(i,entry,i.message.id if i.message else None)

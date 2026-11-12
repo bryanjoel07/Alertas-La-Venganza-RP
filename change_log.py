@@ -13,17 +13,16 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='photo-voters-panel-v30'
-SUMMARY=('Añade Ver votantes junto a Votar en cada foto del concurso. Abre un panel privado con las personas que '
-    'votaron por esa foto, el total, páginas de 25 y un botón para actualizar. La consulta vuelve a comprobar el acceso '
-    'a Fotos y la publicación en cada página, no menciona ni notifica a los votantes y no añade ni retira votos. '
-    'Sigue disponible después del cierre semanal. Las publicaciones existentes incorporan el botón en su mismo mensaje, '
-    'con copia privada anterior y posterior, conservando fotos, votos, menciones, premios, saldos y permisos.')
-RESTORE=('Código anterior: 4896684150b7fd987284a3b05dbf3d6d797a7a53. Conservar /data y su SQLite actual. '
-    'La consulta solo lee los votos existentes y no cambia esquemas ni resultados. Revertir código retira la consulta '
-    'de las fotos que se actualicen; para otras publicaciones, restaurar únicamente sus componentes desde '
-    'PHOTO_VOTERS_CONTROLS en el mismo mensaje, conservando adjuntos, texto e imágenes. '
-    'No restaurar una base antigua, borrar fotos, recalcular premios ni cambiar roles para revertir esta versión.')
+RELEASE='photo-voter-names-v31'
+SUMMARY=('Corrige los IDs que Discord mostraba en el panel privado de votantes. Presenta el apodo o nombre visible '
+    'y @usuario como texto completo, tanto para cada votante como para el autor de la foto. '
+    'Consulta el directorio de miembros y, si falta una persona, comprueba su perfil; conserva también los votos '
+    'de cuentas que salieron del servidor. Una cuenta o nombre no disponible se indica sin inventar identidades '
+    'ni eliminar votos. Conserva la privacidad del panel, la paginación, fotos, resultados, premios y permisos.')
+RESTORE=('Código anterior: 0527f6c090e982fd77c5e3f298f063b2530991e4. Conservar /data y su SQLite actual. '
+    'Esta corrección solo cambia cómo se consultan y presentan los nombres; no modifica votos ni esquemas. '
+    'Revertir código devuelve las menciones de la versión anterior. Volver a abrir Ver votantes actualiza el panel '
+    'privado con la versión desplegada. No restaurar una base antigua, borrar fotos ni cambiar cuentas o roles.')
 
 
 

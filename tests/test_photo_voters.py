@@ -6,6 +6,7 @@ import discord
 
 from backup import snapshot
 from photo_store import PhotoStore
+from photo_members import DirectoryUnavailable
 from photos import PhotoButton,PhotoControls,PhotoVotersPanel,FOTOS_CHANNEL
 from test_photos import PhotoServiceFixtures,BASE,GUILD
 import test_photos as fixtures
@@ -49,6 +50,14 @@ class PhotoVoterStoreTests(unittest.TestCase):
 
 
 class PhotoVotersTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        await PhotoServiceFixtures.asyncSetUp(self)
+        self.guild.fetch_member=AsyncMock(side_effect=lambda uid:self.named_user(uid))
+        self.bot.fetch_user=AsyncMock(side_effect=lambda uid:self.named_user(uid))
+
+    def named_user(self,uid,name=None,display=None):
+        return SimpleNamespace(id=uid,name=name or f'jugador{uid}',display_name=display or f'Jugador {uid}',global_name=None)
+
     def interaction(self,*args,**kwargs):
         i=PhotoServiceFixtures.interaction(self,*args,**kwargs)
         i.edit_original_response=AsyncMock()
@@ -79,7 +88,9 @@ class PhotoVotersTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         response=self.response(i)
         self.assertTrue(response.kwargs['ephemeral']);self.assertIsInstance(response.kwargs['view'],PhotoVotersPanel)
         text=response.kwargs['embed'].description
-        self.assertIn('<@2>',text);self.assertIn('<@3>',text);self.assertIn('**2 votos**',text)
+        self.assertIn('Jugador 2',text);self.assertIn('@jugador2',text)
+        self.assertIn('Jugador 3',text);self.assertIn('@jugador3',text);self.assertIn('**2 votos**',text)
+        self.assertNotIn('<@',text)
         self.assertEqual(response.kwargs['allowed_mentions'].to_dict(),discord.AllowedMentions.none().to_dict())
         self.assertEqual(self.system.store.entry(entry),before)
         self.assertEqual(self.system.store.voters(entry)['users'],[2,3])
@@ -93,7 +104,7 @@ class PhotoVotersTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         click=self.interaction(SimpleNamespace(id=999999))
         await panel.refresh.callback(click)
         result=click.edit_original_response.call_args
-        self.assertIn('<@3>',result.kwargs['embed'].description)
+        self.assertIn('@jugador3',result.kwargs['embed'].description)
         self.assertIn('**1 voto**',result.kwargs['embed'].description)
         self.assertEqual(result.kwargs['allowed_mentions'].to_dict(),discord.AllowedMentions.none().to_dict())
         click.response.defer.assert_awaited_once_with()
@@ -102,12 +113,12 @@ class PhotoVotersTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         row,message=await self.photo()
         for uid in range(100,127):self.system.store.vote(row['id'],uid,now=BASE+1)
         i,panel=await self.panel(row,message)
-        self.assertIn('<@100>',self.response(i).kwargs['embed'].description)
-        self.assertNotIn('<@125>',self.response(i).kwargs['embed'].description)
+        self.assertIn('@jugador100',self.response(i).kwargs['embed'].description)
+        self.assertNotIn('@jugador125',self.response(i).kwargs['embed'].description)
         click=self.interaction(SimpleNamespace(id=999999))
         await panel.next.callback(click)
         result=click.edit_original_response.call_args
-        self.assertIn('<@125>',result.kwargs['embed'].description);self.assertNotIn('<@100>',result.kwargs['embed'].description)
+        self.assertIn('@jugador125',result.kwargs['embed'].description);self.assertNotIn('@jugador100',result.kwargs['embed'].description)
         self.assertTrue(panel.next.disabled);self.assertFalse(panel.previous.disabled)
         self.assertIn('Página 2/2',result.kwargs['embed'].footer.text)
         for uid in (125,126):self.system.store.vote(row['id'],uid,False,now=BASE+2)
@@ -148,7 +159,7 @@ class PhotoVotersTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         row,message=await self.photo();self.system.store.vote(row['id'],3,now=BASE+1)
         week=self.system.store.current(BASE);self.system.store.freeze(week['week'],week['ends'])
         i,panel=await self.panel(row,message,user=1)
-        self.assertIn('<@3>',self.response(i).kwargs['embed'].description)
+        self.assertIn('@jugador3',self.response(i).kwargs['embed'].description)
         controls=PhotoControls(row['id'],1,True)
         states={child.custom_id:child.item.disabled for child in controls.children}
         self.assertTrue(states[f"lv:photo:{row['id']}:vote"]);self.assertTrue(states[f"lv:photo:{row['id']}:remove"])
@@ -156,9 +167,79 @@ class PhotoVotersTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
 
     async def test_member_who_left_the_guild_is_kept_in_the_vote_count_and_list(self):
         row,message=await self.photo();self.system.store.vote(row['id'],987654321,now=BASE+1)
+        async def member(uid):
+            if uid==987654321:raise discord.NotFound(SimpleNamespace(status=404,reason='missing'),'missing')
+            return self.named_user(uid)
+        self.guild.fetch_member.side_effect=member
+        self.bot.fetch_user.return_value=self.named_user(987654321,'cuentafuera','Persona que salió')
+        self.bot.fetch_user.side_effect=None
         i,panel=await self.panel(row,message)
-        self.assertIn('<@987654321>',self.response(i).kwargs['embed'].description)
-        self.system.member_directory.load.assert_not_awaited()
+        text=self.response(i).kwargs['embed'].description
+        self.assertIn('Persona que salió',text);self.assertIn('@cuentafuera',text)
+        self.assertNotIn('<@',text);self.assertIn('**1 voto**',text)
+        self.bot.fetch_user.assert_awaited_once_with(987654321)
+        self.assertEqual(self.system.store.voters(row['id'])['users'],[987654321])
+
+    async def test_reported_id_is_rendered_as_complete_visible_name_and_username(self):
+        row,message=await self.photo();uid=709959717299945552
+        self.system.store.vote(row['id'],uid,now=BASE+1)
+        named=self.named_user(uid,'forkypr24','😈 Keyler Santos 🖤🔥')
+        self.system.member_directory.load.return_value=[self.named_user(1),named]
+        i,panel=await self.panel(row,message)
+        text=self.response(i).kwargs['embed'].description
+        self.assertIn('**😈 Keyler Santos 🖤🔥** · @forkypr24',text)
+        self.assertIn('Foto de **Jugador 1** · @jugador1',text)
+        self.assertNotIn(str(uid),text);self.assertNotIn('<@',text)
+        self.guild.fetch_member.assert_not_awaited();self.bot.fetch_user.assert_not_awaited()
+
+    async def test_unavailable_member_directory_uses_exact_member_lookups(self):
+        row,message=await self.photo();self.system.store.vote(row['id'],3,now=BASE+1)
+        self.system.member_directory.load.side_effect=DirectoryUnavailable()
+        i,panel=await self.panel(row,message)
+        self.assertIn('Jugador 3',self.response(i).kwargs['embed'].description)
+        self.guild.fetch_member.assert_any_await(3);self.bot.fetch_user.assert_not_awaited()
+
+    async def test_deleted_account_has_an_explicit_label_without_losing_its_vote(self):
+        row,message=await self.photo();self.system.store.vote(row['id'],3,now=BASE+1)
+        async def member(uid):
+            if uid==3:raise discord.NotFound(SimpleNamespace(status=404,reason='missing'),'missing')
+            return self.named_user(uid)
+        self.guild.fetch_member.side_effect=member
+        self.bot.fetch_user.side_effect=discord.NotFound(SimpleNamespace(status=404,reason='missing'),'missing')
+        i,panel=await self.panel(row,message)
+        text=self.response(i).kwargs['embed'].description
+        self.assertIn('Cuenta eliminada o no disponible',text);self.assertIn('**1 voto**',text)
+        self.assertNotIn('<@',text);self.assertEqual(self.system.store.voters(row['id'])['users'],[3])
+
+    async def test_temporary_name_failure_can_be_refreshed_without_mislabeling_the_account(self):
+        row,message=await self.photo();self.system.store.vote(row['id'],3,now=BASE+1)
+        async def member(uid):
+            if uid==3:raise discord.HTTPException(SimpleNamespace(status=503,reason='unavailable'),'temporary')
+            return self.named_user(uid)
+        self.guild.fetch_member.side_effect=member
+        i,panel=await self.panel(row,message)
+        text=self.response(i).kwargs['embed'].description
+        self.assertIn('Nombre no disponible temporalmente',text);self.assertNotIn('Cuenta eliminada',text)
+        self.guild.fetch_member.side_effect=lambda uid:self.named_user(uid)
+        click=self.interaction(SimpleNamespace(id=999999));await panel.refresh.callback(click)
+        self.assertIn('@jugador3',click.edit_original_response.call_args.kwargs['embed'].description)
+        self.assertNotIn('no disponible',click.edit_original_response.call_args.kwargs['embed'].description)
+        self.assertEqual(self.system.store.entry(row['id'])['votes'],1)
+
+    async def test_full_length_names_fit_and_user_markdown_or_mentions_are_not_interpreted(self):
+        row,message=await self.photo()
+        for uid in range(100,125):self.system.store.vote(row['id'],uid,now=BASE+1)
+        nickname='*'*32;username='_'*32
+        self.system.member_directory.load.return_value=[self.named_user(uid,username,nickname) for uid in range(100,125)]
+        i,panel=await self.panel(row,message)
+        text=self.response(i).kwargs['embed'].description
+        escaped=discord.utils.escape_markdown(nickname)
+        self.assertEqual(text.count(f'**{escaped}**'),25);self.assertLessEqual(len(text),4096)
+        self.assertNotIn('<@',text)
+        self.system.member_directory.load.return_value=[self.named_user(uid,'jugador','@everyone <@123456789012345678>') for uid in range(100,125)]
+        click=self.interaction(SimpleNamespace(id=999999));await panel.refresh.callback(click)
+        text=click.edit_original_response.call_args.kwargs['embed'].description
+        self.assertNotIn('@everyone',text);self.assertNotIn('<@123456789012345678>',text)
 
     async def test_read_failure_is_private_and_does_not_turn_the_query_into_a_vote(self):
         row,message=await self.photo();self.system.store.vote(row['id'],2,now=BASE+1)
