@@ -11,6 +11,7 @@ from weekly_challenges import week_bounds
 from bot_settings import DEFAULT_PHOTO_REWARDS,ensure_settings_schema,photo_rewards_in,photo_week
 
 COIN_REWARDS=DEFAULT_PHOTO_REWARDS
+VOTERS_PAGE_SIZE=25
 
 
 class PhotoStore:
@@ -191,6 +192,15 @@ class PhotoStore:
         with self.db(readonly=True) as db:
             query = self.query() + (' WHERE e.week=?' if week is not None else '') + ' GROUP BY e.id ORDER BY votes DESC,e.created,e.attachment,e.id'
             return [dict(r) for r in db.execute(query, (week,) if week is not None else ())]
+
+    def voters(self, entry, page=0):
+        with self.db(readonly=True) as db:
+            total=db.execute('SELECT COUNT(*) FROM lv_photo_votes WHERE entry=?',(entry,)).fetchone()[0]
+            pages=max(1,(total+VOTERS_PAGE_SIZE-1)//VOTERS_PAGE_SIZE)
+            page=max(0,min(page,pages-1))
+            users=[row[0] for row in db.execute('''SELECT user FROM lv_photo_votes WHERE entry=?
+                ORDER BY created,user LIMIT ? OFFSET ?''',(entry,VOTERS_PAGE_SIZE,page*VOTERS_PAGE_SIZE))]
+            return dict(total=total,page=page,pages=pages,users=users)
 
     @classmethod
     def leaders_in(cls,db,week):

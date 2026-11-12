@@ -13,18 +13,17 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='ticket-remove-member-v29'
-SUMMARY=('Añade Remover miembro junto a Añadir miembro en los tickets abiertos, incluidos los ya existentes. '
-    'El selector privado muestra solo participantes añadidos y permite buscarlos por nombre, usuario o ID. '
-    'Al retirar se comprueban el estado del caso y los permisos actuales del staff; se conservan el autor, el responsable '
-    'y los accesos de staff y administradores. Solo se retiran los permisos individuales de la invitación afectada, '
-    'se verifica la respuesta de Discord y después se actualizan los participantes y su historial. '
-    'La operación guarda copias privadas antes/después. Los roles y los accesos de otras personas se conservan.')
-RESTORE=('Código anterior: 0a7cf276af687e3b8ebb1f2e8fd46726e226cfd7. Conservar /data y su SQLite actual. '
-    'Revertir el código retira el botón nuevo al actualizar los controles; no devuelve invitaciones ya retiradas. '
-    'Para restaurar una retirada autorizada, comparar los participantes y permisos del caso en before/after de /cambios '
-    'y volver a añadir únicamente a esa persona al ticket indicado, con autorización. '
-    'No restaurar una base antigua ni modificar roles, otras cuentas, canales o pruebas para revertir esta versión.')
+RELEASE='photo-voters-panel-v30'
+SUMMARY=('Añade Ver votantes junto a Votar en cada foto del concurso. Abre un panel privado con las personas que '
+    'votaron por esa foto, el total, páginas de 25 y un botón para actualizar. La consulta vuelve a comprobar el acceso '
+    'a Fotos y la publicación en cada página, no menciona ni notifica a los votantes y no añade ni retira votos. '
+    'Sigue disponible después del cierre semanal. Las publicaciones existentes incorporan el botón en su mismo mensaje, '
+    'con copia privada anterior y posterior, conservando fotos, votos, menciones, premios, saldos y permisos.')
+RESTORE=('Código anterior: 4896684150b7fd987284a3b05dbf3d6d797a7a53. Conservar /data y su SQLite actual. '
+    'La consulta solo lee los votos existentes y no cambia esquemas ni resultados. Revertir código retira la consulta '
+    'de las fotos que se actualicen; para otras publicaciones, restaurar únicamente sus componentes desde '
+    'PHOTO_VOTERS_CONTROLS en el mismo mensaje, conservando adjuntos, texto e imágenes. '
+    'No restaurar una base antigua, borrar fotos, recalcular premios ni cambiar roles para revertir esta versión.')
 
 
 

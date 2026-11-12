@@ -37,7 +37,7 @@ class PhotoUploadTests(PhotoServiceFixtures,unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row['source'],message.id);self.assertEqual(row['control'],message.id)
         self.assertEqual(row['post_mode'],'post');self.assertIsNone(row['media'])
         self.assertEqual([c.custom_id for r in message.components for c in r.children],
-            [f"lv:photo:{row['id']}:vote",f"lv:photo:{row['id']}:remove",'lv:photo:upload'])
+            [f"lv:photo:{row['id']}:vote",f"lv:photo:{row['id']}:voters",f"lv:photo:{row['id']}:remove",'lv:photo:upload'])
         source.reply.assert_not_awaited();source.edit.assert_not_awaited();source.delete.assert_not_awaited()
         self.assertTrue(PhotoControls(row['id']).is_persistent());self.assertTrue(PhotoUploadPanel().is_persistent())
         for child in PhotoControls(row['id']).children:

@@ -14,7 +14,7 @@ import discord
 from discord import app_commands
 
 from economy_store import SLOTS
-from photo_store import PhotoStore, week_bounds
+from photo_store import PhotoStore, week_bounds,VOTERS_PAGE_SIZE
 from photo_members import MemberDirectory,DirectoryUnavailable,MemberPicker,NativePickerFallback
 
 log = logging.getLogger('LaVenganzaRP.photos')
@@ -71,12 +71,12 @@ async def answer(i, text, **kwargs):
     return await sender(text, ephemeral=True, allowed_mentions=discord.AllowedMentions.none(), **kwargs)
 
 
-class PhotoButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:photo:(?P<entry>[0-9]+):(?P<action>vote|remove)'):
+class PhotoButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:photo:(?P<entry>[0-9]+):(?P<action>vote|remove|voters)'):
     def __init__(self, entry, action, count=0, disabled=False):
+        label,emoji={'vote':(f'Votar · {count}','❤️'),'remove':('Quitar voto','↩️'),'voters':('Ver votantes','👥')}[action]
         super().__init__(discord.ui.Button(
-            label=f'Votar · {count}' if action == 'vote' else 'Quitar voto',
-            emoji='❤️' if action == 'vote' else '↩️', custom_id=f'lv:photo:{entry}:{action}',
-            style=discord.ButtonStyle.secondary, disabled=disabled))
+            label=label,emoji=emoji,custom_id=f'lv:photo:{entry}:{action}',
+            style=discord.ButtonStyle.secondary, disabled=disabled if action!='voters' else False))
         self.entry, self.action = entry, action
 
     @classmethod
@@ -86,14 +86,17 @@ class PhotoButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:photo
     async def callback(self, i):
         await i.response.defer(ephemeral=True)
         try:
-            await i.client.photos.vote(i, self.entry, self.action == 'vote')
+            if self.action=='voters':await i.client.photos.show_voters(i,self.entry)
+            else:await i.client.photos.vote(i, self.entry, self.action == 'vote')
         except ValueError as error:
             await answer(i, str(error))
         except discord.HTTPException:
-            await answer(i, 'No pudimos actualizar la votación ahora. Inténtalo otra vez.')
+            await answer(i,'No pudimos consultar los votantes ahora. Inténtalo otra vez.' if self.action=='voters'
+                else 'No pudimos actualizar la votación ahora. Inténtalo otra vez.')
         except Exception:
-            log.exception('PHOTOS vote_error entry=%s', self.entry)
-            await answer(i, 'No pudimos completar el voto ahora. Inténtalo otra vez.')
+            log.exception('PHOTOS control_error entry=%s action=%s',self.entry,self.action)
+            await answer(i,'No pudimos consultar los votantes ahora. Inténtalo otra vez.' if self.action=='voters'
+                else 'No pudimos completar el voto ahora. Inténtalo otra vez.')
 
 
 class UploadButton(discord.ui.DynamicItem[discord.ui.Button], template=r'lv:photo:upload'):
@@ -153,8 +156,55 @@ class PhotoControls(discord.ui.View):
     def __init__(self, entry, count=0, disabled=False):
         super().__init__(timeout=None)
         self.add_item(PhotoButton(entry, 'vote', count, disabled))
+        self.add_item(PhotoButton(entry, 'voters'))
         self.add_item(PhotoButton(entry, 'remove', count, disabled))
         self.add_item(UploadButton())
+
+
+class PhotoVotersPanel(discord.ui.View):
+    def __init__(self,system,actor,row,data):
+        super().__init__(timeout=300)
+        self.system,self.actor,self.entry,self.control=system,actor,row['id'],row['control']
+        self.update_page(data)
+
+    def update_page(self,data):
+        self.page=data['page']
+        self.previous.disabled=self.page==0
+        self.next.disabled=self.page>=data['pages']-1
+
+    def embed(self,row,data):
+        lines=[f"{data['page']*VOTERS_PAGE_SIZE+n}. <@{uid}>" for n,uid in enumerate(data['users'],1)]
+        label='voto' if data['total']==1 else 'votos'
+        embed=discord.Embed(title=f"👥 Votantes · Foto #{row['id']}",color=COLOR,
+            description=f"Foto de <@{row['author']}> · **{data['total']} {label}**\n"
+                f"[Ver la foto]({self.system.source_link(row)})\n\n"+('\n'.join(lines) or 'Esta foto todavía no tiene votos.'))
+        embed.set_footer(text=f"Página {data['page']+1}/{data['pages']} · Solo tú ves este panel · Pulsa Actualizar para ver cambios")
+        return embed
+
+    async def interaction_check(self,i):
+        if i.user.id!=self.actor:
+            await answer(i,'Abre Ver votantes desde la foto para consultar tu propio panel.')
+            return False
+        return True
+
+    async def turn(self,i,step):
+        await i.response.defer()
+        row,data=await self.system.voters_page(i,self.entry,self.control,self.page+step)
+        self.update_page(data)
+        await i.edit_original_response(embed=self.embed(row,data),view=self,allowed_mentions=discord.AllowedMentions.none())
+
+    @discord.ui.button(label='Anterior',emoji='◀️')
+    async def previous(self,i,button):await self.turn(i,-1)
+
+    @discord.ui.button(label='Siguiente',emoji='▶️')
+    async def next(self,i,button):await self.turn(i,1)
+
+    @discord.ui.button(label='Actualizar',emoji='🔄')
+    async def refresh(self,i,button):await self.turn(i,0)
+
+    async def on_error(self,i,error,item):
+        log.error('PHOTOS voters_panel_error entry=%s',self.entry,exc_info=error)
+        await answer(i,str(error) if isinstance(error,ValueError) else 'No pudimos consultar los votantes ahora. Inténtalo otra vez.')
 
 
 class PhotoSystem:
@@ -209,8 +259,9 @@ class PhotoSystem:
 
     def panel_embed(self, week):
         embed = discord.Embed(title=PANEL_TITLE, color=COLOR, description=
-            'Pulsa **📸 Subir foto**. Primero puedes elegir a quién mencionar en la lista o usar **Buscar**; después pulsa **Elegir foto** para subir la imagen y su texto. Tu foto aparecerá con tu nombre y los botones **❤️ Votar** y **↩️ Quitar voto** en la misma publicación.\n\n'
+            'Pulsa **📸 Subir foto**. Primero puedes elegir a quién mencionar en la lista o usar **Buscar**; después pulsa **Elegir foto** para subir la imagen y su texto. Tu foto aparecerá con tu nombre y los botones **❤️ Votar**, **👥 Ver votantes** y **↩️ Quitar voto** en la misma publicación.\n\n'
             'Puedes votar una vez por cada foto de los demás y cambiar de opinión quitando tu voto. '
+            '**Ver votantes** abre una lista privada de las personas que votaron por esa foto, también después del cierre. '
             'Las fotos compiten de lunes a domingo, hora de Puerto Rico. '
             'Al terminar la semana destacamos la más votada con el nombre de quien la publicó. '
             'Si empatan, gana la que se publicó primero.\n\n'
@@ -496,6 +547,56 @@ class PhotoSystem:
             except Exception:
                 log.exception('PHOTOS control_refresh_pending entry=%s', row['id'])
 
+    async def voters_page(self,i,entry,control,page=0):
+        if not self.enabled() or i.guild_id!=self.guild_id or i.channel_id!=FOTOS_CHANNEL or i.user.bot:
+            raise ValueError('Consulta los votantes desde la foto en Fotos de La Venganza RP.')
+        row=await self.call('entry',entry)
+        if not row or not row['active'] or not control or control!=row['control']:
+            raise ValueError('Esta foto ya no está disponible para consultar sus votantes.')
+        channel=await self.channel()
+        if not channel.permissions_for(i.user).view_channel:
+            raise ValueError('No tienes acceso a esta votación.')
+        try:message=await channel.fetch_message(control)
+        except discord.NotFound:raise ValueError('La publicación de esta foto ya no está disponible.') from None
+        if message.author.id!=self.bot.user.id:
+            raise ValueError('La publicación de esta foto no pertenece al bot.')
+        return row,await self.call('voters',entry,page)
+
+    async def show_voters(self,i,entry):
+        row,data=await self.voters_page(i,entry,i.message.id if i.message else None)
+        panel=PhotoVotersPanel(self,i.user.id,row,data)
+        await answer(i,None,embed=panel.embed(row,data),view=panel)
+
+    async def upgrade_voter_controls(self,channel):
+        upgraded=0
+        for row in await self.call('entries'):
+            if not row['active'] or not row['control']:continue
+            try:message=await channel.fetch_message(row['control'])
+            except discord.NotFound:continue
+            ids=[getattr(child,'custom_id',None) for group in message.components for child in group.children]
+            if f"lv:photo:{row['id']}:voters" in ids:continue
+            if message.author.id!=self.bot.user.id or f"lv:photo:{row['id']}:vote" not in ids:
+                raise ValueError('No se modifican controles de Fotos que no pertenecen a este bot.')
+            async def snapshot():
+                current=await channel.fetch_message(row['control'])
+                return dict(entry=row['id'],message=current.id,votes=self.store.entry(row['id'])['votes'],
+                    content=current.content,embeds=[embed.to_dict() for embed in current.embeds],
+                    components=[group.to_dict() for group in current.components])
+            async def upgrade():
+                current=await self.call('entry',row['id'])
+                await message.edit(view=PhotoControls(row['id'],current['votes'],closed(current)),
+                    allowed_mentions=discord.AllowedMentions.none())
+                confirmed=await channel.fetch_message(message.id)
+                buttons=[child for group in confirmed.components for child in group.children]
+                if [getattr(child,'custom_id',None) for child in buttons]!=[child.custom_id for child in PhotoControls(row['id']).children]:
+                    raise ValueError('Discord no confirmó el botón Ver votantes en esta foto.')
+                if any(getattr(child,'disabled',False) for child in buttons if getattr(child,'custom_id',None)==f"lv:photo:{row['id']}:voters"):
+                    raise ValueError('Discord dejó desactivada la consulta de votantes.')
+            await self.bot.changes.tracked('PHOTO_VOTERS_CONTROLS','Añadir consulta privada de votantes a una foto',upgrade,
+                request_id=f"v1:{row['id']}:{row['control']}",snapshot=snapshot)
+            upgraded+=1
+        log.info('PHOTOS voter_controls_verified upgraded=%s closed_weeks_readable=True files_preserved=True',upgraded)
+
     async def vote(self, i, entry, add):
         if not self.enabled() or i.guild_id != self.guild_id or i.channel_id != FOTOS_CHANNEL or i.user.bot:
             raise ValueError('Vota desde la foto en el canal de Fotos de La Venganza RP.')
@@ -708,6 +809,7 @@ class PhotoSystem:
             await self.scan(channel)
             async with self.lock:
                 await self.repair_image_layout(channel)
+                await self.upgrade_voter_controls(channel)
             # Recheck existing controls after offline deletions without touching original posts.
             week = await self.call('current')
             verified = 0
@@ -726,7 +828,7 @@ class PhotoSystem:
                             message = await self.ensure_control(row, source)
                         confirmed = await channel.fetch_message(message.id)
                         ids = [getattr(c, 'custom_id', None) for r in confirmed.components for c in r.children]
-                        if ids != [f"lv:photo:{row['id']}:vote", f"lv:photo:{row['id']}:remove",'lv:photo:upload'] or confirmed.reference:
+                        if ids != [child.custom_id for child in PhotoControls(row['id']).children] or confirmed.reference:
                             raise RuntimeError('Discord no confirmó la foto y sus botones en una sola publicación.')
                         verified += 1
             commands = await self.bot.tree.fetch_commands(guild=discord.Object(id=self.guild_id))
@@ -759,7 +861,7 @@ class PhotoSystem:
                 raise RuntimeError('No se confirmó el campo opcional de menciones.')
             self.prepared = True
             log.info('PHOTOS upload_form_verified image=True optional_caption=True optional_mentions=True max_mentions=5 notify_selected_only=True')
-            log.info('PHOTOS controls_verified channel=%s entries=%s buttons=vote,remove,upload commands=semana,premio,subir,retirar self_votes=False single_photo_post=True replies=False', channel.id, verified)
+            log.info('PHOTOS controls_verified channel=%s entries=%s buttons=vote,voters,remove,upload commands=semana,premio,subir,retirar self_votes=False single_photo_post=True replies=False', channel.id, verified)
             log.info('PHOTOS ready channel=%s name=%s week=%s entries=%s closes=%s timezone=America/Puerto_Rico originals_preserved=True persistent_buttons=True',
                 channel.id, channel.name, week['week'], len(self.store.entries(week['week'])), week['ends'])
 
