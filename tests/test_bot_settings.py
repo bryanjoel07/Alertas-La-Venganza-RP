@@ -212,6 +212,23 @@ class SettingsUITests(SettingsFixtures,unittest.IsolatedAsyncioTestCase):
         self.bot.tree=SimpleNamespace(fetch_commands=AsyncMock(return_value=[command]))
         await self.system.ready()
 
+    async def test_settings_ready_accepts_the_role_policy_and_rejects_mismatched_discovery(self):
+        from bot_access import ADMIN_DISCOVERY
+        self.system.group.default_permissions=ADMIN_DISCOVERY
+        tree=SimpleNamespace(allowed_contexts=discord.app_commands.AppCommandContext(),
+            allowed_installs=discord.app_commands.AppInstallationType())
+        data=self.system.group.to_dict(tree)
+        data.update(id='123',application_id='456',version='1',guild_id=str(GUILD))
+        command=discord.app_commands.AppCommand(data=data,state=SimpleNamespace())
+        self.assertFalse(command.default_member_permissions.administrator)
+        self.bot.tree=SimpleNamespace(fetch_commands=AsyncMock(return_value=[command]))
+        await self.system.ready()
+        for permissions in (None,'0','8'):
+            altered=discord.app_commands.AppCommand(data=dict(data,default_member_permissions=permissions),state=SimpleNamespace())
+            self.bot.tree.fetch_commands.return_value=[altered]
+            with self.subTest(permissions=permissions),self.assertRaises(RuntimeError):
+                await self.system.ready()
+
     async def test_activity_marks_failed_workers_in_red_and_includes_native_loops(self):
         failed=MagicMock();failed.cancelled.return_value=False;failed.done.return_value=True
         failed.exception.return_value=ValueError('private details')

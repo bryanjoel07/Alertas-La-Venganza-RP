@@ -335,8 +335,8 @@ class SettingsPanel:
         if not any(o.get('name')=='panel' for o in command.get('options',[])):
             raise RuntimeError('Discord no confirmó /ajustes panel.')
         permissions=registered.default_member_permissions
-        if permissions is None or not permissions.administrator:
-            raise RuntimeError('Discord no confirmó el acceso de administradores para /ajustes.')
+        if permissions is None or permissions!=self.group.default_permissions:
+            raise RuntimeError('Discord no confirmó los permisos configurados para /ajustes.')
         state=await self.call('snapshot')
         for kind,target in (('schedule',None),('text',None),('rewards',state['week'])):
             form=SettingsForm(self,0,state,kind,target).to_dict()

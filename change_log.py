@@ -14,18 +14,16 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='private-ticket-outcomes-v35'
-SUMMARY=('Separa el aviso del jugador y la gestión del staff al cerrar o resolver tickets. En el canal y en '
-    'el mensaje directo al autor solo se muestra el estado y la valoración; solución interna, estado del '
-    'respaldo y Eliminar ticket se consultan en paneles privados del staff. Corrige avisos existentes del '
-    'propio bot con copias antes/después y sin reenviar mensajes directos antiguos. Permite valorar al '
-    'resolver o cerrar una sola vez y protege la solución en las transcripciones del jugador, conservando '
-    'la copia completa para staff. Mantiene los permisos de roles, canales, pruebas y casos reservados.')
-RESTORE=('Código anterior: 314a1383191e5e76ba358a70c6695169ae61ea36. Conservar /data y su SQLite actual. '
-    'Revertir código recupera las vistas anteriores; no elimina valoraciones nuevas ni recupera por sí solo '
-    'el texto editado. Consultar TICKET_OUTCOME_PRIVACY y TICKET_OUTCOME_NOTICE para restaurar únicamente '
-    'mensajes propios y componentes autorizados por sus IDs. No restaurar bases antiguas, borrar canales '
-    'o pruebas, ni cambiar roles, membresías o permisos. Conservar los registros y copias de mensajes anteriores.')
+RELEASE='private-ticket-outcomes-v36'
+SUMMARY=('Corrige la comprobación de arranque de /ajustes: compara los permisos registrados en Discord con '
+    'la política configurada del grupo, en lugar de exigir el bit global Administrador. Reconoce así la '
+    'separación administrativa por roles ya aplicada. Conserva los avisos de tickets privados para staff, '
+    'la valoración del autor, las copias de mensajes y los permisos actuales de roles y canales.')
+RESTORE=('Código anterior: 69944754a0f3dc11a9f53faecaa6d29111607444. Conservar /data y su SQLite actual. '
+    'Revertir esta validación vuelve a la comprobación anterior de /ajustes, sin alterar los comandos ni '
+    'la privacidad de tickets. Los textos y componentes anteriores siguen en TICKET_OUTCOME_PRIVACY y '
+    'TICKET_OUTCOME_NOTICE para restauración autorizada por IDs. No restaurar bases antiguas, borrar '
+    'mensajes o pruebas, ni cambiar roles, membresías o permisos.')
 
 
 
