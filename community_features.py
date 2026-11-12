@@ -81,11 +81,19 @@ class GuideView(discord.ui.View):
         shop = store.config('shop_channel')
         destinations = (
             ('Mi perfil','👤',profiles,0),
+            ('Mi saldo','🪙',profiles,0),
             ('Tienda','🛍️',shop,0),
             ('Probador','👔',shop,0),
             ('Retos y monedas','🏆',shop,1),
-            ('Ser streamer','📺',str(CHANNEL_ID),1),
-            ('Mi saldo','🪙',profiles,1),
+            ('Fotos','📸','1513422142014754976',1),
+            ('Minijuegos','🧩','1513422089162330184',1),
+            ('Tickets','🎫','1513423707467415642',2),
+            ('Feedback','✨','1539014594348064939',2),
+            ('Sugerencias','💡','1539013973947588759',2),
+            ('Errores','🐞','1556488595131466000',2),
+            ('Ser streamer','📺',str(CHANNEL_ID),3),
+            ('Postulaciones','🛡️','1567399097500041237',3),
+            ('Normas','📚',str(setting(store.path,'rules','source_channel')),3),
         )
         for label,emoji,channel_id,row in destinations:
             if channel_id:
@@ -195,14 +203,22 @@ class CommunityFeatures:
         for title,body in (
             ('👤 Perfil y saldo',f"En <#{store.config('profiles_channel')}> usa `/perfil`: muestra saldo, cosméticos, eventos y podios. **Mi perfil** y **Mi saldo** te llevan a ese canal. Usa **Actualizar** después de comprar."),
             ('🪙 Retos y monedas',f"En <#{store.config('shop_channel')}> pulsa **Retos y monedas** en el panel de la tienda o usa `/retos`: hasta **450 🪙 semanales** por actividad confirmada. Una inscripción o estar AFK no cuenta."),
-            ('📸 Fotos y premios','En <#1513422142014754976> pulsa **Subir foto** y deja que la comunidad vote. Cada semana: '+
+            ('📸 Fotos, votos y premios','En <#1513422142014754976> usa **Subir foto**, **Votar** y **Quitar voto**. **Ver votantes** abre una lista privada con nombres completos, páginas y Actualizar; sigue disponible tras el cierre. Premios: '+
                 ' · '.join(f'{medal} **{coins} monedas**' for medal,coins in zip(('🥇','🥈','🥉'),store.photo_rewards()))+
-                '. Un puesto por jugador, con su foto más votada. Se entregan al cerrar el domingo, hora de Puerto Rico. Mira el podio con `/foto semana` y gástalas en la tienda.'),
+                '. Cuenta tu foto más votada, un puesto por jugador. Cierre semanal: domingo, hora de Puerto Rico. `/foto semana` muestra el podio.'),
+            ('🎫 Tickets y participantes','En <#1513423707467415642> elige el motivo y completa el formulario. Adjunta pruebas en tu caso y valora la atención al cerrarlo. El staff autorizado puede **Añadir miembro**, **Remover miembro**, cambiar la prioridad y resolver. Se conserva el acceso del autor, del responsable y del staff.'),
+            ('🧩 Minijuegos','En <#1513422089162330184> elige **Adivinar lugar**, **Roleplay** o **Acertijos** y pulsa **Responder**. Los aciertos dan monedas para la tienda. El panel indica cuándo puedes volver a responder. Consulta tu progreso y el ranking con `/minijuegos`.'),
             ('🛍️ Tienda y probador',f"En <#{store.config('shop_channel')}> usa **Ver catálogo** o **Probar cosméticos** en el panel. También puedes usar `/tienda` y `/probar`. `/comprar` exige confirmación; `/inventario` y `/equipar` gestionan lo que ya tienes."),
             ('🎁 Regalos y ahorro','`/regalar` solicita confirmación del destinatario. `/deseos` guarda artículos y `/saldo` muestra tu meta de ahorro.'),
+            ('✨ Feedback','En <#1539014594348064939> valora la atención del staff, tanto en tickets como fuera de ellos. Elige las estrellas, añade un comentario si quieres y decide si publicas la opinión o la reservas para administración.'),
+            ('💡 Sugerencias','En <#1539013973947588759> presenta tu idea desde el panel y consulta tus sugerencias y su estado: pendiente, aceptada, en proceso, hecha o rechazada.'),
+            ('🐞 Reportar errores','En <#1556488595131466000> abre el formulario del bot, explica qué ocurrió y adjunta capturas o videos. El reporte y sus pruebas quedan juntos para que el equipo pueda revisarlos.'),
+            ('📚 Normas',f"Consulta <#{setting(store.path,'rules','source_channel')}> o usa `/regla` y elige el tema. El buscador responde por privado con la norma del canal oficial."),
+            ('🛡️ Postulaciones de staff','En <#1567399097500041237> completa tu solicitud. Usa `/staff mi_solicitud` para consultar su estado y los mensajes del equipo. La revisión y las entrevistas quedan a cargo del staff.'),
             ('🏁 Eventos y reuniones','Inscríbete desde los anuncios. El staff confirma asistencia y resultados; los premios y retos usan esos registros.'),
             ('📺 Creadores','**Ser streamer** abre <#1568403146219454586>. Allí pulsa **Solicitar rol** o usa `/streamer solicitar`, verifica tu canal y guarda su enlace. Los avisos requieren **La Venganza RP** en el título. El staff puede usar `/streamer registrar`.'),
             ('📡 Estado del servidor',f'SERVER UP diario: **{friendly_hour(store.daily_schedule())} Puerto Rico**. Caídas, recuperaciones y mantenimiento se anuncian por separado.'),
+            ('⚙️ Administración','`/ajustes panel` permite revisar y confirmar cambios en las funciones del bot. `/estado-bot` muestra su estado y `/cambios historial` conserva el registro privado de cambios. Estas herramientas requieren los permisos correspondientes.'),
         ):
             embed.add_field(name=title,value=body,inline=False)
         embed.set_footer(text='LA VENGANZA RP · Botones de acceso a canales · Monedas de la comunidad, no dinero de FiveM')
@@ -254,7 +270,15 @@ class CommunityFeatures:
         self.guide_view = GuideView(self)
         log.info('Guía navegación: %s', [(button.label,button.url) for button in self.guide_view.children])
         if message:
-            await message.edit(embed=embed,view=self.guide_view,allowed_mentions=discord.AllowedMentions.none())
+            async def snapshot():
+                current=await channel.fetch_message(message.id)
+                if current.author.id!=guild.me.id:raise ValueError('El panel de la guía no pertenece a este bot.')
+                return dict(channel=channel.id,message=current.id,content=current.content,
+                    embeds=[item.to_dict() for item in current.embeds],components=[item.to_dict() for item in current.components])
+            async def update():
+                return await message.edit(embed=embed,view=self.guide_view,allowed_mentions=discord.AllowedMentions.none())
+            await self.economy.bot.changes.tracked('BOT_GUIDE','Actualizar guía del bot y accesos a sus funciones',update,
+                request_id=f'{message.id}:{time.time_ns()}',snapshot=snapshot)
         else:
             message=await channel.send(embed=embed,view=self.guide_view,allowed_mentions=discord.AllowedMentions.none())
         store.runtime_config('guide_message',message.id)

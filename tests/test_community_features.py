@@ -57,10 +57,10 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('CHINO-7',str(embed.to_dict()))
         self.assertFalse(self.economy.store.inventory(7))
 
-    async def test_guide_is_persistent_and_links_all_five_flows(self):
+    async def test_guide_is_persistent_and_links_the_current_bot_features(self):
         view=GuideView(self.features)
         self.assertTrue(view.is_persistent())
-        self.assertEqual(len(view.children),6)
+        self.assertEqual(len(view.children),14)
         expected = {
             'Mi perfil': '1569151200673140897',
             'Mi saldo': '1569151200673140897',
@@ -68,6 +68,14 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
             'Probador': '1569084821983076512',
             'Retos y monedas': '1569084821983076512',
             'Ser streamer': '1568403146219454586',
+            'Fotos':'1513422142014754976',
+            'Minijuegos':'1513422089162330184',
+            'Tickets':'1513423707467415642',
+            'Feedback':'1539014594348064939',
+            'Sugerencias':'1539013973947588759',
+            'Errores':'1556488595131466000',
+            'Postulaciones':'1567399097500041237',
+            'Normas':'1528925322362228787',
         }
         import discord
         for button in view.children:

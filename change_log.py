@@ -13,16 +13,16 @@ from discord import app_commands
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='photo-voter-names-v31'
-SUMMARY=('Corrige los IDs que Discord mostraba en el panel privado de votantes. Presenta el apodo o nombre visible '
-    'y @usuario como texto completo, tanto para cada votante como para el autor de la foto. '
-    'Consulta el directorio de miembros y, si falta una persona, comprueba su perfil; conserva también los votos '
-    'de cuentas que salieron del servidor. Una cuenta o nombre no disponible se indica sin inventar identidades '
-    'ni eliminar votos. Conserva la privacidad del panel, la paginación, fotos, resultados, premios y permisos.')
-RESTORE=('Código anterior: 0527f6c090e982fd77c5e3f298f063b2530991e4. Conservar /data y su SQLite actual. '
-    'Esta corrección solo cambia cómo se consultan y presentan los nombres; no modifica votos ni esquemas. '
-    'Revertir código devuelve las menciones de la versión anterior. Volver a abrir Ver votantes actualiza el panel '
-    'privado con la versión desplegada. No restaurar una base antigua, borrar fotos ni cambiar cuentas o roles.')
+RELEASE='updated-bot-guide-v32'
+SUMMARY=('Actualiza el panel del canal Guía del Bot y /guia con las funciones actuales. Incluye Ver votantes con '
+    'nombres completos, Añadir miembro y Remover miembro en tickets, minijuegos, Feedback, sugerencias, errores, '
+    'normas y postulaciones. Añade accesos directos y conserva los enlaces anteriores. Los premios, el horario de '
+    'Server Up y la presentación personalizada se leen de los ajustes existentes. Actualiza el mismo mensaje, '
+    'con una copia privada anterior y posterior; conserva votos, fotos, tickets, saldos y permisos.')
+RESTORE=('Código anterior: 2bf882983829efa031fe95aa08bcfa9a67b46980. Conservar /data y su SQLite actual. '
+    'Revertir código vuelve a generar la guía anterior al sincronizarla. Para restaurar el panel manualmente, '
+    'consultar BOT_GUIDE y reponer solo los embeds y componentes anteriores en el mismo mensaje. '
+    'No restaurar bases antiguas, borrar canales o mensajes, ni modificar votos, premios, horarios o roles.')
 
 
 
