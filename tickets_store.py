@@ -236,6 +236,10 @@ class TicketStore:
   with self.db(readonly=True) as db:
    row=db.execute('SELECT * FROM lv_ticket_notices WHERE ticket=? AND kind=?',(rid,kind)).fetchone()
    return dict(row) if row else None
+ def outcome_event(self,rid,status):
+  with self.db(readonly=True) as db:
+   row=db.execute('SELECT id FROM lv_ticket_events WHERE ticket=? AND action=? ORDER BY id DESC LIMIT 1',(rid,status)).fetchone()
+   return row[0] if row else 0
  def has_message(self,rid,message):
   with self.db(readonly=True) as db:return db.execute('SELECT 1 FROM lv_ticket_messages WHERE ticket=? AND message=?',(rid,message)).fetchone() is not None
  def people(self,rid):
@@ -255,7 +259,7 @@ class TicketStore:
   if score not in range(1,6):raise ValueError('Elige una valoración de 1 a 5.')
   with self.db() as db:
    r=db.execute('SELECT * FROM lv_tickets WHERE id=?',(rid,)).fetchone()
-   if not r or r['owner']!=user or r['status']!='cerrado' or r['deleted_at']:raise ValueError('Solo el jugador que abrió el ticket puede valorar su ticket cerrado.')
+   if not r or r['owner']!=user or r['status'] not in ('resuelto','cerrado') or r['deleted_at']:raise ValueError('Solo el jugador que abrió el ticket puede valorarlo cuando esté resuelto o cerrado.')
    if r['rating'] is not None:raise ValueError('Ya valoraste este ticket.')
    db.execute('UPDATE lv_tickets SET rating=?,rating_comment=? WHERE id=?',(score,comment[:1000],rid))
    self.event(db,rid,user,'valorar',str(score))

@@ -102,7 +102,7 @@ class Picker(OwnedView):
 
     def text(self):
         count = len(self.filtered())
-        intro = 'Elige a quien te atendió. También aparecen quienes están desconectados.' if self.kind == 'staff' else 'Elige el ticket que quieres valorar. También puedes valorar uno cuyo canal ya se eliminó.'
+        intro = 'Elige a quien te atendió. También aparecen quienes están desconectados.' if self.kind == 'staff' else 'Elige el ticket resuelto o cerrado que quieres valorar. También puedes valorar uno cuyo canal ya se eliminó.'
         return f'{intro}\nPágina {self.page+1}/{max(1,(count+24)//25)} · {count} '+('personas' if self.kind == 'staff' else 'tickets pendientes de valorar')
 
     def build(self):
@@ -114,7 +114,7 @@ class Picker(OwnedView):
         if page:
             options = [discord.SelectOption(label=m.display_name[:100], value=str(m.id), description=('@'+m.name)[:100]) for m in page] if self.kind == 'staff' else [
                 discord.SelectOption(label=f"Ticket #{r['id']} · {r['subject']}"[:100], value=str(r['id']), description='Solo administración' if r['department'] == 'staff' else 'Atención verificada en ticket') for r in page]
-            select = discord.ui.Select(placeholder='¿Quién te atendió?' if self.kind == 'staff' else 'Elige un ticket cerrado', options=options, row=0)
+            select = discord.ui.Select(placeholder='¿Quién te atendió?' if self.kind == 'staff' else 'Elige un ticket para valorar', options=options, row=0)
 
             async def choose(i):
                 selected = int(select.values[0])

@@ -22,6 +22,8 @@ class FollowupTests(unittest.IsolatedAsyncioTestCase):
   tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
   self.bot=MagicMock();self.bot.user.id=99
   self.system=TicketSystem(self.bot,Path(tmp.name)/'db.sqlite3',10);self.store=self.system.store;self.store.initialize()
+  async def tracked(env,title,operation,**kwargs):return await operation()
+  self.bot.changes.tracked=AsyncMock(side_effect=tracked)
   self.head=role(HEAD_STAFF,'Jefe de Staff');self.admin=role(1300627506801541230,'Programador',True)
   self.support=role(1300627732954349619,'Soporte');self.bot_role=role(999,'Bot',True,True)
   self.guild=SimpleNamespace(id=10,default_role=role(10,'@everyone'),roles=[self.head,self.admin,self.support,self.bot_role])
@@ -223,7 +225,10 @@ class FollowupTests(unittest.IsolatedAsyncioTestCase):
   with patch('tickets.time.time',return_value=2000):await modal.on_submit(self.i)
   self.assertEqual(self.store.get(self.rid)['status'],'resuelto')
   self.assertEqual(self.store.get(self.rid)['last_staff_message'],700)
-  self.owner.send.assert_awaited_once();self.assertIn('/100/700',self.owner.send.call_args.args[0])
+  self.owner.send.assert_awaited_once()
+  self.assertIn('resuelto',self.owner.send.call_args.args[0])
+  self.assertNotIn('Ya puedes entrar',self.owner.send.call_args.args[0])
+  self.assertIn('/100/700',self.owner.send.call_args.kwargs['view'].children[0].url)
 
  async def test_rating_select_has_five_choices_optional_comment_and_accepts_no_comment(self):
   self.store.transition(self.rid,'cerrado',5,'Listo')

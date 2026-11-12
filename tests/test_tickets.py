@@ -131,6 +131,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
   self.bot=MagicMock();self.system=TicketSystem(self.bot,Path(tmp.name)/'db.sqlite3',10)
   self.system.store.initialize()
+  async def tracked(env,title,operation,**kwargs):return await operation()
+  self.bot.changes.tracked=AsyncMock(side_effect=tracked)
   self.guild=SimpleNamespace(id=10,fetch_channels=AsyncMock(return_value=[MagicMock(spec=discord.TextChannel,id=n,topic=f'lv-ticket:{n-99}') for n in (100,101,102)]))
   self.guild.edit_role_positions=MagicMock()
   self.bot.get_guild.return_value=self.guild
@@ -245,7 +247,9 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.store.claim(self.rid,self.staff.id)
   self.system.store.transition(self.rid,'cerrado',self.staff.id,'Listo')
   closed=TicketControls.from_row(self.system.store.get(self.rid))
-  self.assertEqual([c.item.label for c in closed.children],['Valorar','Eliminar ticket'])
+  self.assertEqual([c.item.label for c in closed.children],['Valorar'])
+  staff_closed=TicketControls.from_row(self.system.store.get(self.rid),staff=True)
+  self.assertIn('Eliminar ticket',[c.item.label for c in staff_closed.children])
   self.system.store.transition(self.rid,'en_atencion',self.staff.id,'Reapertura')
   reopened=TicketControls.from_row(self.system.store.get(self.rid))
   self.assertEqual([c.item.label for c in reopened.children],['Resolver','Cerrar','Prioridad','Añadir miembro','Remover miembro'])
@@ -387,7 +391,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
 
  async def test_delete_button_only_on_closed_and_opening_confirmation_does_not_delete(self):
   self.assertNotIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1).children])
-  self.assertIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1,True).children])
+  self.assertNotIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1,True).children])
+  self.assertIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1,True,staff=True).children])
   self.assertNotIn('lv:ticket:case:1:delete',[c.custom_id for c in TicketControls(1,True,True).children])
   await self.prepare_deletion();self.i.user=self.staff
   self.system.delete_ticket=AsyncMock()
@@ -490,7 +495,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def test_member_button_when_open_and_rating_only_after_close(self):
   expected=[f'lv:ticket:case:{self.rid}:{action}' for action in ('claim','resolve','close','priority','people','removepeople')]
   self.assertEqual([c.custom_id for c in TicketControls(self.rid).children],expected)
-  self.assertEqual([c.custom_id for c in TicketControls(self.rid,True).children],[f'lv:ticket:case:{self.rid}:rate',f'lv:ticket:case:{self.rid}:delete'])
+  self.assertEqual([c.custom_id for c in TicketControls(self.rid,True).children],[f'lv:ticket:case:{self.rid}:rate'])
   self.assertFalse(TicketControls(self.rid,True,True).children)
   self.i.response.send_modal=AsyncMock()
   with self.assertRaisesRegex(ValueError,'cerrado'):await self.system.action(self.i,self.rid,'rate')
@@ -507,19 +512,20 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
 
  async def test_old_extra_buttons_are_removed_from_open_ticket_messages(self):
   controls=[SimpleNamespace(custom_id=f'lv:ticket:case:{self.rid}:rate',disabled=True)]
-  old=SimpleNamespace(id=200,author=SimpleNamespace(id=99),components=[SimpleNamespace(children=controls)],content='🔒 Ticket cerrado.',edit=AsyncMock())
+  old=SimpleNamespace(id=200,author=SimpleNamespace(id=99),components=[SimpleNamespace(children=controls)],embeds=[],content='🔒 Ticket cerrado.',edit=AsyncMock())
   other=SimpleNamespace(id=201,author=SimpleNamespace(id=88),components=[SimpleNamespace(children=controls)],content='Otro bot',edit=AsyncMock())
   self.bot.user.id=99;channel=MagicMock()
   async def history(**kwargs):
    yield old;yield other
   channel.history=history
   await self.system.sync_control_messages(self.system.store.get(self.rid),channel,100)
-  old.edit.assert_awaited_once_with(view=None);other.edit.assert_not_awaited()
+  old.edit.assert_awaited_once_with(content=f'🔒 Ticket #{self.rid} ha sido cerrado.',view=None);other.edit.assert_not_awaited()
 
  async def test_solution_label_is_used_in_ticket_and_resolve_form(self):
   self.system.store.update(self.rid,resolution='Ya está arreglado')
   row=self.system.store.get(self.rid)
-  self.assertIn('Solución',[f.name for f in self.system.embed(row).fields])
+  self.assertIn('Solución',[f.name for f in self.system.embed(row,staff=True).fields])
+  self.assertNotIn('Solución',[f.name for f in self.system.embed(row).fields])
   self.i.user=self.staff;self.i.response.send_modal=AsyncMock()
   await self.system.action(self.i,self.rid,'resolve')
   modal=self.i.response.send_modal.call_args.args[0]
@@ -668,7 +674,7 @@ class PreparedDeletionTests(unittest.IsolatedAsyncioTestCase):
   self.system.archive=AsyncMock(side_effect=archive)
   self.system.deletion_backup=AsyncMock(side_effect=lambda *a:order.append('backup'))
   await self.system.close(self.system.store.get(self.rid),5,'Resuelto')
-  self.assertEqual(order,['archive','notice','controls','archive','backup'])
+  self.assertEqual(order,['archive','controls','notice','archive','backup'])
   self.assertEqual(self.system.deletion_backup.call_args.args[0]['transcript'],'Final conversation')
  async def test_close_button_does_not_hold_global_lock_while_preparing_copy(self):
   self.i.response.send_modal=AsyncMock()

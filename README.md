@@ -81,6 +81,25 @@ mixto. Aunque una opción se muestre en el selector, la comprobación interna im
 que un miembro ejecute funciones reservadas. La sincronización de comandos conserva
 una copia anterior y posterior en `BOT_COMMAND_ACCESS`, consultable con `/cambios`.
 
+### Cierre, resolución y valoración de tickets
+
+El aviso del canal y el mensaje directo al autor solo indican que el ticket quedó
+**cerrado o resuelto**, con **⭐ Valorar**. La valoración funciona en ambos estados
+y se guarda una sola vez por ticket. Si Discord bloquea el mensaje directo, el botón
+sigue disponible en el canal. Los avisos existentes del bot se corrigen sin reenviar
+mensajes directos de tickets antiguos.
+
+La solución interna, el estado de la transcripción y las pruebas y **Eliminar ticket**
+se consultan en el panel privado que abre el staff desde `/ticket gestion`,
+`/ticket cerrados` o `/ticket acceso`. El staff que cierra o resuelve recibe también
+esa vista privada. La eliminación sigue exigiendo confirmación y una copia completa
+verificada. El autor y los invitados no pueden abrir la vista de gestión del staff.
+
+Las transcripciones para jugadores conservan la conversación y omiten la solución
+interna y los antiguos avisos técnicos del bot. La copia completa y las versiones
+anteriores de los mensajes se conservan para el staff autorizado. Los reportes
+reservados mantienen sus restricciones de acceso y sus valoraciones privadas.
+
 ### Canal Perfiles
 
 El bot crea **👤┊𝐏𝐞𝐫𝐟𝐢𝐥𝐞𝐬** en la categoría de La Venganza configurada para la tienda.

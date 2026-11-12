@@ -253,3 +253,12 @@ class BotAccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.app.changes.can_read(self.member(ADMIN), row))
         self.app.tickets.store.get = lambda rid:dict(id=rid, department='technical')
         self.assertTrue(self.app.changes.can_read(self.member(ADMIN), row))
+
+    async def test_staff_excluded_from_a_case_cannot_read_its_internal_change_copies(self):
+        member = self.member(ADMIN, uid=1)
+        row = dict(before_json=json.dumps({'ticket':{'department':'jugador','excluded':1}}), after_json='{}')
+        self.assertFalse(self.app.changes.can_read(member, row))
+        self.assertTrue(self.app.changes.can_read(self.member(ADMIN, uid=2), row))
+        feedback = dict(before_json=json.dumps({'feedback':{'ticket':10}}), after_json='{}')
+        self.app.tickets.store.get = lambda rid:dict(id=rid, department='jugador', excluded=1)
+        self.assertFalse(self.app.changes.can_read(member, feedback))

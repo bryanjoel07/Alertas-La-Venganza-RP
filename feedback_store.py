@@ -64,8 +64,8 @@ class FeedbackStore:
     @staticmethod
     def ticket_row(db, rid, owner, unrated=True):
         row = db.execute('SELECT * FROM lv_tickets WHERE id=?', (rid,)).fetchone()
-        if not row or row['owner'] != owner or row['status'] != 'cerrado' or json.loads(row['form']).get('selftest'):
-            raise ValueError('Solo puedes valorar tus tickets cuando estén cerrados.')
+        if not row or row['owner'] != owner or row['status'] not in ('resuelto', 'cerrado') or json.loads(row['form']).get('selftest'):
+            raise ValueError('Solo puedes valorar tus tickets cuando estén resueltos o cerrados.')
         if row['assignee'] == owner:
             raise ValueError('No puedes valorar un ticket que atendiste tú mismo, bro.')
         if unrated and (row['rating'] is not None or db.execute('SELECT 1 FROM lv_feedback WHERE ticket=?', (rid,)).fetchone()):
@@ -78,7 +78,7 @@ class FeedbackStore:
 
     def tickets(self, owner):
         with self.db(readonly=True) as db:
-            rows = db.execute("SELECT * FROM lv_tickets WHERE owner=? AND status='cerrado' AND rating IS NULL ORDER BY closed DESC,id DESC", (owner,)).fetchall()
+            rows = db.execute("SELECT * FROM lv_tickets WHERE owner=? AND status IN ('resuelto','cerrado') AND rating IS NULL ORDER BY COALESCE(closed,updated) DESC,id DESC", (owner,)).fetchall()
             return [dict(r) for r in rows if not json.loads(r['form']).get('selftest') and r['assignee'] != owner]
 
     def save(self, owner, score, comment, visibility, *, ticket=None, staff=None, topic='', now=None):

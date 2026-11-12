@@ -115,8 +115,11 @@ class FeedbackSystem:
             raise ValueError('El bot necesita ver, leer y enviar mensajes con embeds en Feedback.')
         return channel
 
-    def invite(self, rid):
-        return controls('ticket', rid=rid)
+    def invite(self, rid, *, label=None):
+        view = controls('ticket', rid=rid)
+        if label:
+            view.children[0].item.label = label
+        return view
 
     async def handle(self, i, action, rid):
         if action == 'start':
@@ -137,7 +140,7 @@ class FeedbackSystem:
         await self.member(i)
         rows = await self.call('tickets', i.user.id)
         if not rows:
-            return await reply(i, 'No tienes tickets cerrados pendientes de valorar. Si te ayudaron por voz, elige «Me atendieron fuera de tickets».')
+            return await reply(i, 'No tienes tickets resueltos o cerrados pendientes de valorar. Si te ayudaron por voz, elige «Me atendieron fuera de tickets».')
         view = Picker(self, i.user.id, rows, 'ticket')
         await reply(i, view.text(), view=view)
 

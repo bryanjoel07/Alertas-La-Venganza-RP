@@ -14,17 +14,18 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bot-command-role-access-v34'
-SUMMARY=('Completa las copias BOT_COMMAND_ACCESS con el servidor y los permisos de visibilidad explícitos, '
-    'que AppCommand.to_dict de discord.py omite. Distingue permisos sin restricción, cero y rangos '
-    'administrativos; conserva los registros anteriores y usa una nueva operación versionada. Mantiene la '
-    'separación de los 108 comandos entre miembros, staff y administración por IDs, las delegaciones '
-    'autorizadas y la privacidad de casos reservados. No modifica roles, membresías ni accesos de canales.')
-RESTORE=('Código anterior: b68df30477d2dd0b4c1524c7df4da23d68732b10. Conservar /data y su SQLite actual. '
-    'Revertir esta corrección solo vuelve al formato anterior de las copias; la separación por roles se mantiene. '
-    'Para revertir también esa separación, desplegar 5103ff64b0c61a8bc10ef50edf1f7b616dc3b53b y sincronizar '
-    'sus comandos. Comparar BOT_COMMAND_ACCESS para cambios de visibilidad. No restaurar bases antiguas, '
-    'modificar roles, membresías o overwrites, ni borrar votos, tickets o saldos.')
+RELEASE='private-ticket-outcomes-v35'
+SUMMARY=('Separa el aviso del jugador y la gestión del staff al cerrar o resolver tickets. En el canal y en '
+    'el mensaje directo al autor solo se muestra el estado y la valoración; solución interna, estado del '
+    'respaldo y Eliminar ticket se consultan en paneles privados del staff. Corrige avisos existentes del '
+    'propio bot con copias antes/después y sin reenviar mensajes directos antiguos. Permite valorar al '
+    'resolver o cerrar una sola vez y protege la solución en las transcripciones del jugador, conservando '
+    'la copia completa para staff. Mantiene los permisos de roles, canales, pruebas y casos reservados.')
+RESTORE=('Código anterior: 314a1383191e5e76ba358a70c6695169ae61ea36. Conservar /data y su SQLite actual. '
+    'Revertir código recupera las vistas anteriores; no elimina valoraciones nuevas ni recupera por sí solo '
+    'el texto editado. Consultar TICKET_OUTCOME_PRIVACY y TICKET_OUTCOME_NOTICE para restaurar únicamente '
+    'mensajes propios y componentes autorizados por sus IDs. No restaurar bases antiguas, borrar canales '
+    'o pruebas, ni cambiar roles, membresías o permisos. Conservar los registros y copias de mensajes anteriores.')
 
 
 
@@ -123,6 +124,7 @@ class ChangeLog:
         def inspect(value):
             if isinstance(value,dict):
                 if value.get('department')=='staff':return False
+                if value.get('excluded') is not None and value['excluded']==member.id:return False
                 ticket=value.get('ticket')
                 if isinstance(ticket,(int,str)) and str(ticket).isdigit():tickets.add(int(ticket))
                 return all(inspect(item) for item in value.values())
@@ -132,7 +134,7 @@ class ChangeLog:
             if not all(inspect(json.loads(row[key])) for key in ('before_json','after_json')):return False
             for rid in tickets:
                 ticket=self.bot.tickets.store.get(rid)
-                if not ticket or ticket['department']=='staff':return False
+                if not ticket or ticket['department']=='staff' or ticket.get('excluded')==member.id:return False
         except (ValueError,KeyError,AttributeError):return False
         return True
 

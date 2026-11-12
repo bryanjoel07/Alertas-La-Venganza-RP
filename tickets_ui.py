@@ -99,16 +99,20 @@ class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticke
    await reply(i,'El caso se conserva, pero esa acción necesita revisión. Inténtalo de nuevo o avisa a administración.')
 
 class TicketControls(discord.ui.View):
- def __init__(self,rid,closed=False,deleted=False,*,assigned=False):
+ def __init__(self,rid,closed=False,deleted=False,*,assigned=False,staff=False,resolved=False,rated=False):
   super().__init__(timeout=None)
-  actions=[] if deleted else ['rate','delete'] if closed else ['resolve','close','priority','people','removepeople'] if assigned else ['claim','resolve','close','priority','people','removepeople']
+  if deleted:actions=[]
+  elif closed:actions=['transcript','proof','reopen','delete'] if staff else ([] if rated else ['rate'])
+  elif resolved and not staff:actions=[] if rated else ['rate']
+  else:actions=['resolve','close','priority','people','removepeople'] if assigned else ['claim','resolve','close','priority','people','removepeople']
   for n,action in enumerate(actions):
    item=TicketAction(rid,action)
    item.item.row=1 if action in ('people','removepeople') else n//4
    self.add_item(item)
  @classmethod
- def from_row(cls,row):
-  return cls(row['id'],row['status']=='cerrado',bool(row.get('deleted_at')),assigned=bool(row.get('assignee')))
+ def from_row(cls,row,*,staff=False):
+  return cls(row['id'],row['status']=='cerrado',bool(row.get('deleted_at')),assigned=bool(row.get('assignee')),
+    staff=staff,resolved=row['status']=='resuelto',rated=row.get('rating') is not None)
 
 class TextForm(discord.ui.Modal):
  async def on_error(self,i,error):
@@ -190,8 +194,7 @@ class CasePicker(discord.ui.Select):
     await self.system.channel(row)
     if self.staff:await self.system.access(i.user,row)
     row=self.system.store.get(row['id'])
-   location='Canal eliminado · archivo disponible' if row.get('deleted_at') else f"<#{row['channel']}>"
-   await reply(i,f"Ticket #{row['id']} · {location}",embed=self.system.embed(row),view=TicketControls.from_row(row))
+   await self.system.show_case(i,row,staff=self.staff)
   except discord.NotFound:await reply(i,'El canal de ese ticket ya no existe. Abre de nuevo la lista.')
   except (ValueError,discord.HTTPException) as error:await reply(i,str(error) if isinstance(error,ValueError) else 'No se pudo abrir el caso.')
 
