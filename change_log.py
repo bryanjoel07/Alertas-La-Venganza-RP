@@ -14,18 +14,17 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='bot-command-role-access-v33'
-SUMMARY=('Revisa los 108 comandos del bot y añade una política de acceso por función. Ciudadanos conserva las '
-    'funciones de jugadores; Soporte y Moderadores, sus tareas de staff; Owner, Programador, Jefe de Staff, '
-    'Súper Admin y Admin pueden administrar el bot por el ID de su rol sin recibir Administrador de Discord. '
-    'Unifica las comprobaciones de comandos, paneles y formularios administrativos y elimina la confianza '
-    'en nombres de roles para reconocer staff. Conserva delegaciones de economía y departamentos, '
-    'la privacidad reservada de tickets, también en Feedback y el historial de cambios, y los roles de reuniones. Registra la sincronización '
-    'de comandos antes/después. No modifica roles, membresías ni accesos personales de canales.')
-RESTORE=('Código anterior: 5103ff64b0c61a8bc10ef50edf1f7b616dc3b53b. Conservar /data y su SQLite actual. '
-    'Revertir código recupera las comprobaciones anteriores y sincroniza la visibilidad anterior de los comandos. '
-    'Consultar BOT_COMMAND_ACCESS para comparar los metadatos antes/después. No restaurar bases antiguas, '
-    'cambiar permisos o membresías de roles, modificar overwrites de canales, ni borrar votos, tickets o saldos.')
+RELEASE='bot-command-role-access-v34'
+SUMMARY=('Completa las copias BOT_COMMAND_ACCESS con el servidor y los permisos de visibilidad explícitos, '
+    'que AppCommand.to_dict de discord.py omite. Distingue permisos sin restricción, cero y rangos '
+    'administrativos; conserva los registros anteriores y usa una nueva operación versionada. Mantiene la '
+    'separación de los 108 comandos entre miembros, staff y administración por IDs, las delegaciones '
+    'autorizadas y la privacidad de casos reservados. No modifica roles, membresías ni accesos de canales.')
+RESTORE=('Código anterior: b68df30477d2dd0b4c1524c7df4da23d68732b10. Conservar /data y su SQLite actual. '
+    'Revertir esta corrección solo vuelve al formato anterior de las copias; la separación por roles se mantiene. '
+    'Para revertir también esa separación, desplegar 5103ff64b0c61a8bc10ef50edf1f7b616dc3b53b y sincronizar '
+    'sus comandos. Comparar BOT_COMMAND_ACCESS para cambios de visibilidad. No restaurar bases antiguas, '
+    'modificar roles, membresías o overwrites, ni borrar votos, tickets o saldos.')
 
 
 

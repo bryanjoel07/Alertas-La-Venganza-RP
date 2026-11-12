@@ -84,6 +84,17 @@ class BotAccessTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             command_level('administracion_nueva')
 
+    async def test_command_snapshot_keeps_permissions_omitted_by_discord_py_serialization(self):
+        for permissions in (None, '0', '8', str(ADMIN_DISCOVERY.value)):
+            data = dict(id='123', application_id='1567658433497399408', guild_id=str(GUILD_ID),
+                type=1, name='ajustes', description='Settings', options=[], default_member_permissions=permissions)
+            remote = discord.app_commands.AppCommand(data=data, state=self.app._connection)
+            self.app.tree.fetch_commands = AsyncMock(return_value=[remote])
+            snapshot = await self.app.command_snapshot()
+            self.assertEqual(snapshot['guild_id'], GUILD_ID)
+            self.assertEqual(snapshot['commands'][0]['default_member_permissions'], permissions)
+            self.assertEqual(json.loads(json.dumps(snapshot)), snapshot)
+
     async def test_member_support_and_moderator_cannot_run_any_administrative_command(self):
         for roles in [(), (SUPPORT,), (MODERATOR,), (SPOOF,), (TIMEOUT_ONLY,)]:
             member = self.member(*roles)

@@ -299,15 +299,22 @@ class LaVenganzaBot(discord.Client):
         await self.event_features.start()
         await self.backups.start()
         install_command_access(self.tree, GUILD)
-        async def command_snapshot():
-            return {'commands': [command.to_dict() for command in await self.tree.fetch_commands(guild=GUILD)]}
         async def sync_commands():
             return await self.tree.sync(guild=GUILD)
         commands = await self.changes.tracked('BOT_COMMAND_ACCESS', 'Permisos de comandos por roles del bot',
-            sync_commands, request_id='bot-command-access-v1', snapshot=command_snapshot)
+            sync_commands, request_id='bot-command-access-v2', snapshot=self.command_snapshot)
         log.info("Comandos sincronizados: %s", ", ".join(c.name for c in commands))
         if self.monitor_task is None or self.monitor_task.done():
             self.monitor_task = asyncio.create_task(monitor_server(), name="server-monitor")
+
+    async def command_snapshot(self):
+        commands = await self.tree.fetch_commands(guild=GUILD)
+        # AppCommand.to_dict omits the discovery permissions, including the
+        # distinction between unrestricted (None) and explicitly disabled (0).
+        return {'guild_id': GUILD_ID, 'commands': [dict(command.to_dict(),
+            default_member_permissions=str(command.default_member_permissions.value)
+                if command.default_member_permissions is not None else None)
+            for command in commands]}
 
     async def close(self):
         loops=(self.obscenity_filter.install,self.streamer_panel.install,self.live_alerts.poll)
