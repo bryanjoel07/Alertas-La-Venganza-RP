@@ -1,4 +1,3 @@
-import json
 import unittest
 from unittest.mock import AsyncMock,patch
 
@@ -17,22 +16,20 @@ class StaffEntryTests(unittest.IsolatedAsyncioTestCase):
         self.system.store.update(self.rid,transcript='EXISTING_TRANSCRIPT',archive_state='completo')
         return self.system.store.get(self.rid)
 
-    async def test_existing_closed_header_gains_persistent_staff_access_without_new_messages(self):
+    async def test_existing_closed_header_stays_plain_and_footer_has_public_controls_without_new_messages(self):
         row=self.closed()
         self.messages[500].embeds=[self.system.embed(row)];self.messages[500].components=[]
         await self.system.publish_outcome(row)
         notice=next(m for m in self.messages.values() if m.content.startswith('🔒 Ticket #'))
         self.channel.send.reset_mock()
         await self.system.refresh(row)
-        self.assertEqual(self.ids(self.messages[500]),[f'lv:ticket:case:{self.rid}:manage'])
-        self.assertEqual(self.ids(notice),[f'lv:ticket:case:{self.rid}:rate'])
+        self.assertEqual(self.messages[500].components,[])
+        self.assertEqual(self.ids(notice),[f'lv:ticket:case:{self.rid}:{action}' for action in ('download','rate','erase')])
         self.assertNotIn(fixtures.SECRET,str([e.to_dict() for e in self.messages[500].embeds]))
         self.assertEqual(self.messages[600].content,'VISIBLE_PLAYER_CONVERSATION')
         self.assertEqual(self.system.store.get(self.rid)['transcript'],'EXISTING_TRANSCRIPT')
         self.channel.send.assert_not_awaited();self.owner.send.assert_not_awaited()
-        record=next(r for r in self.bot.changes.journal.rows() if json.loads(r['before_json']).get('message')==500)
-        self.assertEqual(json.loads(record['before_json'])['components'],[])
-        self.assertTrue(json.loads(record['after_json'])['components'])
+        self.assertEqual(self.messages[500].embeds[0].description,fixtures.outcome_text(row,rating=False))
 
     async def test_staff_entry_opens_private_delete_confirmation_without_deleting(self):
         self.closed();self.system.delete_ticket=AsyncMock()
@@ -93,7 +90,7 @@ class StaffEntryTests(unittest.IsolatedAsyncioTestCase):
     async def test_staff_access_remains_after_the_player_has_already_rated(self):
         self.closed();self.system.store.rate(self.rid,self.owner.id,5,'Gracias')
         await self.system.refresh(self.system.store.get(self.rid))
-        self.assertEqual(self.ids(self.messages[500]),[f'lv:ticket:case:{self.rid}:manage'])
+        self.assertEqual(self.messages[500].components,[])
         i=self.interaction(self.staff);await self.system.action(i,self.rid,'manage')
         self.assertIn(f'lv:ticket:case:{self.rid}:delete',[item.custom_id for item in i.followup.send.call_args.kwargs['view'].children])
 

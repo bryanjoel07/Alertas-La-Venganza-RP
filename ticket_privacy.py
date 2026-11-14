@@ -17,8 +17,11 @@ def outcome_text(row, *, status=None, rating=True):
     emoji, label = ('🔒', 'cerrado') if status == 'cerrado' else ('✅', 'resuelto')
     text = f"{emoji} Ticket #{row['id']} ha sido {label}."
     if rating:
+        if status=='cerrado':
+            text+='\n📄 **Autor del ticket:** puedes descargar tu transcripción.'
         text += ('\n⭐ Puedes valorar la atención recibida con el botón de abajo.'
             if row.get('rating') is None else '\nGracias por valorar la atención recibida.')
+        if status=='cerrado':text+='\n🗑️ **Staff autorizado:** puede eliminar el ticket.'
     return text
 
 

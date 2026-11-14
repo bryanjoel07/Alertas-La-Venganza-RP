@@ -82,12 +82,12 @@ ACTIONS={'claim':('Reclamar','🙋'),'wait':('Solicitar pruebas','📎'),'resolv
  'note':('Nota interna','📝'),'transfer':('Transferir','🔀'),'priority':('Prioridad','🚩'),
  'people':('Añadir miembro','👥'),'removepeople':('Remover miembro','➖'),
  'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️'),
- 'manage':('Gestión Staff','🧰')}
+ 'manage':('Gestión Staff','🧰'),'download':('Transcripción','📄'),'erase':('Eliminar ticket','🗑️')}
 class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticket:case:(?P<ticket>[0-9]+):(?P<action>[a-z]+)'):
  def __init__(self,rid,action):
   label,emoji=ACTIONS[action]
   super().__init__(discord.ui.Button(label=label,emoji=emoji,custom_id=f'lv:ticket:case:{rid}:{action}',
-   style=discord.ButtonStyle.danger if action in ('close','delete','removepeople') else discord.ButtonStyle.secondary))
+   style=discord.ButtonStyle.danger if action in ('close','delete','erase','removepeople') else discord.ButtonStyle.secondary))
   self.rid,self.action=rid,action
  @classmethod
  async def from_custom_id(cls,i,item,match):return cls(int(match['ticket']),match['action'])
@@ -104,12 +104,13 @@ class TicketControls(discord.ui.View):
  def __init__(self,rid,closed=False,deleted=False,*,assigned=False,staff=False,resolved=False,rated=False):
   super().__init__(timeout=None)
   if deleted:actions=[]
-  elif closed:actions=['transcript','proof','reopen','delete'] if staff else ([] if rated else ['rate'])
+  elif closed:actions=['transcript','proof','reopen','delete'] if staff else ['download','rate','erase']
   elif resolved and not staff:actions=[] if rated else ['rate']
   else:actions=['resolve','close','priority','people','removepeople'] if assigned else ['claim','resolve','close','priority','people','removepeople']
   for n,action in enumerate(actions):
    item=TicketAction(rid,action)
-   item.item.row=1 if action in ('people','removepeople') else n//4
+   item.item.row=1 if action in ('people','removepeople','erase') else n//4
+   if action=='rate' and rated:item.item.disabled=True
    self.add_item(item)
  @classmethod
  def from_row(cls,row,*,staff=False):
@@ -122,9 +123,40 @@ class TicketStaffAccess(SafeView):
   self.add_item(TicketAction(rid,'manage'))
 
 def header_controls(row):
- if row.get('deleted_at'):return None
+ if row.get('deleted_at') or row['status']=='cerrado':return None
  if row['status'] in FINAL_STATES:return TicketStaffAccess(row['id'])
  return TicketControls.from_row(row)
+
+class DeleteTicketForm(discord.ui.Modal):
+ def __init__(self,system,user,rid):
+  super().__init__(title=f'Eliminar ticket #{rid}',timeout=300)
+  self.system,self.user,self.rid=system,user,rid
+  self.confirmation=discord.ui.TextInput(style=discord.TextStyle.short,max_length=16,
+   placeholder='ELIMINAR',required=True)
+  self.add_item(discord.ui.Label(text='Escribe ELIMINAR para confirmar',
+   description='Se borrará el canal después de comprobar su copia. Cierra esta ventana para cancelar.',component=self.confirmation))
+ async def on_submit(self,i):
+  await i.response.defer()
+  try:
+   if i.user.id!=self.user:raise ValueError('Solo quien pidió eliminar este ticket puede confirmarlo.')
+   if i.guild_id!=self.system.guild_id:raise ValueError('Confirma desde La Venganza RP.')
+   if self.confirmation.value.strip().casefold()!='eliminar':raise ValueError('Escribe ELIMINAR para confirmar. El ticket sigue intacto.')
+   guild=self.system.bot.get_guild(self.system.guild_id)
+   if guild is None:raise ValueError('El bot se está conectando. Inténtalo en un momento.')
+   try:member=await guild.fetch_member(i.user.id)
+   except discord.NotFound:raise ValueError('Ya no perteneces a este servidor.') from None
+   row=await self.system.call('get',self.rid)
+   if not row:raise ValueError('Ese ticket ya no existe.')
+   self.system.authorize(member,row,staff=True)
+   source_is_ticket=i.channel_id==row['channel']
+   changed=await self.system.delete_ticket(member,self.rid)
+   if not source_is_ticket:
+    await reply(i,'Ticket eliminado.' if changed else 'El ticket ya estaba eliminado.')
+  except ValueError as error:await reply(i,str(error))
+  except discord.HTTPException:await reply(i,'Discord no confirmó la eliminación. El ticket se conserva para revisión.')
+ async def on_error(self,i,error):
+  logging.getLogger('LaVenganzaRP.tickets').error('Ticket deletion form failed',exc_info=error)
+  await reply(i,'No pude completar la eliminación. El caso y sus datos siguen guardados para revisión.')
 
 class TextForm(discord.ui.Modal):
  async def on_error(self,i,error):

@@ -247,7 +247,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.store.claim(self.rid,self.staff.id)
   self.system.store.transition(self.rid,'cerrado',self.staff.id,'Listo')
   closed=TicketControls.from_row(self.system.store.get(self.rid))
-  self.assertEqual([c.item.label for c in closed.children],['Valorar'])
+  self.assertEqual([c.item.label for c in closed.children],['Transcripción','Valorar','Eliminar ticket'])
   staff_closed=TicketControls.from_row(self.system.store.get(self.rid),staff=True)
   self.assertIn('Eliminar ticket',[c.item.label for c in staff_closed.children])
   self.system.store.transition(self.rid,'en_atencion',self.staff.id,'Reapertura')
@@ -492,10 +492,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.system.access.assert_not_awaited();self.system.channel.assert_not_awaited()
 
 
- async def test_member_button_when_open_and_rating_only_after_close(self):
+ async def test_member_button_when_open_and_public_footer_after_close(self):
   expected=[f'lv:ticket:case:{self.rid}:{action}' for action in ('claim','resolve','close','priority','people','removepeople')]
   self.assertEqual([c.custom_id for c in TicketControls(self.rid).children],expected)
-  self.assertEqual([c.custom_id for c in TicketControls(self.rid,True).children],[f'lv:ticket:case:{self.rid}:rate'])
+  self.assertEqual([c.custom_id for c in TicketControls(self.rid,True).children],[f'lv:ticket:case:{self.rid}:{action}' for action in ('download','rate','erase')])
   self.assertFalse(TicketControls(self.rid,True,True).children)
   self.i.response.send_modal=AsyncMock()
   with self.assertRaisesRegex(ValueError,'cerrado'):await self.system.action(self.i,self.rid,'rate')
@@ -668,7 +668,7 @@ class PreparedDeletionTests(unittest.IsolatedAsyncioTestCase):
   order=[];channel=MagicMock();channel.send=AsyncMock(side_effect=lambda *a,**k:order.append('notice'))
   self.system.channel=AsyncMock(return_value=channel);self.system.member=AsyncMock(return_value=None)
   self.system.apply_permissions=AsyncMock();self.system.ensure_category=AsyncMock();self.system.move=AsyncMock();self.system.refresh=AsyncMock()
-  self.system.sync_control_messages=AsyncMock(side_effect=lambda *a:order.append('controls'))
+  self.system.sync_control_messages=AsyncMock(side_effect=lambda *a,**kw:order.append('controls'))
   async def archive(row):
    order.append('archive');self.system.store.update(self.rid,transcript='Final conversation',archive_state='completo');return 'completo'
   self.system.archive=AsyncMock(side_effect=archive)

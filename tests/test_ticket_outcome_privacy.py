@@ -111,8 +111,8 @@ class OutcomePrivacyTests(unittest.IsolatedAsyncioTestCase):
         await self.system.close(self.system.store.get(self.rid), self.staff.id, SECRET)
         notices = [message for message in self.messages.values() if message.content.startswith('🔒 Ticket #')]
         self.assertEqual(len(notices), 1)
-        self.assertEqual(self.ids(notices[0]), [f'lv:ticket:case:{self.rid}:rate'])
-        self.assertEqual(self.ids(self.messages[500]), [f'lv:ticket:case:{self.rid}:manage'])
+        self.assertEqual(self.ids(notices[0]), [f'lv:ticket:case:{self.rid}:{action}' for action in ('download','rate','erase')])
+        self.assertEqual(self.messages[500].components, [])
         for message in self.messages.values():
             payload = message.content + json.dumps([embed.to_dict() for embed in message.embeds])
             self.assertNotIn(SECRET, payload)
@@ -158,8 +158,8 @@ class OutcomePrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.messages[500].components = self.messages[700].components
         await self.system.refresh(row)
         self.assertEqual(self.messages[700].content, outcome_text(row))
-        self.assertEqual(self.ids(self.messages[700]), [f'lv:ticket:case:{self.rid}:rate'])
-        self.assertEqual(self.ids(self.messages[500]), [f'lv:ticket:case:{self.rid}:manage'])
+        self.assertEqual(self.ids(self.messages[700]), [f'lv:ticket:case:{self.rid}:{action}' for action in ('download','rate','erase')])
+        self.assertEqual(self.messages[500].components, [])
         self.channel.send.assert_not_awaited()
         self.owner.send.assert_not_awaited()
         record = next(record for record in self.bot.changes.journal.rows()
@@ -203,7 +203,7 @@ class OutcomePrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.system.store.get(self.rid)['status'], 'cerrado')
         self.assertEqual(self.system.store.notice(self.rid, 'outcome')['state'], 'blocked')
         notice = next(message for message in self.messages.values() if message.content.startswith('🔒 Ticket #'))
-        self.assertEqual(self.ids(notice), [f'lv:ticket:case:{self.rid}:rate'])
+        self.assertEqual(self.ids(notice), [f'lv:ticket:case:{self.rid}:{action}' for action in ('download','rate','erase')])
         self.assertNotIn(SECRET, notice.content)
 
     async def test_resolved_reserved_report_rating_cannot_be_published_or_reviewed_by_normal_staff(self):
@@ -231,13 +231,15 @@ class OutcomePrivacyTests(unittest.IsolatedAsyncioTestCase):
             await self.feedback.ticket_form(self.interaction(dm=True), self.rid)
         self.assertEqual(len(self.feedback.store.rows(owner=self.owner.id)), 1)
 
-    async def test_closed_notice_is_rating_only_while_staff_controls_remain_available(self):
+    async def test_closed_notice_has_three_public_buttons_and_rating_disables_after_use(self):
         self.system.store.transition(self.rid, 'cerrado', self.staff.id, SECRET)
         row = self.system.store.get(self.rid)
-        self.assertEqual([item.item.label for item in TicketControls.from_row(row).children], ['Valorar'])
+        self.assertEqual([item.item.label for item in TicketControls.from_row(row).children], ['Transcripción','Valorar','Eliminar ticket'])
         self.assertIn('Eliminar ticket', [item.item.label for item in TicketControls.from_row(row, staff=True).children])
         row['rating'] = 5
-        self.assertEqual(TicketControls.from_row(row).children, [])
+        rated=TicketControls.from_row(row)
+        self.assertEqual(len(rated.children),3)
+        self.assertTrue(rated.children[1].item.disabled)
         self.assertNotIn('Valorar', [item.item.label for item in TicketControls.from_row(row, staff=True).children])
 
     async def test_recovery_reuses_the_simplified_terminal_panel_if_its_saved_id_is_missing(self):

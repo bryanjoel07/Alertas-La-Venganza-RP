@@ -14,20 +14,19 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='ticket-staff-delete-access-v37'
-SUMMARY=('Devuelve el acceso a eliminar desde el propio ticket: el primer mensaje de casos cerrados o resueltos incluye Gestión Staff. '
-    'El botón consulta de nuevo al miembro y abre una vista privada, autorizada por caso, con Eliminar ticket solo cuando está cerrado. '
-    'Conserva la confirmación, transcripción completa, pruebas y copia verificada obligatorias antes de borrar. '
-    'Repara los mensajes existentes en el mismo lugar con una copia privada antes y después; el aviso del jugador sigue mostrando solo el estado y Valorar. '
-    'Por solicitud expresa del propietario, verifica Gestionar canales para el bot y lo añade únicamente a su rol propio, identificado por ID de bot y pertenencia, si falta. '
-    'Si ya lo tiene, incluido mediante Administrador, no edita roles. Conserva los demás permisos y no cambia roles protegidos, Ciudadanos ni participantes. '
-    'El despliegue no confirma ni elimina ningún ticket de jugadores.')
-RESTORE=('Código anterior: 40adae40b6bcd6150edc700530fee3f8a6d9f568. Conservar /data, SQLite, transcripciones, pruebas y canales actuales. '
-    'Revertir código retira el nuevo acceso de Gestión Staff del encabezado en su siguiente actualización; los controles privados anteriores siguen disponibles por los comandos de tickets. '
-    'No se necesita migración inversa. Los mensajes previos están en TICKET_OUTCOME_PRIVACY. '
-    'El permiso del rol, si se añadió, permanece al volver al código anterior. TICKET_BOT_DELETE_PERMISSION conserva su ID y permiso original; '
-    'para una reversión autorizada retirar únicamente el bit Gestionar canales (16) que se haya añadido, preservando los demás bits actuales. '
-    'No retirar Administrador ni modificar roles protegidos, otras membresías, archivos o bases antiguas. El marcador bot-delete-permission-request-v37 evita repetir una concesión ya comprobada.')
+RELEASE='public-ticket-close-panel-v38'
+SUMMARY=('Por elección del propietario, los tickets cerrados tienen un panel público final con Transcripción, Valorar y Eliminar ticket. '
+    'Discord muestra los tres a todos; el bot limita transcripción y valoración al autor, y eliminación al staff autorizado por caso. '
+    'La transcripción del botón siempre es la copia del jugador, incluso si su autor es staff; no incluye solución ni información interna. '
+    'Eliminar pide escribir ELIMINAR en un formulario nativo, comprueba de nuevo el miembro y conserva la transcripción, pruebas y respaldo verificado obligatorios. '
+    'No abre un menú privado de gestión desde el cierre. Retira el acceso de Gestión Staff del encabezado cerrado y actualiza el aviso existente con copia privada previa. '
+    'Al volver a cerrar un caso, publica el panel al final de la conversación y desactiva los controles anteriores; la valoración ya realizada permanece deshabilitada. '
+    'Conserva roles, permisos, datos, otras funciones y los avisos privados de atención existentes. El despliegue no elimina tickets de jugadores.')
+RESTORE=('Código anterior: dab5a3edb90b94b0e4e83a95c76bd6dc41f68c46. Conservar /data, SQLite, transcripciones, pruebas y todos los canales actuales. '
+    'No se necesitan cambios de esquema. La versión anterior vuelve a mostrar Gestión Staff en el encabezado cerrado y deja Valorar en el aviso del jugador al actualizar sus controles. '
+    'Los estados previos y posteriores de los mensajes están en TICKET_OUTCOME_PRIVACY y TICKET_OUTCOME_NOTICE; restaurar solo componentes autorizados por ID. '
+    'No restaurar una base antigua, reabrir ni recrear canales eliminados, borrar conversaciones ni alterar roles o permisos para revertir la interfaz. '
+    'El permiso del bot verificado en v37 y las valoraciones ya guardadas permanecen. Una confirmación abierta antes de reiniciar debe volver a abrirse desde el botón vigente.')
 
 
 
