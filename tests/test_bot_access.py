@@ -99,6 +99,23 @@ class BotAccessTests(unittest.IsolatedAsyncioTestCase):
         other = self.interaction(self.member(), 'tienda')
         self.assertFalse(await self.app.tree.interaction_check(other))
 
+    async def test_ping_does_not_wait_for_storage_but_keeps_member_authorization(self):
+        self.app.economy.ready = True
+        command = self.app.tree.get_command('ping', guild=self.module.GUILD)
+        with patch.object(self.app.economy.store, 'config', side_effect=RuntimeError('Storage unavailable')):
+            interaction = self.interaction(self.member(), 'ping')
+            self.assertTrue(await self.app.tree.interaction_check(interaction))
+            await command.callback(interaction)
+            interaction.response.send_message.assert_awaited_once()
+            self.assertTrue(interaction.response.send_message.call_args.kwargs['ephemeral'])
+            for member, guild_id in [(self.member(bot=True), GUILD_ID),
+                    (self.member(), GUILD_ID + 1), (self.member(), None)]:
+                with self.subTest(guild_id=guild_id, bot=member.bot):
+                    rejected = self.interaction(member, 'ping')
+                    rejected.guild_id = guild_id
+                    self.assertFalse(await self.app.tree.interaction_check(rejected))
+                    self.assertTrue(rejected.response.send_message.call_args.kwargs['ephemeral'])
+
     async def test_command_snapshot_keeps_permissions_omitted_by_discord_py_serialization(self):
         for permissions in (None, '0', '8', str(ADMIN_DISCOVERY.value)):
             data = dict(id='123', application_id='1567658433497399408', guild_id=str(GUILD_ID),

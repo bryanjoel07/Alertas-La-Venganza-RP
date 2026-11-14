@@ -97,9 +97,12 @@ class ProfileTree(app_commands.CommandTree):
                 else:
                     await interaction.response.send_message(str(error), ephemeral=True)
                 return False
+        # Keep the connection check independent of configuration storage.
+        if interaction.command.name == 'ping':
+            return True
         economy = self.client.economy
         channel_id = economy.store.config('profiles_channel') if economy.ready else ''
-        if channel_id and str(interaction.channel_id) == channel_id and interaction.command.name not in {'perfil', 'ping'}:
+        if channel_id and str(interaction.channel_id) == channel_id and interaction.command.name != 'perfil':
             await interaction.response.send_message('👤 Aquí solo se utiliza **/perfil**. Usa los demás comandos en sus canales.', ephemeral=True)
             return False
         return True

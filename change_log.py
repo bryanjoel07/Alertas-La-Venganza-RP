@@ -14,16 +14,14 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='private-member-ping-v39'
-SUMMARY=('Añade /ping para todos los miembros de La Venganza RP, sin exigir roles de staff ni administración. '
-    'Responde solo al usuario con Pong, bro y la latencia actual de la conexión con Discord en milisegundos; si todavía no hay medición indica calculando. '
-    'Se permite también en Perfiles por ser una consulta privada y aparece en el directorio de diagnóstico. '
-    'El registro del comando usa la sincronización existente con copia privada anterior y posterior. '
-    'No modifica roles, permisos de canales, tickets, economía ni los demás sistemas.')
-RESTORE=('Código anterior: 1b1e7c7d48edb05eb4255bbcf834d2a6bcaed1b6. Volver a desplegar ese commit conservando /data y SQLite actuales. '
-    'La sincronización de comandos de inicio retira /ping; no hay cambios de esquema ni datos nuevos que revertir. '
-    'No restaurar una base antigua ni modificar roles, permisos, mensajes, tickets o archivos para deshacer este comando. '
-    'Se conserva el panel público de cierre de tickets de v38.')
+RELEASE='ping-without-storage-wait-v40'
+SUMMARY=('Revisión de latencia: la medición de /ping es el recorrido de ida y vuelta del heartbeat con Discord, no el tiempo interno de ejecutar un comando. '
+    'Elimina la lectura síncrona e innecesaria de configuración de Perfiles antes de responder a /ping. '
+    'El comando responde sin depender de la disponibilidad de SQLite y conserva primero las comprobaciones de servidor y miembro, además de su respuesta privada. '
+    'No altera ni reduce artificialmente la medición de latencia. No cambia región de Railway, volumen, roles, permisos ni otros sistemas.')
+RESTORE=('Código anterior: b59fbaeb2f1402969c89935b00c06d9af3740437. Volver a desplegar ese commit conservando /data y SQLite actuales. '
+    'La versión anterior conserva /ping con su respuesta privada y vuelve a consultar la configuración de Perfiles antes de ejecutarlo. '
+    'No hay cambios de esquema, archivos ni registros de jugadores que revertir. No restaurar una base antigua ni modificar roles, canales o mensajes.')
 
 
 
