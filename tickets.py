@@ -24,9 +24,10 @@ from settings_catalog import value as setting
 from discord import app_commands
 from bot_access import is_bot_admin
 from ticket_privacy import FINAL_STATES, notice_kind, outcome_text, saved_member_transcript
+from ticket_bot_permission import ensure_bot_delete_permission
 from ticket_forms import FORMS
 from tickets_store import TicketStore,DEPARTMENTS,STATES,PROTECTED,NORMAL_STAFF,ALL_STAFF
-from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,PriorityForm,RatingForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,reply
+from tickets_ui import TicketPanel,TicketAction,TicketControls,OpenForm,TextForm,PriorityForm,RatingForm,ChoiceView,CasePicker,DeleteConfirm,ClosedArchivePanel,header_controls,reply
 
 log=logging.getLogger('LaVenganzaRP.tickets')
 PANEL_CHANNEL=1513423707467415642
@@ -213,11 +214,24 @@ class TicketSystem:
   if row['department']=='staff':embed.add_field(name='Privacidad',value='Caso reservado. Los usuarios con Administrador en Discord conservan acceso técnico.',inline=False)
   embed.set_footer(text=f"Autor ID {row['owner']} · Usa los controles del ticket · No compartas contraseñas ni datos de tarjeta")
   return embed
- async def show_case(self,i,row,*,staff=False):
+ async def show_case(self,i,row,*,staff=False,actor=None):
   row=self.store.get(row['id']) or row
-  self.authorize(i.user,row,staff=staff)
+  self.authorize(actor or i.user,row,staff=staff)
   return await reply(i,'Gestión privada del staff.' if staff else None,
     embed=self.embed(row,staff=staff),view=TicketControls.from_row(row,staff=staff))
+ async def open_staff_panel(self,i,rid):
+  if not i.response.is_done():await i.response.defer(ephemeral=True,thinking=True)
+  if i.guild_id!=self.guild_id:raise ValueError('Abre Gestión Staff desde La Venganza RP.')
+  guild=self.bot.get_guild(self.guild_id)
+  if guild is None:raise ValueError('El bot se está conectando. Inténtalo en un momento.')
+  try:member=await guild.fetch_member(i.user.id)
+  except discord.NotFound:raise ValueError('Ya no perteneces a este servidor.') from None
+  row=await self.call('get',rid)
+  if not row or row.get('deleted_at') or json.loads(row['form']).get('selftest'):
+   raise ValueError('Ese ticket ya no está disponible.')
+  self.authorize(member,row,staff=True)
+  await self.channel(row)
+  return await self.show_case(i,row,staff=True,actor=member)
  async def refresh(self,row,*,verify_priority=False):
   async with self.panel_locks.setdefault(row['id'],asyncio.Lock()):
    return await self._refresh(row,verify_priority=verify_priority)
@@ -234,7 +248,7 @@ class TicketSystem:
     if old.author.id==self.bot.user.id and any(e.title and e.title.startswith(f"{DEPARTMENTS[row['department']][0]} Ticket #{row['id']} ·") for e in old.embeds):
      message=old;break
    if message:await self.edit_control(row,channel,message,audit_priority=verify_priority)
-   else:message=await channel.send(embed=self.embed(row),view=None if row['status'] in FINAL_STATES else TicketControls.from_row(row),allowed_mentions=discord.AllowedMentions.none())
+   else:message=await channel.send(embed=self.embed(row),view=header_controls(row),allowed_mentions=discord.AllowedMentions.none())
    await self.call('update',row['id'],control_message=message.id)
   if verify_priority:
    confirmed=await channel.fetch_message(message.id)
@@ -249,10 +263,10 @@ class TicketSystem:
   else:await self.sync_control_messages(row,channel,message.id)
   return message
  async def edit_control(self,row,channel,message,*,audit_priority=False):
-  public_view=None if row['status'] in FINAL_STATES else TicketControls.from_row(row)
+  public_view=header_controls(row)
   async def edit():
    latest=self.store.get(row['id']) or row
-   return await message.edit(embed=self.embed(latest),view=None if latest['status'] in FINAL_STATES else TicketControls.from_row(latest))
+   return await message.edit(embed=self.embed(latest),view=header_controls(latest))
   ids=[getattr(c,'custom_id',None) for group in message.components for c in group.children]
   expected=[c.custom_id for c in public_view.children] if public_view else []
   displayed=[str(field.value) for embed in message.embeds for field in embed.fields if field.name=='Prioridad']
@@ -262,8 +276,8 @@ class TicketSystem:
       'Mantener la solución y el archivo solo en la vista privada del staff')
   if row['status'] in FINAL_STATES:
    if ids==expected and [e.to_dict() for e in message.embeds]==[self.embed(row).to_dict()]:return message
-   return await self.edit_public_message(row,channel,message,dict(embed=self.embed(row),view=None),
-      'Ocultar la gestión interna en el panel público del ticket')
+   return await self.edit_public_message(row,channel,message,dict(embed=self.embed(row),view=public_view),
+      'Abrir la gestión privada del staff desde el ticket sin publicar información interna')
   if row['status']!='cerrado' and (ids!=expected or (audit_priority and displayed!=[row['priority']])):
    async def snapshot():
     fresh=await channel.fetch_message(message.id)
@@ -823,6 +837,7 @@ class TicketSystem:
   await reply(i,text,
     file=discord.File(io.BytesIO(data),filename=f'ticket-{row["id"]}.html'))
  async def action(self,i,rid,action):
+  if action=='manage':return await self.open_staff_panel(i,rid)
   feedback=getattr(self.bot,'feedback',None)
   if action=='rate' and getattr(feedback,'prepared',False) is True:return await feedback.ticket_form(i,rid)
   row=await self.call('get',rid)
@@ -1202,7 +1217,10 @@ class TicketSystem:
       self.store.config(f"outcome-privacy:{current['id']}",'v1')
       control=await case_channel.fetch_message(self.store.get(ticket['id'])['control_message'])
       buttons=[getattr(component,'custom_id',None) for row in control.components for component in row.children]
-      if buttons:raise ValueError('El panel público conserva controles de gestión.')
+      if buttons!=[c.custom_id for c in header_controls(current).children]:raise ValueError('Discord no confirmó el acceso a Gestión Staff.')
+      rights=case_channel.permissions_for(guild.me) if hasattr(case_channel,'permissions_for') else None
+      log.info('TICKETS staff_entry_verified id=%s channel=%s message=%s actions=%s private_management=True bot_manage_channels=%s',
+       current['id'],case_channel.id,control.id,buttons,rights.manage_channels if rights is not None else None)
       confirmed_notice=await case_channel.fetch_message(notice.id)
       expected=[c.custom_id for c in TicketControls.from_row(current).children]
       if [getattr(c,'custom_id',None) for r in confirmed_notice.components for c in r.children]!=expected:
@@ -1222,7 +1240,7 @@ class TicketSystem:
       self.store.config(f"outcome-privacy:{current['id']}",'v1')
       control=await case_channel.fetch_message(self.store.get(current['id'])['control_message'])
       actions=[getattr(c,'custom_id',None) for r in control.components for c in r.children]
-      expected=[] if current['status'] in FINAL_STATES else [c.custom_id for c in TicketControls.from_row(current).children]
+      expected=[c.custom_id for c in header_controls(current).children]
       if actions!=expected:raise RuntimeError('Discord no confirmó los controles correspondientes al responsable del ticket')
       active_updated+=1
       log.info('TICKETS active_controls_verified id=%s channel=%s actions=%s assigned=%s claim_reminders=%s',current['id'],case_channel.id,actions,bool(current['assignee']),claim_reminder_eligible(current))
@@ -1262,6 +1280,8 @@ class TicketSystem:
   if not self.enabled():return
   async with self.ready_lock:
    if not self.prepared:
+    try:await ensure_bot_delete_permission(self)
+    except Exception:log.exception('TICKETS bot_delete_permission_check_pending; continuing panel repair')
     await self.bot.changes.tracked('TICKETS_INSTALL_REQUEST_ID','Instalar tickets avanzados',self.install)
     async with self.lock:await self.recover()
     await self.bot.changes.tracked('TICKETS_SELFTEST_REQUEST_ID','Verificar tickets avanzados',self.selftest)
@@ -1413,7 +1433,9 @@ class TicketSystem:
     else:await self.refresh(self.store.get(rid))
     control=await channel.fetch_message(self.store.get(rid)['control_message'])
     buttons=[getattr(c,'custom_id',None) for r in control.components for c in r.children]
-    if f'lv:ticket:case:{rid}:delete' not in buttons:raise RuntimeError('No se confirmó el botón de eliminación')
+    if f'lv:ticket:case:{rid}:manage' not in buttons:raise RuntimeError('No se confirmó el acceso a Gestión Staff')
+    if f'lv:ticket:case:{rid}:delete' not in [item.custom_id for item in TicketControls.from_row(self.store.get(rid),staff=True).children]:
+     raise RuntimeError('No se confirmó la opción privada de eliminación')
   await self.delete_ticket(guild.me,rid)
   row=self.store.get(rid)
   if not row.get('deleted_at') or 'PRUEBA_GUARDADA_TRAS_ELIMINAR' not in row['transcript']:raise RuntimeError('No se conservó la transcripción tras eliminar')

@@ -4,6 +4,7 @@ import logging
 import discord
 from tickets_store import DEPARTMENTS
 from ticket_forms import FORMS,submission
+from ticket_privacy import FINAL_STATES
 
 async def reply(i,text=None,**kwargs):
  sender=i.followup.send if i.response.is_done() else i.response.send_message
@@ -80,7 +81,8 @@ ACTIONS={'claim':('Reclamar','🙋'),'wait':('Solicitar pruebas','📎'),'resolv
  'close':('Cerrar','🔒'),'reopen':('Reabrir','🔓'),'transcript':('Transcripción','📄'),
  'note':('Nota interna','📝'),'transfer':('Transferir','🔀'),'priority':('Prioridad','🚩'),
  'people':('Añadir miembro','👥'),'removepeople':('Remover miembro','➖'),
- 'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️')}
+ 'rate':('Valorar','⭐'),'proof':('Pruebas guardadas','🗃️'),'delete':('Eliminar ticket','🗑️'),
+ 'manage':('Gestión Staff','🧰')}
 class TicketAction(discord.ui.DynamicItem[discord.ui.Button],template=r'lv:ticket:case:(?P<ticket>[0-9]+):(?P<action>[a-z]+)'):
  def __init__(self,rid,action):
   label,emoji=ACTIONS[action]
@@ -113,6 +115,16 @@ class TicketControls(discord.ui.View):
  def from_row(cls,row,*,staff=False):
   return cls(row['id'],row['status']=='cerrado',bool(row.get('deleted_at')),assigned=bool(row.get('assignee')),
     staff=staff,resolved=row['status']=='resuelto',rated=row.get('rating') is not None)
+
+class TicketStaffAccess(SafeView):
+ def __init__(self,rid):
+  super().__init__(timeout=None)
+  self.add_item(TicketAction(rid,'manage'))
+
+def header_controls(row):
+ if row.get('deleted_at'):return None
+ if row['status'] in FINAL_STATES:return TicketStaffAccess(row['id'])
+ return TicketControls.from_row(row)
 
 class TextForm(discord.ui.Modal):
  async def on_error(self,i,error):

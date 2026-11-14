@@ -112,7 +112,7 @@ class OutcomePrivacyTests(unittest.IsolatedAsyncioTestCase):
         notices = [message for message in self.messages.values() if message.content.startswith('🔒 Ticket #')]
         self.assertEqual(len(notices), 1)
         self.assertEqual(self.ids(notices[0]), [f'lv:ticket:case:{self.rid}:rate'])
-        self.assertEqual(self.messages[500].components, [])
+        self.assertEqual(self.ids(self.messages[500]), [f'lv:ticket:case:{self.rid}:manage'])
         for message in self.messages.values():
             payload = message.content + json.dumps([embed.to_dict() for embed in message.embeds])
             self.assertNotIn(SECRET, payload)
@@ -159,7 +159,7 @@ class OutcomePrivacyTests(unittest.IsolatedAsyncioTestCase):
         await self.system.refresh(row)
         self.assertEqual(self.messages[700].content, outcome_text(row))
         self.assertEqual(self.ids(self.messages[700]), [f'lv:ticket:case:{self.rid}:rate'])
-        self.assertEqual(self.messages[500].components, [])
+        self.assertEqual(self.ids(self.messages[500]), [f'lv:ticket:case:{self.rid}:manage'])
         self.channel.send.assert_not_awaited()
         self.owner.send.assert_not_awaited()
         record = next(record for record in self.bot.changes.journal.rows()
