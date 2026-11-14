@@ -14,14 +14,18 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='ping-without-storage-wait-v40'
-SUMMARY=('Revisión de latencia: la medición de /ping es el recorrido de ida y vuelta del heartbeat con Discord, no el tiempo interno de ejecutar un comando. '
-    'Elimina la lectura síncrona e innecesaria de configuración de Perfiles antes de responder a /ping. '
-    'El comando responde sin depender de la disponibilidad de SQLite y conserva primero las comprobaciones de servidor y miembro, además de su respuesta privada. '
-    'No altera ni reduce artificialmente la medición de latencia. No cambia región de Railway, volumen, roles, permisos ni otros sistemas.')
-RESTORE=('Código anterior: b59fbaeb2f1402969c89935b00c06d9af3740437. Volver a desplegar ese commit conservando /data y SQLite actuales. '
-    'La versión anterior conserva /ping con su respuesta privada y vuelve a consultar la configuración de Perfiles antes de ejecutarlo. '
-    'No hay cambios de esquema, archivos ni registros de jugadores que revertir. No restaurar una base antigua ni modificar roles, canales o mensajes.')
+RELEASE='scheduled-staff-interview-reminders-v41'
+SUMMARY=('Amplía los recordatorios únicamente para entrevistas de solicitudes de staff agendadas desde este bot. '
+    'Avisa por privado al candidato y al entrevistador asignado con la anticipación configurada (60 minutos por defecto), 15 minutos antes si corresponde y al comenzar. '
+    'Incluye la fecha adaptada al usuario, instrucciones y acceso a la sala cuando está disponible; los controles del candidato y entrevistador conservan sus autorizaciones. '
+    'Cada reprogramación tiene identidad propia, incluso al volver a la misma fecha. Cancela avisos anteriores al cambiar la cita, retirar o finalizar la solicitud o completar la entrevista. '
+    'Guarda recibos duraderos, reconoce los avisos anteriores y entrega solo la fase vigente tras una interrupción. Una confirmación cercana evita repetir inmediatamente el mismo aviso. '
+    'Si el candidato no recibe privados, avisa una vez al entrevistador; las fechas siguen en Mi solicitud. Revalida los permisos del entrevistador al entregar. '
+    'Los nuevos envíos de entrevista registran estado privado antes y después. No añade recordatorios generales ni modifica roles protegidos ni asigna roles de staff.')
+RESTORE=('Código anterior: b7ce134c337096b0b2c6214ef21a347ba60021e5. Conservar /data y SQLite actuales, solicitudes, entrevistas, historial y recibos. '
+    'Antes de arrancar la versión anterior, guardar una copia verificada y marcar como cancelled solo los avisos pendientes nuevos de entrevista o recordatorio cuyo kind contenga :v; no borrar los recibos. '
+    'La versión anterior usa un único aviso al candidato y no interpreta los nuevos destinatarios ni fases. El índice lv_recruit_interview_events puede permanecer. '
+    'No restaurar una base antigua, reenviar avisos ya entregados ni modificar roles, permisos o canales para revertir esta función.')
 
 
 

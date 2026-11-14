@@ -12,6 +12,7 @@ import discord
 from discord import app_commands
 from bot_access import is_bot_admin
 from recruitment_store import RecruitmentStore, ACTIVE, LABELS
+from interview_reminders import START_GRACE_SECONDS
 from recruitment_survey import RecruitmentSource,survey_recruitment
 from recruitment_ui import (RecruitPanel,RecruitAction,ApplicationForm,TextForm,InterviewForm,
  Confirm,Pages,controls,reply,summary,detail_pages,RED)
@@ -117,7 +118,12 @@ class RecruitmentSystem:
   if messages:
    last=messages[-1];embed.add_field(name='Último mensaje' if last['action']!='respuesta' else 'Tu última respuesta',value=last['text'][:1024],inline=False)
   view=controls(row['id'],actions)
-  if row['interview_at'] and status=='entrevista' and row['interview_at']-3600<=time.time()<=row['interview_at']+7200:
+  if row['interview_at'] and status in ACTIVE-{'borrador'} and not row['interview_done']:
+   settings=await self.call('interview_reminder_settings')
+   timing=f'{settings["advance_minutes"]} minutos antes'
+   if settings['second_minutes']:timing+=' y 15 minutos antes'
+   embed.add_field(name='Recordatorios de entrevista',value=f'Te avisamos por privado {timing} y a la hora de entrar. Si tienes los mensajes cerrados, consulta la fecha aquí.',inline=False)
+  if row['interview_at'] and status in ACTIVE-{'borrador'} and not row['interview_done'] and row['interview_at']-3600<=time.time()<=row['interview_at']+7200:
    view.add_item(discord.ui.Button(label='Entrar a la entrevista',emoji='🎙️',url=f'https://discord.com/channels/{self.guild_id}/{CHANNELS["voice"]}',row=1))
   await reply(i,embed=embed,view=view)
   if details:
@@ -174,7 +180,7 @@ class RecruitmentSystem:
   member,row=await self.authorized(i,rid,staff=True)
   at=parse_date(day,hour)
   async with self.lock:await self.call('schedule',rid,i.user.id,at,i.user.id,text,revision)
-  await reply(i,f'Entrevista agendada para <t:{at}:F>. Tú quedas como entrevistador. El jugador recibirá el aviso por privado y podrá verla en «Mi solicitud».')
+  await reply(i,f'Entrevista agendada para <t:{at}:F>. Tú quedas como entrevistador. Los dos recibirán la confirmación y los recordatorios por privado. Si cambiaste la fecha, los avisos de la cita anterior quedan cancelados. El jugador también puede verla en «Mi solicitud».')
   await self.sync()
  async def prepare_decision(self,i,rid,accepted,text,revision):
   _,row=await self.authorized(i,rid,staff=True)
@@ -317,6 +323,8 @@ class RecruitmentSystem:
    log.info('RECRUIT ready apply=%s review=%s interviews=%s voice=%s panel=%s reviewers=%s old_panel_retired=True source_messages=%s acceptance_role=manual commands=%s',
     CHANNELS['apply'],CHANNELS['review'],CHANNELS['interviews'],CHANNELS['voice'],await self.call('config','panel'),','.join(permitted),sum(report['counts'].values()),','.join(c.name for c in self.group.commands))
    log.info('RECRUIT verified persistent_controls=True forms=%s private_channels=True protected_overwrites_unchanged=True auto_role=False',len(forms))
+   reminders=await self.call('interview_reminder_settings')
+   log.info('RECRUIT interview_reminders_ready scheduled=%s advance_minutes=%s second_minutes=%s at_start=True candidate=True assigned_interviewer=True persistent=True stale_cancelled=True dm_fallback=True general_reminders=False',reminders['scheduled'],reminders['advance_minutes'],reminders['second_minutes'])
  async def publish_case(self,row,key,field):
   channel=await self.channel(key);message=None
   if row[field+'_message']:
@@ -343,26 +351,61 @@ class RecruitmentSystem:
   else:message=await channel.send(embed=embed,view=controls(row['id'],actions),allowed_mentions=NONE)
   await self.call('receipt',row['id'],field,message.id,row['revision'])
  async def notices(self):
-  for notice in await self.call('pending'):
+  for queued in await self.call('pending'):
+   notice=await self.call('notice_ready',queued['id'])
+   if not notice:continue
    try:
+    if notice.get('audience')=='interviewer':
+     guild=self.bot.get_guild(self.guild_id)
+     if guild is None:continue
+     try:member=await guild.fetch_member(notice['user'])
+     except discord.NotFound:
+      await self.call('notice_done',notice['id'],'cancelled');continue
+     if not can_review(member):
+      await self.call('notice_done',notice['id'],'cancelled');continue
     user=await self.bot.fetch_user(notice['user']);channel=await user.create_dm()
     marker=f'La Venganza RP · staff-notice:{notice["id"]}';found=None
     async for old in channel.history(limit=100):
      if old.author.id==self.bot.user.id and any(e.footer.text==marker for e in old.embeds):found=old;break
-    if not found:
-     embed=discord.Embed(title=f'🛡️ Tu solicitud de staff #{notice["application"]}',description=notice['text'][:3500],color=RED);embed.set_footer(text=marker)
-     view=controls(notice['application'],['status'])
+    async with self.lock:
+     # Scheduling, completion and withdrawals use the same lock. Recheck
+     # after network reads so a changed appointment never sends an old alert.
+     notice=await self.call('notice_ready',queued['id'])
+     if not notice:continue
+     if found:
+      async def reconcile():await self.call('notice_done',notice['id'],'sent',found.id)
+      if notice.get('audience'):
+       await self.tracked('Enviar aviso privado de entrevista',f'interview-notice:{notice["id"]}',reconcile,
+        extra=lambda:self.call('notice_snapshot',notice['id']))
+      else:await reconcile()
+      continue
      row=await self.call('get',notice['application'])
-     if row['status'] in ACTIVE-{'borrador'}:view.add_item(RecruitAction(row['id'],'reply'))
-     view.add_item(discord.ui.Button(label='Ir a Aplicar Staff',url=f'https://discord.com/channels/{self.guild_id}/{CHANNELS["apply"]}'))
-     found=await channel.send(embed=embed,view=view,allowed_mentions=NONE)
-    await self.call('notice_done',notice['id'],'sent',found.id)
+     interviewer=notice.get('audience')=='interviewer'
+     title=f'🎙️ Entrevista de staff · Solicitud #{row["id"]}' if interviewer else f'🛡️ Tu solicitud de staff #{row["id"]}'
+     embed=discord.Embed(title=title,description=notice['text'][:3500],color=RED);embed.set_footer(text=marker)
+     view=controls(row['id'],['detail'] if interviewer else ['status'])
+     if not interviewer and row['status'] in ACTIVE-{'borrador'}:view.add_item(RecruitAction(row['id'],'reply'))
+     target='review' if interviewer else 'apply'
+     view.add_item(discord.ui.Button(label='Abrir revisión' if interviewer else 'Ir a Aplicar Staff',url=f'https://discord.com/channels/{self.guild_id}/{CHANNELS[target]}'))
+     if (notice.get('audience') and row['status'] in ACTIVE-{'borrador'} and not row['interview_done']
+      and row['interview_at']-3600<=time.time()<=row['interview_at']+START_GRACE_SECONDS):
+      view.add_item(discord.ui.Button(label='Entrar a la entrevista',emoji='🎙️',url=f'https://discord.com/channels/{self.guild_id}/{CHANNELS["voice"]}'))
+     async def send():
+      message=await channel.send(embed=embed,view=view,allowed_mentions=NONE)
+      await self.call('notice_done',notice['id'],'sent',message.id)
+     if notice.get('audience'):
+      await self.tracked('Enviar aviso privado de entrevista',f'interview-notice:{notice["id"]}',send,
+       extra=lambda:self.call('notice_snapshot',notice['id']))
+     else:await send()
    except (discord.Forbidden,discord.NotFound):
-    await self.call('notice_done',notice['id'],'blocked')
-    log.info('RECRUIT notice blocked id=%s application=%s; candidate_status_available=True',notice['id'],notice['application'])
+    if notice.get('audience'):await self.call('notice_blocked',notice['id'])
+    else:await self.call('notice_done',notice['id'],'blocked')
+    log.info('RECRUIT notice blocked id=%s application=%s; candidate_status_available=True interviewer_alert_queued=%s',notice['id'],notice['application'],notice.get('audience')=='candidate')
+   except discord.HTTPException:
+    log.exception('RECRUIT notice pending retry id=%s application=%s',notice['id'],notice['application'])
  async def voice_access(self,row):
   channel=await self.channel('voice');records=await self.call('voice',row['id']);record=records[0] if records else None
-  now=int(time.time());active=row['status']=='entrevista' and not row['interview_done'] and row['interview_at']-3600<=now<=row['interview_at']+2*3600
+  now=int(time.time());active=row['status'] in ACTIVE-{'borrador'} and not row['interview_done'] and row['interview_at']-3600<=now<=row['interview_at']+2*3600
   if not active and (not record or record['state'] in {'restored','conflict'}):return
   try:member=await channel.guild.fetch_member(row['owner'])
   except discord.NotFound:

@@ -84,11 +84,13 @@ class StoreTests(unittest.TestCase):
   self.assertEqual(row['step'],0);self.assertTrue(json.loads(row['answers']))
   self.store.withdraw(row['id'],99,row['revision']);self.assertFalse(self.store.rows(submitted=True))
  def test_reminder_idempotent_and_reprogramming_gets_new_reminder(self):
-  row=self.submitted();at=int(time.time())+1800;rid=row['id']
-  self.store.schedule(rid,1,at,1,'Prepárate',row['revision']);self.store.remind();self.store.remind()
-  reminders=[n for n in self.store.pending() if n['kind'].startswith('recordatorio:')];self.assertEqual(len(reminders),1)
-  row=self.store.get(rid);self.store.schedule(rid,1,at+600,1,'Cambiamos la hora',row['revision']);self.store.remind()
+  row=self.submitted();at=int(time.time())+7200;rid=row['id']
+  self.store.schedule(rid,1,at,1,'Prepárate',row['revision']);self.store.remind(now=at-3600);self.store.remind(now=at-3600)
+  reminders=[n for n in self.store.pending() if n['kind'].startswith('recordatorio:')];self.assertEqual(len(reminders),2)
+  previous={n['id'] for n in reminders}
+  row=self.store.get(rid);self.store.schedule(rid,1,at+3600,1,'Cambiamos la hora',row['revision']);self.store.remind(now=at)
   self.assertEqual(len([n for n in self.store.pending() if n['kind'].startswith('recordatorio:')]),2)
+  self.assertTrue(previous.isdisjoint({n['id'] for n in self.store.pending()}))
  def test_history_pagination_does_not_skip_unsubmitted_drafts(self):
   self.submitted(99);self.draft(100)
   self.assertEqual(len(self.store.rows(submitted=True,limit=1)),1)

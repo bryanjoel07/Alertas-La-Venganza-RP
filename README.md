@@ -442,3 +442,11 @@ La rotación cambia los lunes a las **6:30 p. m. de Puerto Rico**. Incluye dos a
 
 
 El registro privado de versiones y operaciones del bot se consulta con `/cambios historial` y `/cambios detalle`. Consulta [REGISTRO_CAMBIOS.md](REGISTRO_CAMBIOS.md) para las copias y las instrucciones de restauración.
+
+## Recordatorios de entrevistas de staff
+
+Desde la solicitud, el revisor pulsa **Entrevista → Agendar entrevista** y elige día, hora de Puerto Rico e instrucciones. Candidato y entrevistador reciben una confirmación privada. El bot recuerda la entrevista con la anticipación configurada (60 minutos por defecto), 15 minutos antes cuando la anticipación es mayor y a la hora de comenzar. La fecha se muestra en la zona horaria de cada usuario y el aviso incluye acceso a la sala durante el horario permitido.
+
+La anticipación se cambia en `/ajustes panel` → **Solicitudes de staff → Postulaciones y entrevistas**. Solo se generan recordatorios para entrevistas programadas en este sistema. Reprogramar cancela los avisos pendientes de la cita anterior; completar la entrevista, retirar la solicitud o decidirla detiene los recordatorios. Si una cita se agenda cerca de su hora, la confirmación sustituye el recordatorio de esa misma franja.
+
+Los recibos sobreviven a reinicios y un aviso atrasado se sustituye por la fase que siga vigente. Si el candidato tiene los privados bloqueados, el entrevistador recibe un único aviso y la fecha continúa disponible en **Mi solicitud**. Los mensajes del entrevistador requieren que siga autorizado para revisar solicitudes. La aceptación conserva la asignación manual del rol por administración.

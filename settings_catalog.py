@@ -102,7 +102,7 @@ FORMS=(
   kv('accepting','Recibir reportes nuevos',True,'lv_bug_config',kind='bool'),
   kv('max_open','Reportes pendientes por jugador',3,'lv_bug_config',1,30),
   kv('cooldown_minutes','Tiempo entre reportes (minutos)',0,'lv_bug_config',0,1440))),
- Form('recruitment','recruitment','Postulaciones y entrevistas','Los casos existentes siguen disponibles. Administración conserva la asignación manual de roles.',(
+ Form('recruitment','recruitment','Postulaciones y entrevistas','Avisos privados al candidato y entrevistador: con la anticipación elegida, 15 minutos antes si corresponde y al comenzar. Administración conserva la asignación manual de roles.',(
   kv('open','Recibir solicitudes de staff',True,'lv_recruit_config',kind='bool'),
   kv('cooldown_minutes','Tiempo entre solicitudes (minutos)',5,'lv_recruit_config',0,1440),
   kv('interview_notice_minutes','Recordar entrevista con anticipación (min)',60,'lv_recruit_config',5,1440))),
