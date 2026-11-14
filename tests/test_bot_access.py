@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 import discord
 
@@ -83,6 +83,21 @@ class BotAccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(names), 108)
         with self.assertRaises(ValueError):
             command_level('administracion_nueva')
+
+    async def test_ping_is_private_for_citizens_even_in_profiles(self):
+        command = self.app.tree.get_command('ping', guild=self.module.GUILD)
+        self.assertIsNone(command.default_permissions)
+        self.app.economy.ready = True
+        self.config['profiles_channel'] = '123'
+        for latency, expected in [(0.042, '42 ms'), (float('nan'), 'calculando…')]:
+            with self.subTest(latency=latency), patch.object(type(self.app), 'latency', PropertyMock(return_value=latency)):
+                interaction = self.interaction(self.member(), 'ping')
+                self.assertTrue(await self.app.tree.interaction_check(interaction))
+                await command.callback(interaction)
+                interaction.response.send_message.assert_awaited_once_with(
+                    f'🏓 Pong, bro. · Latencia: **{expected}**', ephemeral=True)
+        other = self.interaction(self.member(), 'tienda')
+        self.assertFalse(await self.app.tree.interaction_check(other))
 
     async def test_command_snapshot_keeps_permissions_omitted_by_discord_py_serialization(self):
         for permissions in (None, '0', '8', str(ADMIN_DISCOVERY.value)):

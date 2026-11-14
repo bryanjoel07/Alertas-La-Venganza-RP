@@ -99,7 +99,7 @@ class ProfileTree(app_commands.CommandTree):
                 return False
         economy = self.client.economy
         channel_id = economy.store.config('profiles_channel') if economy.ready else ''
-        if channel_id and str(interaction.channel_id) == channel_id and interaction.command.name != 'perfil':
+        if channel_id and str(interaction.channel_id) == channel_id and interaction.command.name not in {'perfil', 'ping'}:
             await interaction.response.send_message('👤 Aquí solo se utiliza **/perfil**. Usa los demás comandos en sus canales.', ephemeral=True)
             return False
         return True

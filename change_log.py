@@ -14,19 +14,16 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='public-ticket-close-panel-v38'
-SUMMARY=('Por elección del propietario, los tickets cerrados tienen un panel público final con Transcripción, Valorar y Eliminar ticket. '
-    'Discord muestra los tres a todos; el bot limita transcripción y valoración al autor, y eliminación al staff autorizado por caso. '
-    'La transcripción del botón siempre es la copia del jugador, incluso si su autor es staff; no incluye solución ni información interna. '
-    'Eliminar pide escribir ELIMINAR en un formulario nativo, comprueba de nuevo el miembro y conserva la transcripción, pruebas y respaldo verificado obligatorios. '
-    'No abre un menú privado de gestión desde el cierre. Retira el acceso de Gestión Staff del encabezado cerrado y actualiza el aviso existente con copia privada previa. '
-    'Al volver a cerrar un caso, publica el panel al final de la conversación y desactiva los controles anteriores; la valoración ya realizada permanece deshabilitada. '
-    'Conserva roles, permisos, datos, otras funciones y los avisos privados de atención existentes. El despliegue no elimina tickets de jugadores.')
-RESTORE=('Código anterior: dab5a3edb90b94b0e4e83a95c76bd6dc41f68c46. Conservar /data, SQLite, transcripciones, pruebas y todos los canales actuales. '
-    'No se necesitan cambios de esquema. La versión anterior vuelve a mostrar Gestión Staff en el encabezado cerrado y deja Valorar en el aviso del jugador al actualizar sus controles. '
-    'Los estados previos y posteriores de los mensajes están en TICKET_OUTCOME_PRIVACY y TICKET_OUTCOME_NOTICE; restaurar solo componentes autorizados por ID. '
-    'No restaurar una base antigua, reabrir ni recrear canales eliminados, borrar conversaciones ni alterar roles o permisos para revertir la interfaz. '
-    'El permiso del bot verificado en v37 y las valoraciones ya guardadas permanecen. Una confirmación abierta antes de reiniciar debe volver a abrirse desde el botón vigente.')
+RELEASE='private-member-ping-v39'
+SUMMARY=('Añade /ping para todos los miembros de La Venganza RP, sin exigir roles de staff ni administración. '
+    'Responde solo al usuario con Pong, bro y la latencia actual de la conexión con Discord en milisegundos; si todavía no hay medición indica calculando. '
+    'Se permite también en Perfiles por ser una consulta privada y aparece en el directorio de diagnóstico. '
+    'El registro del comando usa la sincronización existente con copia privada anterior y posterior. '
+    'No modifica roles, permisos de canales, tickets, economía ni los demás sistemas.')
+RESTORE=('Código anterior: 1b1e7c7d48edb05eb4255bbcf834d2a6bcaed1b6. Volver a desplegar ese commit conservando /data y SQLite actuales. '
+    'La sincronización de comandos de inicio retira /ping; no hay cambios de esquema ni datos nuevos que revertir. '
+    'No restaurar una base antigua ni modificar roles, permisos, mensajes, tickets o archivos para deshacer este comando. '
+    'Se conserva el panel público de cierre de tickets de v38.')
 
 
 

@@ -56,7 +56,7 @@ SECTIONS=(
  Section('security','🛡️','Seguridad','Palabras bloqueadas y enlaces repetidos.',()),
  Section('rules','📚','Normas y guía','Fuente de las normas y presentación de la guía.',('regla','guia'),1528925322362228787),
  Section('backups','💾','Respaldos','Horario de las copias y recuperación de prueba.',('respaldo',)),
- Section('activity','🧾','Historial y diagnóstico','Cambios, estado de las tareas y configuración guardada.',('cambios','estado-bot')),
+ Section('activity','🧾','Historial y diagnóstico','Cambios, estado de las tareas y configuración guardada.',('cambios','estado-bot','ping')),
 )
 BY_SECTION={s.key:s for s in SECTIONS}
 

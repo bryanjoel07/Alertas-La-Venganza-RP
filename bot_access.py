@@ -34,7 +34,7 @@ CASE_STAFF_COMMANDS = {
 STAFF_COMMANDS = {'staff pendientes', 'staff historial'}
 MEMBER_COMMANDS = {
     'retos', 'probar', 'guia', 'saldo', 'tienda', 'comprar', 'regalar', 'inventario',
-    'equipar', 'quitar', 'trofeo', 'movimientos', 'deseos', 'sala', 'perfil', 'regla',
+    'equipar', 'quitar', 'trofeo', 'movimientos', 'deseos', 'sala', 'perfil', 'regla', 'ping',
     'jugar', 'ticket mis', 'ticket cerrados', 'ticket transcripcion', 'ticket archivo',
     'feedback ver', 'errores reportar', 'errores mis', 'errores estado',
     'sugerencias proponer', 'sugerencias mis', 'sugerencias ver',

@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -1010,6 +1011,13 @@ async def perfil(interaction: discord.Interaction, jugador: discord.Member = Non
     view = PlayerCard(client, interaction.user.id, member, profile_access, client.economy.decorate)
     view.message = await interaction.followup.send(embed=await view.render(), view=view, wait=True,
         ephemeral=private_card, allowed_mentions=discord.AllowedMentions.none())
+
+
+@client.tree.command(name="ping", description="Comprueba la latencia del bot; solo tú verás la respuesta", guild=GUILD)
+async def ping(interaction: discord.Interaction):
+    latency_ms = interaction.client.latency * 1000
+    latency = f"{latency_ms:.0f} ms" if math.isfinite(latency_ms) else "calculando…"
+    await interaction.response.send_message(f"🏓 Pong, bro. · Latencia: **{latency}**", ephemeral=True)
 
 
 @client.tree.command(name="estado-bot", description="Diagnóstico privado del monitor, tareas, SQLite y último respaldo registrado", guild=GUILD)

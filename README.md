@@ -54,7 +54,7 @@ Consulta [AUDITORIA.md](AUDITORIA.md) para evidencia, pruebas, mediciones y lím
 
 ### Acceso a las funciones del bot
 
-Los 108 comandos tienen una política de acceso que se valida al ejecutarlos.
+Todos los comandos tienen una política de acceso que se valida al ejecutarlos.
 Los botones y formularios administrativos comprueban también los permisos y la
 propiedad del panel; guardar un ajuste vuelve a consultar los roles actuales.
 
@@ -138,6 +138,7 @@ revisar cambios y preparar su restauración. Ver [AJUSTES.md](AJUSTES.md).
 
 | Comando | Función | Acceso |
 | --- | --- | --- |
+| `/ping` | Latencia actual del bot en milisegundos, con respuesta privada; también funciona en Perfiles | Todos los miembros |
 | `/testalert` | DOWN o RESTORED claramente identificado como simulación | Administración del bot |
 | `/simular-ciclo` | Prueba del ciclo y dos alertas simuladas, sin registrar caídas | Administración del bot |
 | `/historial-caidas` | Últimas diez caídas, estado, duración e ID | Administración del bot |

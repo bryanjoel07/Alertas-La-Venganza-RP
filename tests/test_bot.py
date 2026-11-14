@@ -290,7 +290,7 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         import discord
         bot = self.bot.client
         commands = bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))
-        self.assertEqual({c.name for c in commands}, {'evento', 'mantenimiento', 'reunion', 'testalert', 'simular-ciclo', 'historial-caidas', 'perfil', 'estado-bot', 'respaldo', 'streamer', 'economia', 'saldo', 'tienda', 'comprar', 'regalar', 'inventario', 'equipar', 'quitar', 'trofeo', 'movimientos', 'deseos', 'sala', 'retos', 'probar', 'guia', 'cambios', 'ticket', 'foto', 'ajustes', 'staff', 'jugar', 'minijuegos', 'feedback', 'errores', 'sugerencias', 'regla'})
+        self.assertEqual({c.name for c in commands}, {'evento', 'mantenimiento', 'reunion', 'testalert', 'simular-ciclo', 'historial-caidas', 'perfil', 'ping', 'estado-bot', 'respaldo', 'streamer', 'economia', 'saldo', 'tienda', 'comprar', 'regalar', 'inventario', 'equipar', 'quitar', 'trofeo', 'movimientos', 'deseos', 'sala', 'retos', 'probar', 'guia', 'cambios', 'ticket', 'foto', 'ajustes', 'staff', 'jugar', 'minijuegos', 'feedback', 'errores', 'sugerencias', 'regla'})
         for command in commands:
             payload = command.to_dict(bot.tree)
             self.assertLessEqual(len(payload['description']), 100)
