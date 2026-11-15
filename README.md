@@ -19,18 +19,30 @@ Los veinte paneles oficiales (dieciocho canales, Dirección y el resumen de inst
 - `/studio tickets`, `/studio historial`, `/studio copia` y `/studio estado` muestran la gestión privada.
 - Sugerencias tiene formularios, un voto por miembro y estados revisados por el equipo. Las reseñas exigen el rol Cliente; no se generan opiniones de ejemplo.
 
+## Bienvenida personalizada
+
+Cada entrada real de una persona genera en Bienvenida una tarjeta con su nombre visible, usuario y foto de perfil actual sobre la plantilla de EssChino Studio. Los reinicios no vuelven a saludar a todos los miembros. Los recibos de `studio_welcomes` permiten reconocer envíos completados, recuperar envíos interrumpidos y cancelar avisos de membresías que ya terminaron.
+
+El botón **Mi bienvenida** del panel genera una vista privada para la persona que lo pulsa, también para miembros que ya estaban en el servidor. La tarjeta respeta el idioma de esa copia del panel. Discord comparte el panel público entre todos; cada tarjeta individual contiene la identidad real de su destinatario. No se publica una entrada ficticia para mostrar una prueba.
+
+El bot utiliza la autorización Gateway Guild Members del nuevo bot para recibir entradas; no copia datos ni permisos del bot original. La plantilla gráfica está en `assets/esschino/welcome-template.png`, y las fuentes Noto incluyen su licencia SIL OFL. Las fotos se descargan del CDN de Discord y las tarjetas se componen localmente, sin enviar perfiles a servicios de generación de imágenes.
+
 ## Variables y pruebas
 
 Configurar `DISCORD_BOT_TOKEN` solo en el servicio nuevo. `DB_PATH=/data/esschino.sqlite3`, `PORT=8080` y `ESSCHINO_SETUP_REQUEST_ID=esschino-store-20261115-v1` habilitan la instalación inicial. `ESSCHINO_TEBEX_URL` es opcional y debe ser el enlace real de la tienda. No copiar secretos, webhooks ni datos del servidor original.
 
-Los comandos, formularios y paneles funcionan sin intents privilegiados. Si Discord ya concede Message Content Intent, el bot lo activa para respaldar también el texto de mensajes normales. El historial de cada ticket se conserva en Discord al cerrarlo.
+Los comandos y formularios no requieren intents privilegiados; la bienvenida automática utiliza Guild Members Intent, ya configurado en este bot. Si Discord ya concede Message Content Intent, el bot lo activa para respaldar también el texto de mensajes normales. El historial de cada ticket se conserva en Discord al cerrarlo.
 
 Pruebas del bot activo: `python -m unittest discover -s tests -p test_esschino.py` y `python -m unittest discover -s tests -p test_store_bot.py`. Los módulos y pruebas heredados del otro proyecto son referencia y no forman parte del proceso activo.
 
 Las pruebas de idiomas están en `test_panel_languages.py`: cobertura de todos los paneles e idiomas, límites de componentes, cambios privados, controles persistentes, enlaces, imágenes, permisos y actualización idempotente con copia anterior duradera.
+
+Las pruebas de tarjetas y entregas están en `test_welcome_cards.py`: nombre, avatar, tamaño de imagen, nombres largos, idiomas, recibos persistentes, reentradas reales, envíos ambiguos, privacidad y aislamiento del servidor.
 
 ## Restauración
 
 Desactivar el servicio nuevo detiene sus funciones sin afectar al otro bot. Conservar el volumen y SQLite actuales. `/studio copia` descarga el estado previo y posterior de cada operación; las tablas esschino_messages y esschino_files guardan las copias anteriores a la retirada de canales. Discord no recupera IDs ni fechas originales de canales eliminados. Nunca restaurar una base vieja sobre pedidos y tickets nuevos.
 
 Para revertir los botones de idiomas, primero restaurar los componentes anteriores de las operaciones `PANEL_LANGUAGES` (sin alterar texto, adjuntos, permisos ni roles) mediante una operación registrada, y después desplegar `23ad8d96b0eaa12cdd058559a7ee237b93b1f11c`. Volver solo al código anterior deja botones de idiomas sin manejador; no restaurar una base antigua ni repetir la instalación del servidor.
+
+Para revertir la bienvenida personalizada, conservar `studio_welcomes`, restaurar solo los componentes anteriores del registro `WELCOME_PANEL` y desplegar `670d61a385e077c24568734ab68b11b9dd8b20f0`. No eliminar tarjetas ya enviadas ni restaurar bases antiguas.

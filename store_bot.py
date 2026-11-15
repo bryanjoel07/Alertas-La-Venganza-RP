@@ -15,12 +15,13 @@ from discord import app_commands
 from esschino import EssChino, ASSETS, PROTECTED_CHANNEL, CHANNELS, valid_shop_url
 from store_community import StoreCommunity, IdeaModal, ReviewModal
 from studio_journal import ChangeLog
+from welcome_cards import WelcomeCards
 
 log = logging.getLogger('EssChinoStudio')
 GUILD_ID = 1514871828189941881
 BOT_ID = 1571639486591402174
 GUILD = discord.Object(id=GUILD_ID)
-RELEASE = 'esschino-studio-panel-languages-v2'
+RELEASE = 'esschino-studio-personal-welcome-v3'
 
 
 class StoreBot(discord.Client):
@@ -34,7 +35,10 @@ class StoreBot(discord.Client):
         self.esschino = EssChino(self, self.path)
         self.community = StoreCommunity(self.esschino, self.path)
         self.esschino.community = self.community
+        self.welcome = WelcomeCards(self.esschino, self.path)
+        self.esschino.welcome = self.welcome
         self.ready_lock = asyncio.Lock()
+        self.configured_event = asyncio.Event()
         self.configured = False
         self.http_runner = None
         self.register_commands()
@@ -55,6 +59,7 @@ class StoreBot(discord.Client):
         await asyncio.to_thread(self.changes.journal.initialize)
         await self.esschino.start()
         await self.community.start()
+        await self.welcome.start()
         app = await self.application_info()
         # Use message-content access only when Discord already grants it. The
         # setup, forms, purchases, voting and commands work without privileged intents.
@@ -62,7 +67,10 @@ class StoreBot(discord.Client):
         content = flags.gateway_message_content or flags.gateway_message_content_limited
         if content:
             self._connection._intents.message_content = True
-        log.info('STUDIO intents message_content=%s members=False', bool(content))
+        members = flags.gateway_guild_members or flags.gateway_guild_members_limited
+        if members:
+            self._connection._intents.members = True
+        log.info('STUDIO intents message_content=%s members=%s', bool(content), bool(members))
         application = web.Application()
         async def health(request):
             return web.json_response(dict(service='EssChino Studio Bot', connected=self.is_ready(), configured=self.configured))
@@ -81,6 +89,9 @@ class StoreBot(discord.Client):
                     raise ValueError('La instalación todavía no está completa; revisa los permisos del bot en EssChino Studio.')
                 guild = self.get_guild(GUILD_ID)
                 await self.esschino.languages.ready(guild, [row[0] for row in CHANNELS])
+                await self.welcome.install(guild)
+                if not self.intents.members:
+                    raise ValueError('Discord todavía no habilitó la recepción de entradas de miembros para el nuevo bot.')
                 async def command_state():
                     return {'guild_id': GUILD_ID, 'commands': [c.to_dict() for c in await self.tree.fetch_commands(guild=GUILD)]}
                 commands = await self.changes.tracked('STUDIO_COMMANDS', 'Registrar únicamente comandos de tienda',
@@ -93,6 +104,7 @@ class StoreBot(discord.Client):
                         await self.esschino.call('put', 'bot_avatar', digest)
                     await self.esschino.tracked('bot-avatar-v1', 'Aplicar logo al nuevo bot de tienda', avatar)
                 self.configured = True
+                self.configured_event.set()
                 log.info('STUDIO_READY bot=%s guild=%s release=%s independent=True store_only=True', self.user.id, guild.id, RELEASE)
             except Exception:
                 log.exception('STUDIO_SETUP failed')
@@ -104,7 +116,24 @@ class StoreBot(discord.Client):
             except Exception:
                 log.exception('STUDIO ticket_archive_failed channel=%s', message.channel.id)
 
+    async def on_member_join(self, member):
+        if member.guild.id != GUILD_ID or member.bot:
+            return
+        await self.configured_event.wait()
+        try:
+            # A queued welcome must not announce someone who left while setup
+            # was finishing; use their current name and profile photo as well.
+            current = await member.guild.fetch_member(member.id)
+            await self.welcome.joined(current)
+        except discord.NotFound:
+            return
+        except Exception:
+            log.exception('WELCOME_CARD member_join_failed member=%s', member.id)
+
     async def close(self):
+        if self.welcome.task:
+            self.welcome.task.cancel()
+            await asyncio.gather(self.welcome.task, return_exceptions=True)
         if self.http_runner:
             await self.http_runner.cleanup()
         await super().close()

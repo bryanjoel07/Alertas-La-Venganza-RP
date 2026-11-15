@@ -22,6 +22,7 @@ UI_TEXT = {
         'Proponer una mejora':'Suggest an improvement', 'Escribir mi reseña':'Write my review',
         'Tickets abiertos':'Open tickets', 'Tickets cerrados':'Closed tickets',
         'Configurar enlace de Tebex':'Set the Tebex store link',
+        'Mi bienvenida':'My welcome card',
     },
     'pt-BR': {
         'Unirme a la comunidad':'Entrar na comunidade', 'Ayuda y compras':'Ajuda e compras',
@@ -32,6 +33,7 @@ UI_TEXT = {
         'Proponer una mejora':'Sugerir uma melhoria', 'Escribir mi reseña':'Escrever minha avaliação',
         'Tickets abiertos':'Tickets abertos', 'Tickets cerrados':'Tickets fechados',
         'Configurar enlace de Tebex':'Configurar o link do Tebex',
+        'Mi bienvenida':'Minha mensagem de boas-vindas',
     },
     'fr': {
         'Unirme a la comunidad':'Rejoindre la communauté', 'Ayuda y compras':'Aide et achats',
@@ -42,6 +44,7 @@ UI_TEXT = {
         'Proponer una mejora':'Proposer une amélioration', 'Escribir mi reseña':'Rédiger mon avis',
         'Tickets abiertos':'Tickets ouverts', 'Tickets cerrados':'Tickets fermés',
         'Configurar enlace de Tebex':'Configurer le lien Tebex',
+        'Mi bienvenida':'Ma carte de bienvenue',
     },
     'de': {
         'Unirme a la comunidad':'Der Community beitreten', 'Ayuda y compras':'Hilfe und Käufe',
@@ -52,6 +55,7 @@ UI_TEXT = {
         'Proponer una mejora':'Verbesserung vorschlagen', 'Escribir mi reseña':'Bewertung schreiben',
         'Tickets abiertos':'Offene Tickets', 'Tickets cerrados':'Geschlossene Tickets',
         'Configurar enlace de Tebex':'Tebex-Shoplink einrichten',
+        'Mi bienvenida':'Meine Willkommenskarte',
     },
 }
 

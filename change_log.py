@@ -18,17 +18,16 @@ def is_bot_admin(member):
     return check(member)
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='esschino-studio-panel-languages-v2'
-SUMMARY=('Añade a los veinte paneles oficiales de EssChino Studio los cuatro idiomas adicionales del manifiesto '
-    'de community_sanctions_system_1.42.2: English, Português (Brasil), Français y Deutsch. '
-    'El español público conserva su información y no tiene botón propio. Cada traducción se muestra de forma privada '
-    'y permite cambiar de idioma en esa copia, conservando los controles, enlaces, imágenes y comprobaciones de acceso. '
-    'La actualización de componentes se registra con copia previa y no se repite al reiniciar. '
-    'No modifica categorías, roles, tickets, el bot original ni la instalación del script FiveM.')
-RESTORE=('Código anterior de EssChino Studio: 23ad8d96b0eaa12cdd058559a7ee237b93b1f11c. '
-    'Conservar /data y SQLite actuales. Antes de volver al código anterior, restaurar los componentes anteriores '
-    'de cada registro PANEL_LANGUAGES con una operación registrada, preservando texto, adjuntos y controles funcionales. '
-    'No restaurar una base antigua ni repetir la instalación. El código anterior no atiende los nuevos botones ec:lang.')
+RELEASE='esschino-studio-personal-welcome-v3'
+SUMMARY=('Añade tarjetas individuales de bienvenida con el nombre visible, usuario y avatar real de Discord sobre una plantilla de EssChino Studio. '
+    'Las entradas reales de miembros publican su propia tarjeta en Bienvenida; un recibo duradero evita duplicados al reiniciar y reconcilia respuestas de envío ambiguas. '
+    'Los miembros actuales pueden abrir una vista privada con Mi bienvenida en el panel existente. '
+    'La tarjeta respeta el idioma elegido en la copia privada y conserva los cuatro botones de idiomas. '
+    'Solo opera sobre el bot 1571639486591402174 y el servidor 1514871828189941881; no crea categorías, casos ficticios ni bienvenidas retroactivas.')
+RESTORE=('Código anterior de EssChino Studio: 670d61a385e077c24568734ab68b11b9dd8b20f0. Conservar /data y SQLite actuales, incluidos studio_welcomes y sus recibos. '
+    'Antes de volver al código anterior, restaurar los componentes del panel desde el registro WELCOME_PANEL para retirar solo Mi bienvenida, manteniendo los idiomas y los demás controles. '
+    'Conservar las tarjetas ya publicadas. El ajuste anterior de notificaciones nativas está en la copia del registro. '
+    'La autorización de entrada de miembros del nuevo bot puede permanecer; no modificar el bot original ni restaurar una base antigua.')
 
 
 

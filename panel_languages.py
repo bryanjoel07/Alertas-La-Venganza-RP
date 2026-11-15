@@ -42,6 +42,7 @@ class PanelLanguages:
         if key not in TRANSLATIONS['en']:
             raise ValueError('El panel no tiene traducciones registradas.')
         view = view or discord.ui.View(timeout=None)
+        view.locale = language
         # Real callbacks stay on their original View; never clone controls with
         # View.from_message, which would replace their behavior with empty callbacks.
         for index, item in enumerate(view.children):

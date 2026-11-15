@@ -219,6 +219,10 @@ class EntryView(StudioView):
     async def updates(self, i, button):
         await self.system.toggle_role(i, 'updates')
 
+    @discord.ui.button(label='Mi bienvenida', emoji='🖼️', custom_id='ec:welcome:personal')
+    async def personal_welcome(self, i, button):
+        await self.system.welcome.preview(i, getattr(self, 'locale', 'es'))
+
 
 class NotificationsView(StudioView):
     @discord.ui.button(label='Avisos generales', emoji='📣', custom_id='ec:news')
