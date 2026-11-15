@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from change_log import ChangeLog
+from studio_journal import ChangeLog
 from esschino import (EssChino, StudioStore, PROTECTED_CHANNEL, ORIGINAL_GUILD,
     REQUEST, ENV, ROLE_SPECS, CHANNELS, EntryView, NotificationsView, SupportView, AdminView,
     TicketView, TicketModal, ShopModal, PurchaseModal, deletion_plan, validate_target, valid_shop_url)
@@ -123,11 +123,12 @@ class InstallationTests(unittest.IsolatedAsyncioTestCase):
         channel = ScopeTests().target()
         guild = channel.guild
         guild.fetch_roles = AsyncMock(return_value=[])
-        guild.fetch_channels = AsyncMock(return_value=[channel, NS(id=10)])
-        guild.channels = [channel, NS(id=10)]
+        original = 1514871828672151574
+        guild.fetch_channels = AsyncMock(return_value=[channel, NS(id=original)])
+        guild.channels = [channel, NS(id=original)]
         self.bot.fetch_channel = AsyncMock(return_value=channel)
         self.bot.get_guild.return_value = guild
-        self.bot.changes = ChangeLog(self.bot, self.path, ORIGINAL_GUILD)
+        self.bot.changes = ChangeLog(self.bot, self.path, guild.id)
         self.bot.changes.journal.initialize()
         self.system.snapshot = AsyncMock(return_value={'guild_id': guild.id, 'before': 'private copy'})
 
@@ -135,7 +136,7 @@ class InstallationTests(unittest.IsolatedAsyncioTestCase):
             row = self.bot.changes.journal.by_key(f'operation:{ENV}:{REQUEST}')
             self.assertEqual(row['status'], 'iniciado')
             self.assertEqual(json.loads(row['before_json'])['guild_id'], guild.id)
-            self.assertEqual(self.system.store.get('original_channels'), [10])
+            self.assertEqual(self.system.store.get('original_channels'), [original])
             self.system.store.put('setup_complete', 123)
         self.system.install = AsyncMock(side_effect=apply)
         with patch.dict('os.environ', {ENV: REQUEST}):
@@ -151,7 +152,7 @@ class InstallationTests(unittest.IsolatedAsyncioTestCase):
             await restarted.ready()
         restarted.install.assert_not_awaited()
         restarted.verify.assert_awaited_once()
-        self.assertEqual(restarted.store.get('original_channels'), [10])
+        self.assertEqual(restarted.store.get('original_channels'), [original])
 
     async def test_archive_failure_stops_deletion_and_role_creation(self):
         protected = ScopeTests().target()
@@ -199,7 +200,7 @@ class InstallationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(customer[self.system.role(guild, 'customer')].view_channel)
         reviews = self.system.overwrites(guild, 'review', owner)
         self.assertFalse(reviews[guild.default_role].send_messages)
-        self.assertTrue(reviews[self.system.role(guild, 'customer')].send_messages)
+        self.assertFalse(reviews[self.system.role(guild, 'customer')].send_messages)
 
     async def test_all_persistent_panels_and_modals_are_valid_for_discord(self):
         for cls in (EntryView, NotificationsView, SupportView, AdminView, TicketView):

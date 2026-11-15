@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 import discord
 
-from change_log import server_snapshot
+from studio_journal import server_snapshot
 
 log = logging.getLogger('EssChino')
 PROTECTED_CHANNEL = 1514871828672151573
@@ -25,47 +25,40 @@ ASSETS = Path(__file__).parent / 'assets' / 'esschino'
 REASON = 'Solicitud del propietario: personalizar su servidor de tienda EssChino'
 
 ROLE_SPECS = [
-    ('founder', '👑 Fundador', 0xD9B3FF, dict(administrator=True)),
-    ('admin', '⚜️ Administración', 0xB34DFF, dict(administrator=True)),
-    ('dev', '💻 Desarrollador', 0x7B61FF, dict(manage_messages=True, manage_threads=True)),
-    ('support', '🛠️ Soporte', 0x56C9E8, dict(manage_messages=True, moderate_members=True)),
-    ('customer', '💎 Cliente', 0xE4BB52, {}),
-    ('member', '👤 Miembro', 0xBAC0CC, {}),
-    ('news', '📣 Avisos', 0x000000, {}),
-    ('updates', '🔄 Actualizaciones', 0x000000, {}),
+    ('founder', '👑 Fundador · Studio', 0xD9B3FF, dict(administrator=True)),
+    ('admin', '⚜️ Administración · Studio', 0xB34DFF, dict(administrator=True)),
+    ('dev', '💻 Desarrollo · Studio', 0x7B61FF, dict(manage_messages=True, manage_threads=True, moderate_members=True)),
+    ('support', '🛠️ Soporte · Studio', 0x56C9E8, dict(manage_messages=True, moderate_members=True)),
+    ('customer', '💎 Cliente verificado', 0xE4BB52, {}),
+    ('member', '👤 Comunidad EssChino', 0xBAC0CC, {}),
+    ('news', '📣 Avisos EssChino', 0x000000, {}),
+    ('updates', '🔄 Scripts EssChino', 0x000000, {}),
 ]
 CATEGORIES = [
-    ('info', '✦ INFORMACIÓN', 'read'), ('store', '✦ TIENDA ESSCHINO', 'read'),
-    ('help', '✦ CENTRO DE SOPORTE', 'read'), ('community', '✦ COMUNIDAD', 'chat'),
-    ('customers', '✦ CLIENTES', 'customer'), ('tickets', '✦ TICKETS PRIVADOS', 'staff'),
-    ('closed', '✦ TICKETS CERRADOS', 'staff'), ('team', '✦ EQUIPO ESSCHINO', 'staff'),
-    ('direction', '✦ DIRECCIÓN', 'owner'),
+    ('info', '📌 INFORMACIÓN', 'read'), ('store', '🛒 TIENDA', 'read'),
+    ('help', '🛠️ SOPORTE', 'read'), ('community', '💬 COMUNIDAD', 'chat'),
+    ('team', '🔒 EQUIPO', 'staff'),
 ]
 # key, category, channel name, topic, permission policy, voice
 CHANNELS = [
     ('welcome', 'info', '👋・bienvenida', 'Empieza aquí · EssChino, scripts y comunidad.', 'read', False),
     ('rules', 'info', '📜・normas', 'Normas de convivencia, compras y soporte.', 'read', False),
     ('announcements', 'info', '📢・anuncios', 'Comunicados oficiales de EssChino.', 'read', False),
-    ('notifications', 'info', '🔔・notificaciones', 'Elige tus avisos sin recibir menciones innecesarias.', 'read', False),
-    ('shop', 'store', '🛒・tienda-tebex', 'Acceso a la tienda oficial y ayuda para comprar.', 'read', False),
+    ('buying', 'info', '🧭・cómo-comprar', 'Compra y entrega de scripts a través de Tebex.', 'read', False),
+    ('shop', 'store', '🛍️・tienda-tebex', 'Acceso a la tienda oficial y ayuda para comprar.', 'read', False),
     ('catalog', 'store', '📦・catálogo-scripts', 'Scripts · funciones, requisitos y compatibilidad por producto.', 'read', False),
     ('demos', 'store', '🎬・demostraciones', 'Vídeos y pruebas de los productos oficiales.', 'read', False),
     ('offers', 'store', '🏷️・ofertas', 'Promociones oficiales con sus condiciones y vigencia.', 'read', False),
     ('changelog', 'store', '🔄・actualizaciones', 'Versiones, correcciones y cambios de compatibilidad.', 'read', False),
-    ('buying', 'store', '🧾・cómo-comprar', 'Compra y entrega de scripts a través de Tebex.', 'read', False),
     ('support', 'help', '🎫・abrir-ticket', 'Compras, instalación, errores y colaboraciones en privado.', 'read', False),
+    ('install', 'help', '📚・guías-instalación', 'Preparación, dependencias y diagnóstico de recursos.', 'read', False),
     ('faq', 'help', '❓・preguntas-frecuentes', 'Respuestas antes y después de comprar.', 'read', False),
-    ('install', 'help', '📚・instalación', 'Preparación, dependencias y diagnóstico de recursos.', 'read', False),
     ('general', 'community', '💬・general', 'Habla con la comunidad de EssChino.', 'chat', False),
-    ('suggestions', 'community', '💡・sugerencias', 'Propón mejoras: necesidad, idea y ejemplo de uso.', 'chat', False),
+    ('suggestions', 'community', '💡・sugerencias', 'Propón mejoras mediante el formulario y vota las ideas de la comunidad.', 'read', False),
     ('reviews', 'community', '⭐・reseñas', 'Opiniones de clientes con compra verificada.', 'review', False),
-    ('showcase', 'community', '📸・tus-proyectos', 'Comparte proyectos y servidores que usan nuestros scripts.', 'chat', False),
-    ('lounge', 'community', '🔊・Comunidad', '', 'chat', True),
-    ('downloads', 'customers', '📥・descargas-y-licencias', 'Dónde encontrar tu entrega oficial y gestionar incidencias.', 'customer', False),
-    ('customerchat', 'customers', '💎・chat-clientes', 'Espacio de conversación entre clientes verificados.', 'customerchat', False),
-    ('staff', 'team', '👥・chat-equipo', 'Coordinación privada del equipo de EssChino.', 'staff', False),
-    ('log', 'team', '📋・registro-soporte', 'Aperturas, cierres y verificaciones de compra.', 'staffread', False),
-    ('staffvoice', 'team', '🎙️・Reunión de equipo', '', 'staff', True),
+    ('staff', 'team', '👥・chat-staff', 'Coordinación privada del equipo de EssChino Studio.', 'staff', False),
+    ('management', 'team', '📋・gestión-soporte', 'Panel privado de seguimiento de los tickets y pedidos.', 'staffread', False),
+    ('log', 'team', '📑・registros', 'Aperturas, cierres, cambios y verificaciones de compra.', 'staffread', False),
 ]
 
 
@@ -217,6 +210,14 @@ class EntryView(StudioView):
     async def help(self, i, button):
         await i.response.send_message(f"Abre tu consulta en <#{self.system.channel_id('support')}>.", ephemeral=True)
 
+    @discord.ui.button(label='Avisos', emoji='📣', custom_id='ec:welcome-news')
+    async def news(self, i, button):
+        await self.system.toggle_role(i, 'news')
+
+    @discord.ui.button(label='Actualizaciones', emoji='🔄', custom_id='ec:welcome-updates')
+    async def updates(self, i, button):
+        await self.system.toggle_role(i, 'updates')
+
 
 class NotificationsView(StudioView):
     @discord.ui.button(label='Avisos generales', emoji='📣', custom_id='ec:news')
@@ -260,6 +261,24 @@ class AdminView(StudioView):
         if not i.user.guild_permissions.administrator:
             raise ValueError('Solo la administración puede cambiar el enlace de compra.')
         await i.response.send_modal(ShopModal(self.system))
+
+
+class ManagementView(StudioView):
+    async def show(self, i, state):
+        if not self.system.staff(i.user):
+            raise ValueError('Solo el equipo puede consultar el seguimiento de soporte.')
+        await i.response.defer(ephemeral=True)
+        rows = [r for r in await self.system.call('tickets') if r['state'] == state]
+        lines = [f'<#{r["channel"]}> · <@{r["owner"]}> · {r["kind"]}' for r in rows[-25:]]
+        await i.followup.send('\n'.join(lines) or 'No hay tickets en ese estado.', ephemeral=True)
+
+    @discord.ui.button(label='Tickets abiertos', emoji='🎫', custom_id='ec:manage:open', style=discord.ButtonStyle.primary)
+    async def opened(self, i, button):
+        await self.show(i, 'open')
+
+    @discord.ui.button(label='Tickets cerrados', emoji='🔒', custom_id='ec:manage:closed')
+    async def closed(self, i, button):
+        await self.show(i, 'closed')
 
 
 class ShopModal(discord.ui.Modal, title='EssChino · Tienda oficial'):
@@ -352,7 +371,7 @@ class EssChino:
 
     async def start(self):
         await self.call('initialize')
-        for view in (EntryView, NotificationsView, SupportView, AdminView, TicketView):
+        for view in (EntryView, NotificationsView, SupportView, AdminView, TicketView, ManagementView):
             self.bot.add_view(view(self))
 
     def channel_id(self, key):
@@ -392,7 +411,8 @@ class EssChino:
                     banner=str(guild.banner) if guild.banner else None,
                     server=await server_snapshot(guild),
                     config={key: self.store.get(key) for key in ('guild', 'original_channels', 'setup_complete', 'shop_url')},
-                    members=member_states, tickets=await self.call('tickets'))
+                    members=member_states, tickets=await self.call('tickets'),
+                    community=await self.community.call('snapshot') if hasattr(self, 'community') else {})
 
     async def tracked(self, request, title, operation, members=()):
         guild = self.bot.get_guild(self.store.get('guild'))
@@ -425,7 +445,7 @@ class EssChino:
             role = self.role(guild, 'customer')
             if role:
                 overwrites[role] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
-                    send_messages=policy != 'customer', add_reactions=True)
+                    send_messages=policy == 'customerchat', add_reactions=True)
         return overwrites
 
     async def archive_message(self, message, scope):
@@ -487,7 +507,10 @@ class EssChino:
                     raise ValueError('Falta una imagen original de EssChino; no se cambió el servidor.')
             originals = self.store.get('original_channels')
             if originals is None:
-                originals = [c.id for c in await guild.fetch_channels() if c.id != PROTECTED_CHANNEL]
+                # Freeze only the five other channels in the owner's original server.
+                authorized = {1514871828672151572,1514871828672151574,
+                              1514871828672151575,1514871828672151576,1514871828672151577}
+                originals = [c.id for c in await guild.fetch_channels() if c.id in authorized]
                 await self.call('put', 'original_channels', originals)
             await self.call('put', 'guild', guild.id)
             async def apply():
@@ -530,9 +553,9 @@ class EssChino:
             category = self.channel(guild, 'category:' + parent)
             await self.ensure_channel(guild, 'channel:' + key, name, parent=category, voice=voice,
                 topic=topic, overwrites=self.overwrites(guild, policy, owner))
-        await protected.edit(category=self.channel(guild, 'category:direction'),
+        await protected.edit(name='🔒・dirección', category=self.channel(guild, 'category:team'),
             overwrites=self.overwrites(guild, 'owner', owner), sync_permissions=False, reason=REASON)
-        kwargs = dict(name='EssChino', icon=(ASSETS / 'logo.jpg').read_bytes(),
+        kwargs = dict(name='EssChino Studio', icon=(ASSETS / 'logo.jpg').read_bytes(),
             verification_level=discord.VerificationLevel.low,
             default_notifications=discord.NotificationLevel.only_mentions,
             explicit_content_filter=discord.ContentFilter.all_members,
@@ -563,11 +586,21 @@ class EssChino:
                 raise ValueError('Eliminación fuera del alcance de EssChino bloqueada.')
             await channel.delete(reason=REASON + ' · copia privada previa verificada')
             log.info('ESSCHINO deleted_original guild=%s channel=%s', guild.id, channel.id)
+        # Empty categories created by the interrupted shared-bot attempt, before
+        # the owner supplied the final five-category layout. Never delete new
+        # user channels or populated categories here.
+        abandoned = {1571639437400608910,1571639441452175373,1571639445009207337,
+            1571639448339349514,1571639451094876160,1571639643491926116,1571639648680288407}
+        present = await guild.fetch_channels()
+        for category in present:
+            if (category.id in abandoned and isinstance(category, discord.CategoryChannel)
+                    and not any(c.category_id == category.id for c in present)):
+                await category.delete(reason='Aplicar las cinco categorías solicitadas por el propietario')
         await self.verify(guild)
         if not self.store.get('completion_message'):
             message = await protected.send(embed=self.embed('✅ EssChino configurado',
                 'Se ha conservado este canal y su historial como espacio privado. Los demás canales originales '
-                'se han archivado y retirado; ya están disponibles Información, Tienda, Soporte, Comunidad, Clientes y Equipo.\n\n'
+                'se han archivado y retirado; ya están disponibles Información, Tienda, Soporte, Comunidad y Equipo.\n\n'
                 '**Identidad:** logo del servidor y banner en los paneles principales.\n'
                 '**Soporte:** tickets privados, cierres con historial, transcripciones y rol Cliente tras revisión de un pedido real.\n'
                 '**Avisos:** roles opcionales para anuncios y actualizaciones.\n\n' +
@@ -590,6 +623,7 @@ class EssChino:
             raise ValueError('Hay más de un canal de instalación con el mismo nombre.')
         if matches:
             channel = matches[0]
+            await channel.edit(overwrites=overwrites, reason=REASON)
         elif category:
             channel = await guild.create_category(name, overwrites=overwrites, reason=REASON)
         elif voice:
@@ -604,7 +638,7 @@ class EssChino:
 
     async def verify(self, guild):
         actual = await self.bot.fetch_guild(guild.id)
-        if actual.name != 'EssChino' or actual.icon is None:
+        if actual.name != 'EssChino Studio' or actual.icon is None:
             raise ValueError('Discord no confirmó el nombre o el icono del servidor EssChino.')
         if 'BANNER' in actual.features and actual.banner is None:
             raise ValueError('El servidor admite banner, pero Discord no lo confirmó.')
@@ -645,15 +679,15 @@ class EssChino:
     def panel(self, key):
         c = lambda name: f'<#{self.channel_id(name)}>'
         panels = {
-            'welcome': ('👑 Bienvenido a EssChino', f'Scripts para dar forma a tu proyecto.\n\n**Empieza aquí**\n📜 Lee {c("rules")}.\n📦 Explora {c("catalog")} y {c("demos")}.\n🛒 Compra desde {c("shop")}.\n🎫 Pide ayuda en {c("support")}.\n🔔 Elige tus avisos en {c("notifications")}.\n\nEl equipo te atiende mediante tickets privados.'),
+            'welcome': ('👑 Bienvenido a EssChino Studio', f'Scripts para dar forma a tu proyecto.\n\n**Empieza aquí**\n📜 Lee {c("rules")}.\n📦 Explora {c("catalog")} y {c("demos")}.\n🛒 Compra desde {c("shop")}.\n🎫 Pide ayuda en {c("support")}.\n🔔 Elige tus avisos con los botones de este mensaje.\n\nEl equipo te atiende mediante tickets privados.'),
             'rules': ('📜 Normas de EssChino', '1. Respeta a los miembros y al equipo. Sin acoso, discriminación ni spam.\n2. Publica cada consulta en su canal. El soporte y los pedidos van por ticket.\n3. No compartas scripts de pago, filtraciones, licencias ajenas ni material sin autorización.\n4. Nunca publiques contraseñas, tokens, claves de licencia ni datos de pago.\n5. Compra únicamente desde la tienda oficial enlazada en este servidor. El equipo no solicita pagos por mensajes privados.\n6. Antes de comprar, revisa requisitos, dependencias, compatibilidad, entrega y condiciones indicadas en el producto y en Tebex.\n7. Para recibir el rol Cliente, soporte debe verificar tu pedido. Una captura o referencia por sí sola no acredita una compra.\n8. Las reseñas deben reflejar experiencias reales; las incidencias se atienden por ticket.\n\nLa moderación podrá retirar contenido que incumpla estas normas.'),
-            'announcements': ('📢 Comunicados oficiales', f'Aquí se publican las novedades importantes de EssChino.\n\nActiva los avisos que te interesan en {c("notifications")}. Para cambios técnicos consulta {c("changelog")}; para ayuda usa {c("support")}. No enviamos promociones por privado.'),
+            'announcements': ('📢 Comunicados oficiales', f'Aquí se publican las novedades importantes de EssChino Studio.\n\nActiva los avisos que te interesan en {c("welcome")}. Para cambios técnicos consulta {c("changelog")}; para ayuda usa {c("support")}. No enviamos promociones por privado.'),
             'notifications': ('🔔 Tus notificaciones', 'Elige qué novedades quieres seguir.\n\n📣 **Avisos generales:** lanzamientos y comunicados.\n🔄 **Actualizaciones:** versiones y correcciones de scripts.\n\nPulsa para activar o desactivar cada rol. La selección se guarda en tu cuenta del servidor.'),
             'shop': ('🛒 Tienda oficial de EssChino', ('Explora los productos y completa tu compra de forma segura en nuestra tienda Tebex.\n\n' + self.store.get('shop_url') if self.store.get('shop_url') else f'Estamos preparando el acceso a la tienda oficial. Mientras tanto, consulta los productos en {c("catalog")} y abre una consulta privada en {c("support")}.') + '\n\nComprueba la compatibilidad y las condiciones del producto antes de pagar. Los pedidos se tramitan mediante Tebex; no publiques datos de pago en Discord.'),
             'catalog': ('📦 Catálogo de scripts', f'Este canal reúne las fichas oficiales de nuestros productos.\n\nCada publicación indicará **nombre, funciones, framework compatible, dependencias, versión, demostración y enlace de compra**. El precio vigente y las condiciones se consultan en Tebex.\n\n¿Buscas un recurso concreto? Pregunta en {c("support")}. Solo los productos publicados están disponibles; este mensaje no anuncia existencias ni compatibilidades.'),
             'demos': ('🎬 Demostraciones', f'Aquí encontrarás vídeos y ejemplos de funcionamiento de los scripts publicados.\n\nAntes de comprar, compara la demostración con la ficha del producto y sus requisitos. Si necesitas comprobar una función concreta, abre un ticket en {c("support")}. No hay demostraciones publicadas todavía.'),
             'offers': ('🏷️ Ofertas oficiales', 'Las promociones se anunciarán aquí con el producto incluido, las condiciones y la fecha de finalización.\n\nEl importe final siempre es el que muestra Tebex al completar el pedido. Actualmente no hay promociones anunciadas en este canal.'),
-            'changelog': ('🔄 Versiones y actualizaciones', f'Cada actualización incluirá **producto · versión · cambios · requisitos nuevos · pasos de actualización**.\n\nHaz una copia de tu servidor y configuración antes de actualizar. Activa el rol Actualizaciones en {c("notifications")}. No hay versiones publicadas todavía.'),
+            'changelog': ('🔄 Versiones y actualizaciones', f'Cada actualización incluirá **producto · versión · cambios · requisitos nuevos · pasos de actualización**.\n\nHaz una copia de tu servidor y configuración antes de actualizar. Activa tus avisos en {c("welcome")}. No hay versiones publicadas todavía.'),
             'buying': ('🧾 Cómo comprar', f'**1. Elige tu script** en {c("catalog")} y revisa su demostración.\n**2. Comprueba requisitos**: framework, versiones, dependencias y modalidad de licencia.\n**3. Accede a la tienda oficial** desde {c("shop")}.\n**4. Completa el pedido en Tebex** con la identidad o cuenta que pida ese producto. Conserva el correo y la referencia del pedido.\n**5. Revisa la entrega** siguiendo las instrucciones de Tebex y del producto.\n**6. Abre un ticket** en {c("support")} para incidencias o para verificar tu compra y obtener el rol Cliente.\n\nNo envíes tarjetas, contraseñas ni claves privadas por Discord. Los impuestos, entrega y condiciones aplicables se muestran en el checkout.'),
             'support': ('🎫 Centro de soporte EssChino', 'Selecciona el motivo en el menú para abrir un canal privado.\n\n🛒 **Compras y pedidos** · dudas, entrega y verificación de cliente.\n🛠️ **Instalación y soporte** · requisitos, configuración y diagnóstico.\n🐛 **Errores** · pasos para reproducir, versión y registro del fallo.\n🤝 **Colaboraciones** · propuestas y consultas comerciales.\n\nIncluye el producto, la referencia del pedido si existe y una explicación. Oculta contraseñas, tokens y claves de licencia. Evita duplicar tickets; el equipo responde según disponibilidad.'),
             'faq': ('❓ Preguntas frecuentes', '**¿Es compatible con mi servidor?**\nRevisa el framework, versiones y dependencias de la ficha. Pregunta antes de comprar si no está claro.\n\n**¿Dónde descargo mi compra?**\nSigue el correo y las instrucciones de entrega de Tebex; depende del producto.\n\n**¿Cómo obtengo el rol Cliente?**\nAbre un ticket de compras. El equipo comprobará tu pedido en Tebex.\n\n**¿Puedo compartir o revender un script?**\nRevisa la licencia del producto; comprar no autoriza a redistribuirlo.\n\n**¿Hay devoluciones o transferencias de licencia?**\nConsulta las condiciones publicadas en la tienda y el checkout. Para revisar tu caso, abre un ticket privado.\n\n**¿Qué datos necesita soporte?**\nProducto, versión, entorno, pasos del fallo y errores relevantes con los datos sensibles ocultos.'),
@@ -665,6 +699,7 @@ class EssChino:
             'downloads': ('📥 Tus compras y licencias', 'La entrega oficial depende de cada producto y de las instrucciones de Tebex. Consulta el correo del pedido y la cuenta vinculada a la compra.\n\nEste canal no distribuye archivos de pago ni claves. Si falta una entrega, abre un ticket con tu referencia de pedido. Nunca compartas tu contraseña ni la clave de tu licencia.'),
             'customerchat': ('💎 Espacio de clientes', 'Comparte experiencias y consejos con otros clientes verificados.\n\nPara soporte de un pedido abre un ticket: así tus datos y el diagnóstico permanecen en privado.'),
             'staff': ('👥 Equipo EssChino', 'Coordina aquí la atención y los contenidos oficiales.\n\n**Antes de publicar:** comprueba requisitos, enlaces, precio en Tebex y condiciones del producto.\n**Antes de verificar un cliente:** comprueba el pedido en el panel real de Tebex; no aceptes solo una captura.\n**Tickets:** recoge el diagnóstico, evita pedir secretos y conserva la transcripción al cerrar.\n**Privacidad:** no copies información de pedidos a canales públicos.'),
+            'management': ('📋 Gestión de soporte', 'Los tickets se crean de forma privada en **Tickets Abiertos**, arriba del servidor. Al cerrarlos pasan a **Tickets Cerrados**.\n\nCada caso permite cerrar, reabrir, descargar su transcripción y verificar una compra después de comprobarla en Tebex.\n\nUsa `/studio tickets` para consultar los casos abiertos y cerrados. Asigna los roles del equipo solo a las personas que deban atender pedidos.'),
             'log': ('📋 Registro de soporte', 'Aquí se registran aperturas, cierres, reaperturas y verificaciones de cliente.\n\nLos tickets cerrados se conservan con acceso privado. El estado anterior de la instalación y las copias de canales se guardan en el volumen privado del bot.'),
         }
         return panels[key]
@@ -683,8 +718,10 @@ class EssChino:
         embed = self.embed(title, body).set_footer(text=marker)
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
-        view = {'welcome': EntryView, 'notifications': NotificationsView, 'support': SupportView}.get(key)
+        view = {'welcome': EntryView, 'notifications': NotificationsView, 'support': SupportView, 'management': ManagementView}.get(key)
         view = view(self) if view else None
+        if key in {'suggestions', 'reviews'} and hasattr(self, 'community'):
+            view = self.community.panel_view(key)
         if key == 'shop' and self.store.get('shop_url'):
             view = discord.ui.View(timeout=None)
             view.add_item(discord.ui.Button(label='Visitar tienda oficial', emoji='🛒', style=discord.ButtonStyle.link,
@@ -751,8 +788,9 @@ class EssChino:
             overwrites[i.user] = discord.PermissionOverwrite(view_channel=True, send_messages=True,
                 read_message_history=True, attach_files=True, embed_links=True, add_reactions=True)
             async def apply():
+                category = await self.ticket_category(i.guild, False, owner)
                 channel = await i.guild.create_text_channel(f'{kind}-{i.user.id}',
-                    category=i.guild.get_channel(self.store.get('category:tickets')),
+                    category=category,
                     topic=f'EssChino · ticket · propietario:{i.user.id} · solicitud:{i.id}', overwrites=overwrites,
                     reason='Consulta privada solicitada por el miembro en EssChino')
                 await self.call('add_ticket', channel.id, i.user.id, kind)
@@ -777,13 +815,18 @@ class EssChino:
                 await i.followup.send('El ticket ya está en ese estado.', ephemeral=True)
                 return
             await self.archive_channel(i.channel, 'ticket')
-            member = await i.guild.fetch_member(int(row['owner']))
+            try:
+                member = await i.guild.fetch_member(int(row['owner']))
+            except discord.NotFound:
+                member = None
             owner = await i.guild.fetch_member(i.guild.owner_id)
             overwrites = self.overwrites(i.guild, 'staff', owner)
-            overwrites[member] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
-                send_messages=reopen, add_reactions=reopen, attach_files=reopen, embed_links=reopen)
+            if member:
+                overwrites[member] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
+                    send_messages=reopen, add_reactions=reopen, attach_files=reopen, embed_links=reopen)
             async def apply():
-                await i.channel.edit(category=i.guild.get_channel(self.store.get('category:' + ('tickets' if reopen else 'closed'))),
+                category = await self.ticket_category(i.guild, not reopen, owner)
+                await i.channel.edit(category=category,
                     overwrites=overwrites, sync_permissions=False, reason='Cambio de estado de ticket EssChino')
                 await self.call('ticket_state', i.channel_id, desired)
                 await i.channel.send(embed=self.embed('🔓 Ticket reabierto' if reopen else '🔒 Ticket cerrado',
@@ -792,6 +835,17 @@ class EssChino:
                 await self.audit(i.guild, f'{"🔓 Reabierto" if reopen else "🔒 Cerrado"} · <#{i.channel_id}> · por <@{i.user.id}>.')
             await self.tracked(f'state:{i.id}', 'Cambiar estado de ticket EssChino', apply)
         await i.followup.send('Ticket reabierto.' if reopen else 'Ticket cerrado y copia guardada.', ephemeral=True)
+
+    async def ticket_category(self, guild, closed, owner):
+        category = await self.ensure_channel(guild, 'category:' + ('closed' if closed else 'tickets'),
+            'Tickets Cerrados' if closed else 'Tickets Abiertos', category=True,
+            overwrites=self.overwrites(guild, 'staff', owner))
+        await category.edit(position=1 if closed else 0, reason='Tickets abiertos arriba y cerrados separados')
+        if closed:
+            opened = self.channel(guild, 'category:tickets')
+            if opened:
+                await opened.edit(position=0, reason='Mantener Tickets Abiertos arriba del servidor')
+        return category
 
     async def audit(self, guild, text):
         channel = guild.get_channel(self.channel_id('log'))

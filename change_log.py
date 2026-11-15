@@ -10,11 +10,15 @@ import time
 
 import discord
 from discord import app_commands
-from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
+def is_bot_admin(member):
+    # Bootstrap creates the new role IDs before the copied access policy loads.
+    from bot_access import is_bot_admin as check
+    return check(member)
+
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='esschino-exact-channel-destination-v43'
+RELEASE='esschino-studio-store-only-v1'
 SUMMARY=('Personaliza exclusivamente el servidor EssChino identificado por el canal exacto 1514871828672151573 que autorizó el propietario. '
     'Corrige la comprobación inicial para admitir variaciones del nombre visible y cuentas alternativas; registra la identidad real del destino y exige Administrador al bot. '
     'Conserva ese canal y su historial, lo hace privado primero y guarda el estado anterior, mensajes y adjuntos de los otros canales antes de retirarlos por solicitud expresa. '
