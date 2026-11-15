@@ -10,6 +10,8 @@ Los tickets se abren en una categoría privada **Tickets Abiertos**, colocada ar
 
 ## Uso
 
+Los veinte paneles oficiales (dieciocho canales, Dirección y el resumen de instalación) incluyen botones **English**, **Português (Brasil)**, **Français** y **Deutsch**, tomados del manifiesto de idiomas de `community_sanctions_system_1.42.2.zip`. El mensaje público conserva el español y no incluye un botón Español. Cada persona abre una traducción privada; si cambia de idioma en esa copia, se actualiza únicamente su copia. Se conservan imágenes, enlaces y controles, con sus etiquetas traducidas. El idioma de los formularios y de las respuestas operativas sigue siendo español.
+
 - `/ayuda`, `/tienda`, `/soporte`, `/mis-tickets`, `/sugerir` y `/resena` son las funciones públicas.
 - `/studio tienda enlace:` conecta el sitio oficial de Tebex.
 - `/studio publicar` publica anuncios, productos, demostraciones, ofertas, actualizaciones, guías, preguntas frecuentes o normas. Solo usa los canales oficiales de la estructura. Las menciones son opcionales y limitadas a los roles elegidos por los miembros.
@@ -25,6 +27,10 @@ Los comandos, formularios y paneles funcionan sin intents privilegiados. Si Disc
 
 Pruebas del bot activo: `python -m unittest discover -s tests -p test_esschino.py` y `python -m unittest discover -s tests -p test_store_bot.py`. Los módulos y pruebas heredados del otro proyecto son referencia y no forman parte del proceso activo.
 
+Las pruebas de idiomas están en `test_panel_languages.py`: cobertura de todos los paneles e idiomas, límites de componentes, cambios privados, controles persistentes, enlaces, imágenes, permisos y actualización idempotente con copia anterior duradera.
+
 ## Restauración
 
 Desactivar el servicio nuevo detiene sus funciones sin afectar al otro bot. Conservar el volumen y SQLite actuales. `/studio copia` descarga el estado previo y posterior de cada operación; las tablas esschino_messages y esschino_files guardan las copias anteriores a la retirada de canales. Discord no recupera IDs ni fechas originales de canales eliminados. Nunca restaurar una base vieja sobre pedidos y tickets nuevos.
+
+Para revertir los botones de idiomas, primero restaurar los componentes anteriores de las operaciones `PANEL_LANGUAGES` (sin alterar texto, adjuntos, permisos ni roles) mediante una operación registrada, y después desplegar `23ad8d96b0eaa12cdd058559a7ee237b93b1f11c`. Volver solo al código anterior deja botones de idiomas sin manejador; no restaurar una base antigua ni repetir la instalación del servidor.

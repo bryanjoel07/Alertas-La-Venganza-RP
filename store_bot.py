@@ -12,7 +12,7 @@ from aiohttp import web
 import discord
 from discord import app_commands
 
-from esschino import EssChino, ASSETS, PROTECTED_CHANNEL, valid_shop_url
+from esschino import EssChino, ASSETS, PROTECTED_CHANNEL, CHANNELS, valid_shop_url
 from store_community import StoreCommunity, IdeaModal, ReviewModal
 from studio_journal import ChangeLog
 
@@ -20,7 +20,7 @@ log = logging.getLogger('EssChinoStudio')
 GUILD_ID = 1514871828189941881
 BOT_ID = 1571639486591402174
 GUILD = discord.Object(id=GUILD_ID)
-RELEASE = 'esschino-studio-store-only-v1'
+RELEASE = 'esschino-studio-panel-languages-v2'
 
 
 class StoreBot(discord.Client):
@@ -80,6 +80,7 @@ class StoreBot(discord.Client):
                 if not self.esschino.store.get('setup_complete'):
                     raise ValueError('La instalación todavía no está completa; revisa los permisos del bot en EssChino Studio.')
                 guild = self.get_guild(GUILD_ID)
+                await self.esschino.languages.ready(guild, [row[0] for row in CHANNELS])
                 async def command_state():
                     return {'guild_id': GUILD_ID, 'commands': [c.to_dict() for c in await self.tree.fetch_commands(guild=GUILD)]}
                 commands = await self.changes.tracked('STUDIO_COMMANDS', 'Registrar únicamente comandos de tienda',

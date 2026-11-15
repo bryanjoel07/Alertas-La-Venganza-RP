@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import discord
 
 from studio_journal import server_snapshot
+from panel_languages import PanelLanguages
 
 log = logging.getLogger('EssChino')
 PROTECTED_CHANNEL = 1514871828672151573
@@ -365,6 +366,7 @@ class EssChino:
         self.lock = asyncio.Lock()
         self.roles = {}
         self.channels = {}
+        self.languages = PanelLanguages(self)
 
     async def call(self, method, *args):
         return await asyncio.to_thread(getattr(self.store, method), *args)
@@ -373,6 +375,7 @@ class EssChino:
         await self.call('initialize')
         for view in (EntryView, NotificationsView, SupportView, AdminView, TicketView, ManagementView):
             self.bot.add_view(view(self))
+        self.languages.start()
 
     def channel_id(self, key):
         return self.store.get('channel:' + key)
@@ -606,7 +609,7 @@ class EssChino:
                 '**Avisos:** roles opcionales para anuncios y actualizaciones.\n\n' +
                 ('El enlace oficial de Tebex ya está conectado al panel de compra.' if self.store.get('shop_url') else
                  'Falta el enlace oficial de Tebex para conectar el botón de compra. Puedes indicarlo en el botón de configuración de arriba.')),
-                allowed_mentions=discord.AllowedMentions.none())
+                view=self.languages.attach(None, 'setup'), allowed_mentions=discord.AllowedMentions.none())
             await self.call('put', 'completion_message', message.id)
         await self.call('put', 'setup_complete', int(time.time()))
         log.info('ESSCHINO complete guild=%s store_url_configured=%s banner_available=%s',
@@ -704,6 +707,18 @@ class EssChino:
         }
         return panels[key]
 
+    def panel_view(self, key):
+        factory = {'welcome': EntryView, 'notifications': NotificationsView, 'support': SupportView,
+                   'management': ManagementView, 'direction': AdminView}.get(key)
+        view = factory(self) if factory else None
+        if key in {'suggestions', 'reviews'} and hasattr(self, 'community'):
+            view = self.community.panel_view(key)
+        if key == 'shop' and self.store.get('shop_url'):
+            view = discord.ui.View(timeout=None)
+            view.add_item(discord.ui.Button(label='Visitar tienda oficial', emoji='🛒', style=discord.ButtonStyle.link,
+                                           url=self.store.get('shop_url')))
+        return view
+
     async def publish_panel(self, guild, key, refresh=False):
         channel = self.bot.get_channel(self.channel_id(key)) or await self.bot.fetch_channel(self.channel_id(key))
         marker = 'EssChino · panel:' + key
@@ -718,14 +733,7 @@ class EssChino:
         embed = self.embed(title, body).set_footer(text=marker)
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
-        view = {'welcome': EntryView, 'notifications': NotificationsView, 'support': SupportView, 'management': ManagementView}.get(key)
-        view = view(self) if view else None
-        if key in {'suggestions', 'reviews'} and hasattr(self, 'community'):
-            view = self.community.panel_view(key)
-        if key == 'shop' and self.store.get('shop_url'):
-            view = discord.ui.View(timeout=None)
-            view.add_item(discord.ui.Button(label='Visitar tienda oficial', emoji='🛒', style=discord.ButtonStyle.link,
-                                           url=self.store.get('shop_url')))
+        view = self.languages.attach(self.panel_view(key), key)
         kwargs = dict(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         if view is not None:
             kwargs['view'] = view
@@ -756,7 +764,9 @@ class EssChino:
             'La cabecera nativa del servidor depende de que Discord habilite BANNER.\n\n'
             'Las copias de la instalación y los canales anteriores permanecen en el volumen privado del bot.')
         embed.set_footer(text=marker)
-        await channel.send(embed=embed, view=AdminView(self), allowed_mentions=discord.AllowedMentions.none())
+        message = await channel.send(embed=embed, view=self.languages.attach(AdminView(self), 'direction'),
+            allowed_mentions=discord.AllowedMentions.none())
+        await self.call('put', 'panel:direction', message.id)
 
     async def toggle_role(self, i, key, toggle=True):
         await i.response.defer(ephemeral=True)
