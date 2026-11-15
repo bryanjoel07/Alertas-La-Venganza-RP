@@ -14,19 +14,22 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='esschino-exact-channel-destination-v43'
-SUMMARY=('Personaliza exclusivamente el servidor EssChino identificado por el canal exacto 1514871828672151573 que autorizó el propietario. '
-    'Corrige la comprobación inicial para admitir variaciones del nombre visible y cuentas alternativas; registra la identidad real del destino y exige Administrador al bot. '
-    'Conserva ese canal y su historial, lo hace privado primero y guarda el estado anterior, mensajes y adjuntos de los otros canales antes de retirarlos por solicitud expresa. '
-    'Crea identidad visual, roles, información, tienda, comunidad, clientes y equipo, con tickets privados persistentes, notificaciones opcionales y verificación manual de pedidos por soporte. '
-    'La instalación guarda su inventario inicial y no borra canales creados después ni repite una instalación completada. '
-    'Todas las mutaciones nuevas se registran mediante ChangeLog.tracked con snapshots del servidor EssChino. '
-    'No modifica canales ni roles de La Venganza RP. El enlace de Tebex se configura por el propietario; no inventa productos, precios ni compras verificadas.')
-RESTORE=('Código anterior: fe5abef7fb0a3c710d342f7d7235d0ab65888368. Conservar /data, SQLite, tickets, mensajes, adjuntos e historial actuales. '
-    'Desactivar ESSCHINO_SETUP_REQUEST_ID detiene la instalación puntual; desplegar el commit anterior retira los nuevos controles del bot, pero no revierte cambios de Discord. '
-    'El registro operation:ESSCHINO_SETUP_REQUEST_ID:esschino-store-20261115-v1 contiene los permisos, canales, roles y membresías anteriores. '
-    'Las tablas esschino_messages y esschino_files conservan el contenido copiado de los canales retirados; los IDs y fechas originales de Discord no se pueden reconstruir. '
-    'No borrar nuevos tickets ni restaurar una base antigua para revertir la presentación. No alterar La Venganza RP ni sus roles protegidos.')
+RELEASE='restore-original-bot-after-esschino-split-v44'
+SUMMARY=('Restaura todas las funciones originales de La Venganza RP y retira su integración temporal de la tienda EssChino. '
+    'EssChino pasa a un repositorio, bot, proyecto de Railway y volumen independientes, por solicitud expresa del propietario. '
+    'La funcionalidad original de esta versión es idéntica al commit a4e163ae6a4aec3bc9777177845c18901f2a2c74; conserva la base y los respaldos actuales. '
+    'Amplía los recordatorios únicamente para entrevistas de solicitudes de staff agendadas desde este bot. '
+    'Avisa por privado al candidato y al entrevistador asignado con la anticipación configurada (60 minutos por defecto), 15 minutos antes si corresponde y al comenzar. '
+    'Incluye la fecha adaptada al usuario, instrucciones y acceso a la sala cuando está disponible; los controles del candidato y entrevistador conservan sus autorizaciones. '
+    'Cada reprogramación tiene identidad propia, incluso al volver a la misma fecha. Cancela avisos anteriores al cambiar la cita, retirar o finalizar la solicitud o completar la entrevista. '
+    'Guarda recibos duraderos, reconoce los avisos anteriores y entrega solo la fase vigente tras una interrupción. Una confirmación cercana evita repetir inmediatamente el mismo aviso. '
+    'Si el candidato no recibe privados, avisa una vez al entrevistador; las fechas siguen en Mi solicitud. Revalida los permisos del entrevistador al entregar. '
+    'Los nuevos envíos de entrevista registran estado privado antes y después. No añade recordatorios generales ni modifica roles protegidos ni asigna roles de staff.')
+RESTORE=('Referencia funcional original: a4e163ae6a4aec3bc9777177845c18901f2a2c74. Conservar /data y SQLite actuales, solicitudes, entrevistas, historial y recibos. '
+    'No reactivar ESSCHINO_SETUP_REQUEST_ID ni reinstalar la integración de EssChino en este bot; su servidor se administra con el bot y proyecto nuevos. '
+    'Antes de arrancar la versión anterior, guardar una copia verificada y marcar como cancelled solo los avisos pendientes nuevos de entrevista o recordatorio cuyo kind contenga :v; no borrar los recibos. '
+    'La versión anterior usa un único aviso al candidato y no interpreta los nuevos destinatarios ni fases. El índice lv_recruit_interview_events puede permanecer. '
+    'No restaurar una base antigua, reenviar avisos ya entregados ni modificar roles, permisos o canales para revertir esta función.')
 
 
 

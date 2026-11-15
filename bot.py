@@ -52,7 +52,6 @@ from feedback import FeedbackSystem
 from bugs import BugSystem
 from suggestions import SuggestionSystem
 from rules_lookup import RulesLookup
-from esschino import EssChino
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -235,7 +234,6 @@ class LaVenganzaBot(discord.Client):
         self.tree = ProfileTree(self)
         self.economy = Economy(self, DB_PATH, GUILD)
         self.changes = ChangeLog(self, DB_PATH, GUILD_ID)
-        self.esschino = EssChino(self, DB_PATH)
         self.tree.add_command(self.changes.group, guild=GUILD)
         self.tickets = TicketSystem(self, DB_PATH, GUILD_ID)
         self.tree.add_command(self.tickets.group, guild=GUILD)
@@ -279,7 +277,6 @@ class LaVenganzaBot(discord.Client):
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
         await asyncio.to_thread(self.changes.journal.initialize)
-        await self.esschino.start()
         await self.settings_panel.start()
         await self.economy.start()
         await self.tickets.start()
@@ -1547,10 +1544,6 @@ async def on_thread_create(thread):
 async def on_message(message):
     client.rules.invalidate(message.guild.id if message.guild else None, message.channel.id)
     try:
-        await client.esschino.observe(message)
-    except Exception:
-        log.exception('No se pudo guardar un mensaje de ticket de EssChino')
-    try:
         await client.bugs.observe(message)
     except Exception:
         log.exception('No se pudo registrar un reporte abierto en el foro')
@@ -1648,10 +1641,6 @@ async def on_guild_channel_delete(channel):
 async def on_ready():
     log.info("Bot conectado como %s", client.user)
     log.info("Base SQLite activa: %s", DB_PATH)
-    try:
-        await client.esschino.ready()
-    except Exception:
-        log.exception('ESSCHINO no se pudo completar la personalización solicitada')
     try:
         await client.rules.ready()
     except Exception:
