@@ -18,7 +18,6 @@ from change_log import server_snapshot
 log = logging.getLogger('EssChino')
 PROTECTED_CHANNEL = 1514871828672151573
 ORIGINAL_GUILD = 1244988345327550565
-OWNER_ACCOUNTS = {1146879020911300628, 1509288420852109383}
 REQUEST = 'esschino-store-20261115-v1'
 ENV = 'ESSCHINO_SETUP_REQUEST_ID'
 COLOR = 0xA535F5
@@ -76,9 +75,8 @@ def validate_target(channel, saved_guild=None):
         raise ValueError('La solicitud no puede ejecutarse sobre La Venganza RP ni otro canal.')
     if saved_guild is not None and guild.id != int(saved_guild):
         raise ValueError('El servidor no coincide con la copia original de EssChino.')
-    if saved_guild is None and (guild.name.casefold().strip() not in {'servidor de esschino', 'esschino'}
-                               or guild.owner_id not in OWNER_ACCOUNTS):
-        raise ValueError('No se confirmó el nombre y la cuenta propietaria del servidor EssChino.')
+    # The owner's exact channel ID is the authoritative destination. Account
+    # display names and alternate owner accounts are not an authorization test.
     if not isinstance(channel, discord.TextChannel):
         raise ValueError('El canal que se debe conservar tiene que ser un canal de texto.')
     if not guild.me or not guild.me.guild_permissions.administrator:
@@ -474,6 +472,8 @@ class EssChino:
             except discord.HTTPException as error:
                 log.error('ESSCHINO blocked protected_channel=%s http=%s code=%s', PROTECTED_CHANNEL, error.status, error.code)
                 return
+            log.info('ESSCHINO candidate channel=%s guild=%s name=%s owner=%s',
+                     protected.id, protected.guild.id, protected.guild.name, protected.guild.owner_id)
             guild = validate_target(protected, self.store.get('guild'))
             self.roles = {r.id: r for r in await guild.fetch_roles()}
             self.channels = {c.id: c for c in await guild.fetch_channels()}

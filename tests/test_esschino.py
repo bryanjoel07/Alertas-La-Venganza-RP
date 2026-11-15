@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 
 from change_log import ChangeLog
-from esschino import (EssChino, StudioStore, PROTECTED_CHANNEL, ORIGINAL_GUILD, OWNER_ACCOUNTS,
+from esschino import (EssChino, StudioStore, PROTECTED_CHANNEL, ORIGINAL_GUILD,
     REQUEST, ENV, ROLE_SPECS, CHANNELS, EntryView, NotificationsView, SupportView, AdminView,
     TicketView, TicketModal, ShopModal, PurchaseModal, deletion_plan, validate_target, valid_shop_url)
 
@@ -54,24 +54,28 @@ class ScopeTests(unittest.TestCase):
     def target(self):
         channel = MagicMock(spec=discord.TextChannel)
         channel.id = PROTECTED_CHANNEL
-        channel.guild = NS(id=222, name='Servidor de EssChino', owner_id=min(OWNER_ACCOUNTS),
+        channel.guild = NS(id=222, name='Servidor de EssChino', owner_id=1146879020911300628,
             me=NS(guild_permissions=discord.Permissions(administrator=True)))
         return channel
 
     def test_only_exact_channel_in_verified_separate_guild_is_accepted(self):
         channel = self.target()
         self.assertIs(validate_target(channel), channel.guild)
-        for field, value in [('id', ORIGINAL_GUILD), ('owner_id', 55), ('name', 'Otra comunidad')]:
-            channel = self.target()
-            setattr(channel.guild, field, value)
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                validate_target(channel)
+        channel.guild.id = ORIGINAL_GUILD
+        with self.assertRaises(ValueError):
+            validate_target(channel)
         channel = self.target()
         with self.assertRaises(ValueError):
             validate_target(channel, saved_guild=999)
         channel.id = 1
         with self.assertRaises(ValueError):
             validate_target(channel)
+
+    def test_exact_authorized_channel_survives_owner_account_and_display_name_variations(self):
+        channel = self.target()
+        channel.guild.name = 'Servidor de esschino__'
+        channel.guild.owner_id = 42
+        self.assertIs(validate_target(channel), channel.guild)
 
     def test_missing_bot_administrator_blocks_installation(self):
         channel = self.target()

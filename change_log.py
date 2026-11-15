@@ -14,14 +14,15 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='esschino-storefront-v42'
-SUMMARY=('Personaliza exclusivamente el servidor EssChino identificado por el canal 1514871828672151573 y una cuenta propietaria verificada. '
+RELEASE='esschino-exact-channel-destination-v43'
+SUMMARY=('Personaliza exclusivamente el servidor EssChino identificado por el canal exacto 1514871828672151573 que autorizó el propietario. '
+    'Corrige la comprobación inicial para admitir variaciones del nombre visible y cuentas alternativas; registra la identidad real del destino y exige Administrador al bot. '
     'Conserva ese canal y su historial, lo hace privado primero y guarda el estado anterior, mensajes y adjuntos de los otros canales antes de retirarlos por solicitud expresa. '
     'Crea identidad visual, roles, información, tienda, comunidad, clientes y equipo, con tickets privados persistentes, notificaciones opcionales y verificación manual de pedidos por soporte. '
     'La instalación guarda su inventario inicial y no borra canales creados después ni repite una instalación completada. '
     'Todas las mutaciones nuevas se registran mediante ChangeLog.tracked con snapshots del servidor EssChino. '
     'No modifica canales ni roles de La Venganza RP. El enlace de Tebex se configura por el propietario; no inventa productos, precios ni compras verificadas.')
-RESTORE=('Código anterior: a4e163ae6a4aec3bc9777177845c18901f2a2c74. Conservar /data, SQLite, tickets, mensajes, adjuntos e historial actuales. '
+RESTORE=('Código anterior: fe5abef7fb0a3c710d342f7d7235d0ab65888368. Conservar /data, SQLite, tickets, mensajes, adjuntos e historial actuales. '
     'Desactivar ESSCHINO_SETUP_REQUEST_ID detiene la instalación puntual; desplegar el commit anterior retira los nuevos controles del bot, pero no revierte cambios de Discord. '
     'El registro operation:ESSCHINO_SETUP_REQUEST_ID:esschino-store-20261115-v1 contiene los permisos, canales, roles y membresías anteriores. '
     'Las tablas esschino_messages y esschino_files conservan el contenido copiado de los canales retirados; los IDs y fechas originales de Discord no se pueden reconstruir. '
