@@ -10,6 +10,8 @@ Por solicitud del propietario, los cambios del bot ya no se publican en Registro
 
 ## Restauración
 
+La personalización separada de EssChino puede desactivarse quitando `ESSCHINO_SETUP_REQUEST_ID` o volviendo al commit `a4e163ae6a4aec3bc9777177845c18901f2a2c74`, conservando `/data` y SQLite actuales. Esto retira controles del bot, pero no restaura canales de Discord. Su registro usa snapshots del servidor de EssChino y guarda el inventario inicial, mensajes y adjuntos en `esschino_config`, `esschino_messages` y `esschino_files`. Los canales retirados no recuperan sus IDs ni las fechas originales. No borrar tickets posteriores ni tocar La Venganza RP para revertir esta instalación.
+
 Cada registro conserva sus propias instrucciones. Esta versión de la tienda puede revertirse desplegando `1e02a08001fa9c42c63a6cd0df677233ec76532f` y conservando `/data` y su SQLite actual. El código anterior reconstruye el panel. No restaurar una base antigua para revertir una presentación: perdería compras posteriores.
 
 Para una operación de Discord, descargar el JSON, comparar `before` y `after`, y restaurar solo los campos autorizados usando los IDs originales. Las copias contienen categorías, posiciones, permisos y nombres; no contienen mensajes y no recuperan canales borrados. Nunca borrar/recrear canales como mecanismo de restauración. Owner, Programador, Admin y Súper Admin están excluidos de cualquier modificación.

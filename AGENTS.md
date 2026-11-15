@@ -1,5 +1,7 @@
 # Discord administration constraints
 
+Explicit separate-server authorization (2026-11-15): the owner requests personalizing "Servidor de EssChino" as "EssChino", preserving channel 1514871828672151573 and its history but making it private, and deleting every other pre-existing channel in that same guild. This exception applies only to the guild resolved from that exact channel after checking its name and verified owner account. It never authorizes deletion or protected-role changes in La Venganza RP (1244988345327550565). Save the frozen initial inventory, channel/message/attachment before-state, and durable ChangeLog.tracked record before deletion. Newly created or subsequently added channels must not join the deletion inventory on retries.
+
 The owner explicitly forbids modifying these roles, including permissions, channel overwrites, names, colors, position, and member assignments:
 - Owner: 1245008186440683530
 - Programador: 1300627506801541230

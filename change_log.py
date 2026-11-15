@@ -14,18 +14,18 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='scheduled-staff-interview-reminders-v41'
-SUMMARY=('Amplía los recordatorios únicamente para entrevistas de solicitudes de staff agendadas desde este bot. '
-    'Avisa por privado al candidato y al entrevistador asignado con la anticipación configurada (60 minutos por defecto), 15 minutos antes si corresponde y al comenzar. '
-    'Incluye la fecha adaptada al usuario, instrucciones y acceso a la sala cuando está disponible; los controles del candidato y entrevistador conservan sus autorizaciones. '
-    'Cada reprogramación tiene identidad propia, incluso al volver a la misma fecha. Cancela avisos anteriores al cambiar la cita, retirar o finalizar la solicitud o completar la entrevista. '
-    'Guarda recibos duraderos, reconoce los avisos anteriores y entrega solo la fase vigente tras una interrupción. Una confirmación cercana evita repetir inmediatamente el mismo aviso. '
-    'Si el candidato no recibe privados, avisa una vez al entrevistador; las fechas siguen en Mi solicitud. Revalida los permisos del entrevistador al entregar. '
-    'Los nuevos envíos de entrevista registran estado privado antes y después. No añade recordatorios generales ni modifica roles protegidos ni asigna roles de staff.')
-RESTORE=('Código anterior: b7ce134c337096b0b2c6214ef21a347ba60021e5. Conservar /data y SQLite actuales, solicitudes, entrevistas, historial y recibos. '
-    'Antes de arrancar la versión anterior, guardar una copia verificada y marcar como cancelled solo los avisos pendientes nuevos de entrevista o recordatorio cuyo kind contenga :v; no borrar los recibos. '
-    'La versión anterior usa un único aviso al candidato y no interpreta los nuevos destinatarios ni fases. El índice lv_recruit_interview_events puede permanecer. '
-    'No restaurar una base antigua, reenviar avisos ya entregados ni modificar roles, permisos o canales para revertir esta función.')
+RELEASE='esschino-storefront-v42'
+SUMMARY=('Personaliza exclusivamente el servidor EssChino identificado por el canal 1514871828672151573 y una cuenta propietaria verificada. '
+    'Conserva ese canal y su historial, lo hace privado primero y guarda el estado anterior, mensajes y adjuntos de los otros canales antes de retirarlos por solicitud expresa. '
+    'Crea identidad visual, roles, información, tienda, comunidad, clientes y equipo, con tickets privados persistentes, notificaciones opcionales y verificación manual de pedidos por soporte. '
+    'La instalación guarda su inventario inicial y no borra canales creados después ni repite una instalación completada. '
+    'Todas las mutaciones nuevas se registran mediante ChangeLog.tracked con snapshots del servidor EssChino. '
+    'No modifica canales ni roles de La Venganza RP. El enlace de Tebex se configura por el propietario; no inventa productos, precios ni compras verificadas.')
+RESTORE=('Código anterior: a4e163ae6a4aec3bc9777177845c18901f2a2c74. Conservar /data, SQLite, tickets, mensajes, adjuntos e historial actuales. '
+    'Desactivar ESSCHINO_SETUP_REQUEST_ID detiene la instalación puntual; desplegar el commit anterior retira los nuevos controles del bot, pero no revierte cambios de Discord. '
+    'El registro operation:ESSCHINO_SETUP_REQUEST_ID:esschino-store-20261115-v1 contiene los permisos, canales, roles y membresías anteriores. '
+    'Las tablas esschino_messages y esschino_files conservan el contenido copiado de los canales retirados; los IDs y fechas originales de Discord no se pueden reconstruir. '
+    'No borrar nuevos tickets ni restaurar una base antigua para revertir la presentación. No alterar La Venganza RP ni sus roles protegidos.')
 
 
 
