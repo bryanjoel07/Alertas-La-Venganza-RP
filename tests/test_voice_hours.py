@@ -11,7 +11,7 @@ import discord
 
 from change_log import ChangeLog
 from tickets_store import PROTECTED
-from voice_hours import BOT_ID, CHANNEL_ID, CITIZENS_ID, GUILD_ID, PR, VoiceHours, closed_at, next_change
+from voice_hours import BOT_ID, CHANNEL_ID, CITIZENS_ID, GUILD_ID, PR, VoiceHours, access_audit, closed_at, next_change
 
 
 def local(hour, minute=0, second=0):
@@ -91,6 +91,7 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
             self.roles[rid] = discord.Role(guild=self.guild, state=Mock(), data=dict(
                 id=str(rid), name=str(rid), permissions='0', position=1, color=0))
         self.guild.default_role = self.roles[GUILD_ID]
+        self.guild.roles = list(self.roles.values())
         self.guild.get_role = self.roles.get
         self.members = {}
         self.guild.get_member = self.members.get
@@ -141,16 +142,17 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         await self.system.reconcile()
         self.assertEqual(len(self.room.edits), edits)
 
-    async def test_day_opens_public_roles_and_restores_extra_grants_after_restart(self):
+    async def test_day_only_opens_citizens_everyone_stays_denied_after_restart(self):
         await self.system.reconcile()
         restarted = VoiceHours(self.bot, self.path)
         restarted.store.initialize()
         restarted.now = Mock(return_value=local(6, 30))
         restarted.enabled = Mock(return_value=True)
         await restarted.reconcile()
-        for role in (self.roles[GUILD_ID], self.roles[CITIZENS_ID]):
-            self.assertIs(self.room.overwrites_for(role).view_channel, True)
-            self.assertIs(self.room.overwrites_for(role).connect, True)
+        self.assertIs(self.room.overwrites_for(self.roles[GUILD_ID]).view_channel, False)
+        self.assertIs(self.room.overwrites_for(self.roles[GUILD_ID]).connect, False)
+        self.assertIs(self.room.overwrites_for(self.roles[CITIZENS_ID]).view_channel, True)
+        self.assertIs(self.room.overwrites_for(self.roles[CITIZENS_ID]).connect, True)
         for target in (self.extra, self.direct, self.protected_role):
             self.assertEqual(self.room.overwrites_for(target).pair(), self.before[target.id])
 
@@ -269,3 +271,24 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         guild._voice_states[11] = NS(channel=NS(id=77))
         guild._voice_states[12] = NS(channel=None)
         self.assertEqual(self.system.occupants(guild), [10])
+
+    async def test_native_discord_access_distinguishes_citizens_from_staff_grants(self):
+        guild = discord.Guild(data=dict(id=str(GUILD_ID), name='Offline', owner_id='1', roles=[
+            dict(id=str(rid), name=name, permissions=str(discord.Permissions(view_channel=True, connect=True).value), position=position)
+            for position, (rid, name) in enumerate([(GUILD_ID, '@everyone'), (CITIZENS_ID, 'Ciudadanos'), (77, 'Soporte')])]), state=Mock())
+        denied = discord.PermissionOverwrite(view_channel=False, connect=False).pair()
+        allowed = discord.PermissionOverwrite(view_channel=True, connect=True).pair()
+        data = dict(id=str(CHANNEL_ID), type=2, name='Voice', position=0, bitrate=64000, user_limit=0,
+            permission_overwrites=[dict(id=str(rid), type=0, allow=str(pair[0].value), deny=str(pair[1].value))
+                for rid, pair in [(GUILD_ID, denied), (CITIZENS_ID, denied), (77, allowed)]])
+        channel = discord.VoiceChannel(state=guild._state, guild=guild, data=data)
+        audit = access_audit(channel)
+        self.assertEqual(audit['everyone'], dict(view_channel=False, connect=False))
+        self.assertEqual(audit['citizens'], dict(view_channel=False, connect=False))
+        self.assertEqual(audit['other_roles'], [dict(id=77, name='Soporte', view_channel=True, connect=True)])
+        self.assertTrue(channel.permissions_for(guild.get_role(77)).view_channel)
+        for roles, visible in [([CITIZENS_ID], False), ([CITIZENS_ID, 77], True)]:
+            member = discord.Member(data=dict(user=dict(id='88', username='player', discriminator='0', avatar=None),
+                roles=[str(rid) for rid in roles], joined_at='2026-01-01T00:00:00+00:00', flags=0,
+                deaf=False, mute=False), guild=guild, state=guild._state)
+            self.assertEqual(channel.permissions_for(member).view_channel, visible)

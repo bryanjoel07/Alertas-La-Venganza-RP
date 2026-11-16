@@ -14,15 +14,15 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='voice-hours-two-roles-only-v47'
-SUMMARY=('Por aclaración del propietario, el horario del canal de voz 1513652447371853937 solo cambia Ver canal y Conectar de @everyone y Ciudadanos. '
+RELEASE='voice-hours-citizens-schedule-everyone-denied-v48'
+SUMMARY=('Por aclaración del propietario, @everyone conserva Ver canal y Conectar denegados todo el día en 1513652447371853937. Solo Ciudadanos sigue el horario de apertura y cierre. '
     'Todos los demás permisos de roles y miembros permanecen intactos, incluidos los accesos del staff. Restaura desde las copias privadas cualquier excepción adicional tratada por la versión anterior y no vuelve a incluirla en el horario. '
-    'Abre todos los días a las 06:30 y cierra a las 18:30 de America/Puerto_Rico. '
+    'Ciudadanos puede ver y entrar todos los días desde las 06:30 hasta las 18:30 de America/Puerto_Rico. Comprueba y registra sus permisos efectivos y las autorizaciones adicionales que pueden permitir que el staff vea el canal, sin modificarlas. '
     'Desconecta de esa sala a todos los ocupantes, incluidos administradores, al cerrar, reiniciar fuera de horario o recibir una entrada nocturna; no expulsa a nadie del servidor. '
     'Comprueba nuevamente la ubicación y la hora antes de desconectar. Un fallo individual no impide retirar al resto y se reintenta. '
     'Guarda los permisos previos y registra antes y después cada cambio y desconexión. Conserva intactos los permisos de roles protegidos, las definiciones de roles, escritura, nombres, categorías, otras salas y funciones del bot. '
     'Los administradores de Discord pueden seguir viendo canales privados por las reglas de Discord; también se les aplica la desconexión nocturna. EssChino sigue separado.')
-RESTORE=('Versión previa: d03c387402d05b387622daed0081c5ac9ba6280b. No reactivar su horario ni el de v45, porque modificarían excepciones de otros roles y contradicen la aclaración del propietario. '
+RESTORE=('Código anterior: dc7172a2fa2070ebe1d39df7136d956109b4d7d9. No reactivar su horario, porque abriría @everyone por la mañana y contradice la última aclaración. Tampoco reactivar v45/v46, que alterarían otros roles. '
     'Para retirar el horario usar la versión estable 10af1ec359c2cb914256f79b423d8b34ceae3de3. Conservar /data y SQLite actuales. '
     'Antes de desplegar el código anterior, establecer VOICE_QUIET_HOURS_ENABLED=0 en este servicio y esperar VOICE_HOURS permissions_verified mode=disabled con managed_targets=0. '
     'Ese modo restaura solo Ver canal y Conectar guardados en lv_voice_hours_targets, conserva cambios manuales diferentes y detiene las desconexiones. Revisar /cambios detalle para estados anteriores y posteriores si aparece algún conflicto. '

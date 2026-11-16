@@ -44,6 +44,24 @@ def flags(overwrite):
     return {key: getattr(overwrite, key) for key in FIELDS}
 
 
+def access_audit(channel):
+    """Read effective access and exceptions without editing other roles."""
+    guild = channel.guild
+    citizens = guild.get_role(CITIZENS_ID)
+    others, members = [], []
+    for target, overwrite in channel.overwrites.items():
+        if target.id in {GUILD_ID, CITIZENS_ID} or not any(getattr(overwrite, field) is True for field in FIELDS):
+            continue
+        if kind(target) == 'role':
+            others.append(dict(id=target.id, name=getattr(target, 'name', str(target.id)), **flags(overwrite)))
+        else:
+            members.append(target.id)
+    return dict(everyone=flags(channel.permissions_for(guild.default_role)),
+        citizens=flags(channel.permissions_for(citizens)) if citizens else None,
+        other_roles=others, member_grants=members,
+        administrator_roles=[r.id for r in guild.roles if r.permissions.administrator])
+
+
 def kind(target):
     return 'role' if isinstance(target, discord.Role) or getattr(target, 'type', None) is discord.Role else 'member'
 
@@ -191,7 +209,7 @@ class VoiceHours:
         plans = []
         if mode != 'disabled':
             for role in roles:
-                plans.append((role, True, dict.fromkeys(FIELDS, mode == 'open')))
+                plans.append((role, True, dict.fromkeys(FIELDS, role.id == CITIZENS_ID and mode == 'open')))
         records = await asyncio.to_thread(self.store.rows)
         # Restore earlier temporary grants once, even at night. New schedules
         # only manage the two role overwrites explicitly named by the owner.
@@ -274,10 +292,12 @@ class VoiceHours:
                         raise
                 else:
                     self.mode = mode
-                    log.info('VOICE_HOURS permissions_verified channel=%s name=%s mode=%s timezone=America/Puerto_Rico open=06:30 close=18:30 everyone=%s citizens=%s managed_targets=%s scope=everyone,citizens protected_roles_unchanged=True',
+                    log.info('VOICE_HOURS permissions_verified channel=%s name=%s mode=%s timezone=America/Puerto_Rico open=06:30 close=18:30 everyone=%s citizens=%s managed_targets=%s scope=everyone,citizens everyone_always_blocked=True protected_roles_unchanged=True',
                         CHANNEL_ID, channel.name, mode, flags(channel.overwrites_for(channel.guild.default_role)),
                         flags(channel.overwrites_for(channel.guild.get_role(CITIZENS_ID))) if channel.guild.get_role(CITIZENS_ID) else None,
                         len(await asyncio.to_thread(self.store.rows)))
+                    log.info('VOICE_HOURS effective_access channel=%s audit=%s', CHANNEL_ID,
+                        json.dumps(access_audit(channel), ensure_ascii=False))
             if channel.guild.id != GUILD_ID or not isinstance(channel, discord.VoiceChannel):
                 raise ValueError('El horario solo corresponde al canal autorizado.')
             if mode == 'closed':
