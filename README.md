@@ -453,7 +453,7 @@ Los recibos sobreviven a reinicios y un aviso atrasado se sustituye por la fase 
 
 ## Horario del canal de voz
 
-El canal `1513652447371853937` de La Venganza RP abre a las **6:30 a. m.** y cierra a las **6:30 p. m.** todos los días, usando `America/Puerto_Rico`. De día, @everyone y Ciudadanos pueden verlo y conectarse. De noche se oculta y bloquea para esos roles; los permisos explícitos ordinarios que permitieran saltarse el cierre se suspenden hasta la apertura. Los demás permisos y los accesos de los roles protegidos se conservan.
+El canal `1513652447371853937` de La Venganza RP abre a las **6:30 a. m.** y cierra a las **6:30 p. m.** todos los días, usando `America/Puerto_Rico`. El horario solo cambia Ver canal y Conectar de @everyone y Ciudadanos. Los permisos de todos los demás roles y miembros se conservan, incluidos sus accesos de staff. Otros roles pueden permitir que sus miembros sigan viendo el canal; la desconexión nocturna se aplica a todos.
 
 Al cerrar se desconecta de ese canal a todos sus ocupantes, también a administradores. Si alguien entra durante la noche se vuelve a desconectar. Reiniciar o reconectar el bot comprueba el horario actual y retira a quienes sigan dentro. Discord permite que sus administradores sigan viendo canales privados. El bot necesita Gestionar permisos y Mover miembros; no necesita conectarse al audio.
 

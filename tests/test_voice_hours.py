@@ -124,9 +124,9 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         self.guild._voice_states[uid] = member.voice
         return member
 
-    async def test_night_closes_both_roles_and_other_grants_preserving_protected_and_other_bits(self):
+    async def test_night_only_changes_everyone_and_citizens_preserving_every_other_overwrite(self):
         await self.system.reconcile()
-        for target in [self.roles[GUILD_ID], self.roles[CITIZENS_ID], self.extra, self.direct]:
+        for target in [self.roles[GUILD_ID], self.roles[CITIZENS_ID]]:
             overwrite = self.room.overwrites_for(target)
             self.assertIs(overwrite.view_channel, False)
             self.assertIs(overwrite.connect, False)
@@ -134,6 +134,9 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.room.overwrites_for(self.roles[CITIZENS_ID]).speak)
         self.assertTrue(self.room.overwrites_for(self.extra).stream)
         self.assertEqual(self.room.overwrites_for(self.protected_role).pair(), self.before[self.protected_role.id])
+        for target in (self.extra, self.direct):
+            self.assertEqual(self.room.overwrites_for(target).pair(), self.before[target.id])
+        self.assertEqual(set(self.room.edits), {GUILD_ID, CITIZENS_ID})
         edits = len(self.room.edits)
         await self.system.reconcile()
         self.assertEqual(len(self.room.edits), edits)
@@ -150,6 +153,21 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
             self.assertIs(self.room.overwrites_for(role).connect, True)
         for target in (self.extra, self.direct, self.protected_role):
             self.assertEqual(self.room.overwrites_for(target).pair(), self.before[target.id])
+
+    async def test_previous_staff_overwrite_is_restored_at_night_and_never_managed_again(self):
+        previous = self.room.overwrites_for(self.extra)
+        self.system.store.plan(self.extra.id, 'role', False,
+            dict(view_channel=previous.view_channel, connect=previous.connect, present=True),
+            dict(view_channel=False, connect=False))
+        self.room.mapping[self.extra].view_channel = False
+        self.room.mapping[self.extra].connect = False
+        await self.system.reconcile()
+        self.assertEqual(self.room.overwrites_for(self.extra).pair(), self.before[self.extra.id])
+        self.assertEqual({r['target'] for r in self.system.store.rows()}, {GUILD_ID, CITIZENS_ID})
+        edits = len(self.room.edits)
+        self.system.invalidate()
+        await self.system.reconcile()
+        self.assertEqual(len(self.room.edits), edits)
 
     async def test_closed_startup_disconnects_every_occupant_including_administrator(self):
         ordinary, admin = self.enter(10), self.enter(11, admin=True)

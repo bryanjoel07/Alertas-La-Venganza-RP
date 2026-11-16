@@ -168,9 +168,14 @@ class VoiceHours:
                     changed |= getattr(current, field) != before[field]
                     setattr(current, field, before[field])
             if changed:
+                expected = flags(current)
                 await self.write(channel, target, None if current.is_empty() and not before['present'] else current,
                     'Restaurar acceso del canal tras el horario privado solicitado')
                 channel = await self.channel()
+                if flags(channel.overwrites_for(target)) != expected:
+                    raise ValueError('Discord no confirmó la restauración del acceso anterior.')
+                log.info('VOICE_HOURS target_restored channel=%s target=%s kind=%s fields=%s',
+                    CHANNEL_ID, target.id, record['kind'], expected)
             await asyncio.to_thread(self.store.restored, record['target'], record['kind'])
         return channel
 
@@ -187,17 +192,10 @@ class VoiceHours:
         if mode != 'disabled':
             for role in roles:
                 plans.append((role, True, dict.fromkeys(FIELDS, mode == 'open')))
-            if mode == 'closed':
-                # Other explicit grants must not expose the room to ordinary members.
-                for target, overwrite in channel.overwrites.items():
-                    if target.id in {r.id for r in roles} or self.protected(target):
-                        continue
-                    if kind(target) == 'role' and channel.guild.get_role(target.id) is None:
-                        continue
-                    if any(getattr(overwrite, field) is True for field in FIELDS):
-                        plans.append((target, False, dict.fromkeys(FIELDS, False)))
         records = await asyncio.to_thread(self.store.rows)
-        needs_restore = any(mode == 'disabled' or not r['base'] and mode == 'open' for r in records)
+        # Restore earlier temporary grants once, even at night. New schedules
+        # only manage the two role overwrites explicitly named by the owner.
+        needs_restore = any(mode == 'disabled' or not r['base'] for r in records)
         writes = [(t, base, wanted) for t, base, wanted in plans if flags(channel.overwrites_for(t)) != wanted]
         if not writes and not needs_restore:
             return channel
@@ -276,7 +274,7 @@ class VoiceHours:
                         raise
                 else:
                     self.mode = mode
-                    log.info('VOICE_HOURS permissions_verified channel=%s name=%s mode=%s timezone=America/Puerto_Rico open=06:30 close=18:30 everyone=%s citizens=%s managed_targets=%s protected_roles_unchanged=True',
+                    log.info('VOICE_HOURS permissions_verified channel=%s name=%s mode=%s timezone=America/Puerto_Rico open=06:30 close=18:30 everyone=%s citizens=%s managed_targets=%s scope=everyone,citizens protected_roles_unchanged=True',
                         CHANNEL_ID, channel.name, mode, flags(channel.overwrites_for(channel.guild.default_role)),
                         flags(channel.overwrites_for(channel.guild.get_role(CITIZENS_ID))) if channel.guild.get_role(CITIZENS_ID) else None,
                         len(await asyncio.to_thread(self.store.rows)))
