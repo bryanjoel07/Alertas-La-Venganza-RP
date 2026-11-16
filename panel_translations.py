@@ -23,6 +23,7 @@ UI_TEXT = {
         'Tickets abiertos':'Open tickets', 'Tickets cerrados':'Closed tickets',
         'Configurar enlace de Tebex':'Set the Tebex store link',
         'Mi bienvenida':'My welcome card',
+        'Tienda en activación':'Store activation pending',
     },
     'pt-BR': {
         'Unirme a la comunidad':'Entrar na comunidade', 'Ayuda y compras':'Ajuda e compras',
@@ -34,6 +35,7 @@ UI_TEXT = {
         'Tickets abiertos':'Tickets abertos', 'Tickets cerrados':'Tickets fechados',
         'Configurar enlace de Tebex':'Configurar o link do Tebex',
         'Mi bienvenida':'Minha mensagem de boas-vindas',
+        'Tienda en activación':'Loja aguardando ativação',
     },
     'fr': {
         'Unirme a la comunidad':'Rejoindre la communauté', 'Ayuda y compras':'Aide et achats',
@@ -45,6 +47,7 @@ UI_TEXT = {
         'Tickets abiertos':'Tickets ouverts', 'Tickets cerrados':'Tickets fermés',
         'Configurar enlace de Tebex':'Configurer le lien Tebex',
         'Mi bienvenida':'Ma carte de bienvenue',
+        'Tienda en activación':'Boutique en cours d’activation',
     },
     'de': {
         'Unirme a la comunidad':'Der Community beitreten', 'Ayuda y compras':'Hilfe und Käufe',
@@ -56,6 +59,7 @@ UI_TEXT = {
         'Tickets abiertos':'Offene Tickets', 'Tickets cerrados':'Geschlossene Tickets',
         'Configurar enlace de Tebex':'Tebex-Shoplink einrichten',
         'Mi bienvenida':'Meine Willkommenskarte',
+        'Tienda en activación':'Shopaktivierung ausstehend',
     },
 }
 

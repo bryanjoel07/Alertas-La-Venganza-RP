@@ -5,7 +5,7 @@ import logging
 
 import discord
 
-from launch_content import PRODUCT, VERSION, PUBLIC_STORE_URL, panel_copy
+from launch_content import PRODUCT, VERSION, PUBLIC_STORE_URL, PENDING_STORE_URL, panel_copy
 
 log = logging.getLogger('EssChinoStudio.launch')
 GUILD_ID = 1514871828189941881
@@ -43,6 +43,15 @@ class StoreLaunch:
         if guild.id != GUILD_ID or self.system.bot.user.id != BOT_ID:
             raise ValueError('El lanzamiento solo corresponde al nuevo bot de EssChino Studio.')
         async with self.lock:
+            if PENDING_STORE_URL and not self.system.store.get('shop_url') and self.system.store.get('pending_shop_url') != PENDING_STORE_URL:
+                from esschino import valid_shop_url
+                async def pending_snapshot():
+                    return {'guild_id':guild.id, 'shop_url':self.system.store.get('shop_url'),
+                            'pending_shop_url':self.system.store.get('pending_shop_url')}
+                async def save_pending():
+                    await self.system.call('put', 'pending_shop_url', valid_shop_url(PENDING_STORE_URL))
+                await self.system.bot.changes.tracked('STORE_DOMAIN_PENDING', 'Guardar dominio Tebex pendiente de activación',
+                    save_pending, request_id=VERSION + ':pending-domain', snapshot=pending_snapshot)
             if PUBLIC_STORE_URL and not self.system.store.get('shop_url'):
                 from esschino import valid_shop_url
                 async def snapshot_url():
@@ -51,7 +60,7 @@ class StoreLaunch:
                     await self.system.call('put', 'shop_url', valid_shop_url(PUBLIC_STORE_URL))
                 await self.system.bot.changes.tracked('STORE_LAUNCH', 'Conectar tienda pública verificada',
                     configure, request_id=VERSION + ':store-url', snapshot=snapshot_url)
-            stamp = VERSION + ':' + hashlib.sha256((self.system.store.get('shop_url') or '').encode()).hexdigest()[:12]
+            stamp = VERSION + ':' + hashlib.sha256((self.system.store.get('shop_url') or self.system.store.get('pending_shop_url') or '').encode()).hexdigest()[:12]
             updated = 0
             for key in (*self.panel_keys, 'direction', 'setup'):
                 receipt = 'launch-panel:' + key
@@ -79,6 +88,8 @@ class StoreLaunch:
                 expected_ids = {item.get('custom_id') for row in view.to_components() for item in row['components'] if item.get('custom_id')}
                 expected_links = {item['url'] for row in view.to_components() for item in row['components'] if item.get('url')}
                 topic = TOPICS.get(key)
+                if key == 'shop' and not self.system.store.get('shop_url') and self.system.store.get('pending_shop_url'):
+                    topic = 'Community Sanctions System · dominio de Tebex pendiente de activación · consultas por ticket.'
 
                 async def snapshot(channel=channel, mid=mid, receipt=receipt):
                     saved = await channel.fetch_message(mid)

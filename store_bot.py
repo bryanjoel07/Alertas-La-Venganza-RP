@@ -21,7 +21,7 @@ log = logging.getLogger('EssChinoStudio')
 GUILD_ID = 1514871828189941881
 BOT_ID = 1571639486591402174
 GUILD = discord.Object(id=GUILD_ID)
-RELEASE = 'esschino-studio-store-launch-v4'
+RELEASE = 'esschino-studio-store-domain-pending-v5'
 
 
 class StoreBot(discord.Client):
@@ -154,10 +154,17 @@ class StoreBot(discord.Client):
         async def shop(i: discord.Interaction):
             self.authorize(i)
             url = self.esschino.store.get('shop_url')
-            await i.response.send_message((f'🛍️ Tienda oficial: {url}' if url else
-                f'🛍️ Community Sanctions System ya está a la venta en Tebex. '
-                f'Consulta <#{self.esschino.channel_id("shop")}> o solicita el enlace de compra '
-                f'en <#{self.esschino.channel_id("support")}>.'), ephemeral=True)
+            pending = self.esschino.panel_values()['pending_shop_url']
+            if url:
+                text = f'🛍️ Tienda oficial: {url}'
+            elif pending:
+                text = (f'⏳ La tienda está pendiente de activación en Tebex: `{pending}`. '
+                    f'Compras desde Discord todavía no habilitadas. Consultas: <#{self.esschino.channel_id("support")}>.')
+            else:
+                text = (f'🛍️ Community Sanctions System ya está a la venta en Tebex. '
+                    f'Consulta <#{self.esschino.channel_id("shop")}> o solicita el enlace de compra '
+                    f'en <#{self.esschino.channel_id("support")}>.')
+            await i.response.send_message(text, ephemeral=True)
 
         @self.tree.command(name='soporte', description='Abrir una consulta privada de compras o scripts', guild=GUILD)
         async def support(i: discord.Interaction):

@@ -18,13 +18,12 @@ def is_bot_admin(member):
     return check(member)
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='esschino-studio-store-launch-v4'
-SUMMARY=('Actualiza los veinte paneles existentes y sus traducciones para el lanzamiento de Community Sanctions System. '
-    'La ficha, requisitos, guía, FAQ, soporte y cambios usan la documentación del ZIP 1.42.2 enviado por el propietario. '
-    'Conserva IDs, banners, controles, categorías, permisos y datos. Los temas de los canales reflejan el producto a la venta. '
-    'Rechaza enlaces de editor o vistas previas para compras. Cuando se conecta un enlace público, actualiza los paneles y controles de compra. '
-    'No publica precios, ofertas, demostraciones ni pagos inventados; solo opera sobre el bot y servidor nuevos de EssChino Studio.')
-RESTORE=('Código anterior de EssChino Studio: 8fb1218ef70a894625ae7027ce165aa7a8d28fb8. Conservar /data y SQLite actuales, '
+RELEASE='esschino-studio-store-domain-pending-v5'
+SUMMARY=('Guarda el dominio esschino-studio.tebex.store indicado por el propietario como pendiente: la portada y la categoría devuelven HTTP 503. '
+    'Los paneles y sus traducciones explican la activación pendiente; Tienda, Catálogo y Cómo comprar muestran un control deshabilitado. '
+    'No configura la URL como tienda activa ni promete pagos disponibles. Un enlace activo configurado por administración tiene prioridad. '
+    'Conserva los veinte mensajes, sus banners, controles, categorías, permisos y datos; solo opera sobre el nuevo servidor de EssChino Studio.')
+RESTORE=('Código anterior de EssChino Studio: 3210e7f62a5dae81ceee06aadbe5dfe7739aad44. Conservar /data y SQLite actuales, '
     'incluidos tickets, pedidos, reseñas y recibos de bienvenida. Restaurar únicamente texto, componentes y temas '
     'desde las copias anteriores de STORE_LAUNCH mediante una nueva operación registrada. '
     'No borrar publicaciones de clientes, repetir la instalación ni restaurar una base antigua; no modificar el bot original.')

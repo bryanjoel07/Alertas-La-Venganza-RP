@@ -15,7 +15,7 @@ import discord
 
 from studio_journal import server_snapshot
 from panel_languages import PanelLanguages
-from launch_content import panel_copy
+from launch_content import panel_copy, PENDING_STORE_URL
 from store_launch import StoreLaunch
 
 log = logging.getLogger('EssChino')
@@ -298,7 +298,7 @@ class ShopModal(discord.ui.Modal, title='EssChino · Tienda oficial'):
     def __init__(self, system):
         super().__init__()
         self.system = system
-        self.url.default = system.store.get('shop_url', '')
+        self.url.default = system.store.get('shop_url') or system.store.get('pending_shop_url') or PENDING_STORE_URL
 
     async def on_submit(self, i):
         if i.guild_id != self.system.store.get('guild') or not i.user.guild_permissions.administrator:
@@ -694,6 +694,7 @@ class EssChino:
         values = {name: f'<#{self.channel_id(name)}>' for name in
                   ('welcome', 'rules', 'catalog', 'demos', 'shop', 'support', 'changelog', 'install', 'suggestions', 'reviews')}
         values['shop_url'] = self.store.get('shop_url') or ''
+        values['pending_shop_url'] = self.store.get('pending_shop_url') or PENDING_STORE_URL
         return values
 
     def panel(self, key):
@@ -734,6 +735,10 @@ class EssChino:
             view = discord.ui.View(timeout=None)
             view.add_item(discord.ui.Button(label='Visitar tienda oficial', emoji='🛒', style=discord.ButtonStyle.link,
                                            url=self.store.get('shop_url')))
+        elif key in {'shop', 'catalog', 'buying'} and self.panel_values()['pending_shop_url']:
+            view = discord.ui.View(timeout=None)
+            view.add_item(discord.ui.Button(label='Tienda en activación', emoji='⏳',
+                custom_id='ec:store:pending', disabled=True))
         return view
 
     async def publish_panel(self, guild, key, refresh=False):

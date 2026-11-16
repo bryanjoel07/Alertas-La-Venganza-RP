@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 
 from esschino import EssChino, CHANNELS
-from launch_content import COPY, PRODUCT, PRODUCT_VERSION, panel_copy
+from launch_content import COPY, PRODUCT, PRODUCT_VERSION, PENDING_STORE_URL, panel_copy
 from panel_translations import TRANSLATIONS
 from store_launch import BOT_ID, GUILD_ID, PROTECTED
 from studio_journal import ChangeLog
@@ -57,7 +57,9 @@ class LaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_launch_updates_existing_panels_once_with_before_states_and_keeps_artwork_and_controls(self):
         await self.system.launch.ready(self.guild)
         await self.system.launch.ready(self.guild)
-        self.assertEqual(len(self.bot.changes.journal.rows(100)), 20)
+        self.assertEqual(len(self.bot.changes.journal.rows(100)), 21)
+        self.assertEqual(self.system.store.get('pending_shop_url'), PENDING_STORE_URL)
+        self.assertFalse(self.system.store.get('shop_url'))
         for key in [row[0] for row in CHANNELS] + ['direction','setup']:
             mid = self.system.store.get('completion_message' if key == 'setup' else 'panel:' + key)
             message = self.messages[mid]
@@ -102,6 +104,22 @@ class LaunchTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.system.launch.ready(self.guild)
         for message in self.messages.values(): message.edit.assert_not_awaited()
+
+    async def test_pending_domain_has_disabled_controls_in_all_languages_and_active_link_takes_precedence(self):
+        for key in ('shop','catalog','buying'):
+            for language in COPY:
+                view = self.system.languages.attach(self.system.panel_view(key),key,language)
+                pending = [item for item in view.children if getattr(item,'custom_id',None)=='ec:store:pending']
+                self.assertEqual(len(pending),1)
+                self.assertTrue(pending[0].disabled)
+                self.assertFalse(any(getattr(item,'url',None) for item in view.children))
+                if language != 'es': self.assertNotEqual(pending[0].label,'Tienda en activación')
+        self.system.store.put('shop_url',PENDING_STORE_URL)
+        for key in ('shop','catalog','buying'):
+            view = self.system.panel_view(key)
+            self.assertEqual([item.url for item in view.children],[PENDING_STORE_URL])
+            self.assertTrue(all(not item.disabled for item in view.children))
+            self.assertNotIn('Tienda en activación por Tebex',self.system.panel(key)[1])
 
     async def test_all_languages_and_panels_reflect_sale_without_editor_links_or_missing_placeholders(self):
         keys = [row[0] for row in CHANNELS] + ['direction','setup']

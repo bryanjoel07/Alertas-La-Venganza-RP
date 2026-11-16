@@ -1,11 +1,12 @@
 """Store launch copy based on the owner's CSS 1.42.2 distribution and sale confirmation."""
 
-VERSION = 'css-store-launch-v1'
+VERSION = 'css-store-launch-v2'
 PRODUCT = 'Community Sanctions System'
 PRODUCT_VERSION = '1.42.2'
 RESOURCE = 'community_sanctions_system'
 # Only a verified public customer URL may be seeded here, never an editor preview.
 PUBLIC_STORE_URL = ''
+PENDING_STORE_URL = 'https://esschino-studio.tebex.store'
 
 COPY = {
     'es': {
@@ -14,6 +15,7 @@ COPY = {
         'contact': 'Consulta el acceso a la tienda en {shop}. Para recibir el enlace de compra, abre un ticket en {support}.',
         'missing': 'Conecta el enlace público de Tebex con el botón inferior; el enlace de vista previa del editor no sirve como acceso de clientes.',
         'connected': 'El enlace público de Tebex está conectado: {shop_url}',
+        'pending': '**Tienda en activación por Tebex.** Dominio indicado por el propietario: `{pending_shop_url}`. Las compras desde Discord se habilitarán cuando esté disponible. Para consultas, visita {support}.',
         'panels': {
             'welcome': 'Scripts para tu servidor FiveM.\n\n{available}\n\n📦 Conoce sus funciones y requisitos en {catalog}.\n🛒 {purchase}\n📚 Instálalo con la guía de {install}.\n🎫 Compras y soporte en {support}.\n📜 Lee {rules}.\n🔔 Activa avisos y actualizaciones con los botones.\n\nPulsa **Mi bienvenida** para ver tu tarjeta con nombre y foto.',
             'announcements': '🚀 **Lanzamiento · {product}**\n\nYa puedes comprar nuestro sistema de sanciones comunitarias para FiveM. Administración por personaje, sanciones offline, reglamentos editables, escenarios, reportes Discord y cinco idiomas.\n\n📦 Ficha completa: {catalog}.\n🛒 {purchase}\n📚 Instalación: {install}.\n🎫 Dudas y soporte: {support}.\n\nActiva los avisos desde {welcome}; sigue las nuevas versiones en {changelog}.',
@@ -45,6 +47,7 @@ COPY = {
         'contact':'Find store access in {shop}. Open a ticket in {support} to request the purchase link.',
         'missing':'Connect the public Tebex URL using the button below. An editor preview is not a customer store link.',
         'connected':'The public Tebex link is connected: {shop_url}',
+        'pending':'**Store activation pending on Tebex.** Domain provided by the owner: `{pending_shop_url}`. Discord purchase links will be enabled once it is available. Questions: {support}.',
         'panels': {
             'welcome':'Scripts for your FiveM server.\n\n{available}\n\n📦 Features and requirements: {catalog}.\n🛒 {purchase}\n📚 Installation: {install}.\n🎫 Purchases and support: {support}.\n📜 Read {rules}.\n🔔 Choose announcements and updates with the buttons.\n\nUse **My welcome card** to see your name and profile photo.',
             'announcements':'🚀 **Launch · {product}**\n\nOur community sanctions system for FiveM is now on sale. Character-based administration, offline sanctions, editable rules, scenarios, Discord reports and five languages.\n\n📦 Full listing: {catalog}.\n🛒 {purchase}\n📚 Installation: {install}.\n🎫 Questions and support: {support}.\n\nEnable notifications in {welcome} and follow releases in {changelog}.',
@@ -76,6 +79,7 @@ COPY = {
         'contact':'Consulte o acesso à loja em {shop}. Abra um ticket em {support} para receber o link de compra.',
         'missing':'Conecte o link público do Tebex pelo botão abaixo. A prévia do editor não é um link de loja para clientes.',
         'connected':'O link público do Tebex está conectado: {shop_url}',
+        'pending':'**Loja aguardando ativação no Tebex.** Domínio informado pelo proprietário: `{pending_shop_url}`. Os links de compra no Discord serão habilitados quando estiver disponível. Dúvidas: {support}.',
         'panels': {
             'welcome':'Scripts para seu servidor FiveM.\n\n{available}\n\n📦 Recursos e requisitos: {catalog}.\n🛒 {purchase}\n📚 Instalação: {install}.\n🎫 Compras e suporte: {support}.\n📜 Leia {rules}.\n🔔 Escolha avisos e atualizações nos botões.\n\nUse **Minha mensagem de boas-vindas** para ver seu nome e foto.',
             'announcements':'🚀 **Lançamento · {product}**\n\nNosso sistema de sanções comunitárias para FiveM já está à venda. Administração por personagem, sanções offline, regras editáveis, cenários, relatórios Discord e cinco idiomas.\n\n📦 Ficha completa: {catalog}.\n🛒 {purchase}\n📚 Instalação: {install}.\n🎫 Dúvidas e suporte: {support}.\n\nAtive avisos em {welcome} e acompanhe versões em {changelog}.',
@@ -107,6 +111,7 @@ COPY = {
         'contact':'Consultez l’accès à la boutique dans {shop}. Ouvrez un ticket dans {support} pour obtenir le lien d’achat.',
         'missing':'Ajoutez le lien public Tebex avec le bouton ci-dessous. L’aperçu de l’éditeur n’est pas un lien client.',
         'connected':'Le lien public Tebex est connecté : {shop_url}',
+        'pending':'**Boutique en attente d’activation sur Tebex.** Domaine indiqué par le propriétaire : `{pending_shop_url}`. Les liens d’achat Discord seront activés lorsque la boutique sera disponible. Questions : {support}.',
         'panels': {
             'welcome':'Des scripts pour votre serveur FiveM.\n\n{available}\n\n📦 Fonctions et prérequis : {catalog}.\n🛒 {purchase}\n📚 Installation : {install}.\n🎫 Achats et assistance : {support}.\n📜 Lisez {rules}.\n🔔 Choisissez vos annonces et mises à jour avec les boutons.\n\nUtilisez **Ma carte de bienvenue** pour afficher votre nom et votre photo.',
             'announcements':'🚀 **Lancement · {product}**\n\nNotre système de sanctions communautaires FiveM est en vente : administration par personnage, sanctions hors ligne, règles modifiables, scénarios, rapports Discord et cinq langues.\n\n📦 Fiche complète : {catalog}.\n🛒 {purchase}\n📚 Installation : {install}.\n🎫 Questions et assistance : {support}.\n\nActivez les notifications dans {welcome} et suivez les versions dans {changelog}.',
@@ -138,6 +143,7 @@ COPY = {
         'contact':'Den Shopzugang findest du in {shop}. Öffne für den Kauflink ein Ticket in {support}.',
         'missing':'Verbinde die öffentliche Tebex-Adresse über die Schaltfläche unten. Eine Editorvorschau ist kein Kundenlink.',
         'connected':'Der öffentliche Tebex-Link ist verbunden: {shop_url}',
+        'pending':'**Shop wartet auf die Aktivierung durch Tebex.** Vom Betreiber angegebene Domain: `{pending_shop_url}`. Discord-Kauflinks werden nach der Freischaltung aktiviert. Fragen: {support}.',
         'panels': {
             'welcome':'Scripts für deinen FiveM-Server.\n\n{available}\n\n📦 Funktionen und Voraussetzungen: {catalog}.\n🛒 {purchase}\n📚 Installation: {install}.\n🎫 Käufe und Support: {support}.\n📜 Lies {rules}.\n🔔 Wähle Ankündigungen und Updates über die Schaltflächen.\n\nMit **Meine Willkommenskarte** siehst du deinen Namen und dein Profilbild.',
             'announcements':'🚀 **Veröffentlichung · {product}**\n\nUnser Community-Sanktionssystem für FiveM ist erhältlich: charakterbezogene Verwaltung, Offline-Sanktionen, bearbeitbare Regeln, Szenarien, Discord-Berichte und fünf Sprachen.\n\n📦 Produktdetails: {catalog}.\n🛒 {purchase}\n📚 Installation: {install}.\n🎫 Fragen und Support: {support}.\n\nAktiviere Meldungen in {welcome} und verfolge Versionen in {changelog}.',
@@ -170,8 +176,11 @@ def panel_copy(key, language, title, body, values):
     copy = COPY[language]
     values = dict(values, product=PRODUCT, version=PRODUCT_VERSION, available=copy['available'])
     url = values.get('shop_url', '')
-    values['purchase'] = f'[{copy["buy"]}]({url})' if url else copy['contact'].format_map(values)
-    values['store_status'] = copy['connected' if url else 'missing'].format_map(values)
+    values['pending_shop_url'] = values.get('pending_shop_url') or PENDING_STORE_URL
+    pending = not url and bool(values['pending_shop_url'])
+    values['purchase'] = (f'[{copy["buy"]}]({url})' if url else
+        copy['pending' if pending else 'contact'].format_map(values))
+    values['store_status'] = copy['connected' if url else 'pending' if pending else 'missing'].format_map(values)
     if key in copy['panels']:
         return title, copy['panels'][key].format_map(values)
     if key in copy['prefix']:
