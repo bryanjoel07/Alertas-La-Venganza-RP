@@ -15,6 +15,8 @@ import discord
 
 from studio_journal import server_snapshot
 from panel_languages import PanelLanguages
+from launch_content import panel_copy
+from store_launch import StoreLaunch
 
 log = logging.getLogger('EssChino')
 PROTECTED_CHANNEL = 1514871828672151573
@@ -84,6 +86,10 @@ def valid_shop_url(value):
     if (parts.scheme != 'https' or not parts.hostname or parts.username or parts.password
             or any(c.isspace() for c in value) or len(value) > 500):
         raise ValueError('Introduce el enlace HTTPS completo de tu tienda oficial.')
+    if (parts.hostname.lower() in {'builder.tebex.io', 'creator.tebex.io', 'accounts.tebex.io',
+            'app.tebex.io', 'panel.tebex.io', 'server.tebex.io', 'headless.tebex.io', 'dashboard.tebex.io'}
+            or '/_storefront/preview' in parts.path):
+        raise ValueError('Usa el enlace público de tu tienda o producto, no la vista previa ni el panel de Tebex.')
     return value
 
 
@@ -301,8 +307,8 @@ class ShopModal(discord.ui.Modal, title='EssChino · Tienda oficial'):
         await i.response.defer(ephemeral=True)
         async def apply():
             await self.system.call('put', 'shop_url', value)
-            await self.system.publish_panel(i.guild, 'shop', refresh=True)
         await self.system.tracked(f'shop:{i.id}', 'Actualizar tienda de EssChino', apply)
+        await self.system.launch.ready(i.guild)
         await i.followup.send('Enlace oficial actualizado en el panel de compra.', ephemeral=True)
 
     async def on_error(self, i, error):
@@ -371,6 +377,7 @@ class EssChino:
         self.roles = {}
         self.channels = {}
         self.languages = PanelLanguages(self)
+        self.launch = StoreLaunch(self, [row[0] for row in CHANNELS])
 
     async def call(self, method, *args):
         return await asyncio.to_thread(getattr(self.store, method), *args)
@@ -683,6 +690,12 @@ class EssChino:
     def embed(self, title, body):
         return discord.Embed(title=title, description=body, color=COLOR).set_footer(text='EssChino · Scripts, comunidad y soporte')
 
+    def panel_values(self):
+        values = {name: f'<#{self.channel_id(name)}>' for name in
+                  ('welcome', 'rules', 'catalog', 'demos', 'shop', 'support', 'changelog', 'install', 'suggestions', 'reviews')}
+        values['shop_url'] = self.store.get('shop_url') or ''
+        return values
+
     def panel(self, key):
         c = lambda name: f'<#{self.channel_id(name)}>'
         panels = {
@@ -709,7 +722,7 @@ class EssChino:
             'management': ('📋 Gestión de soporte', 'Los tickets se crean de forma privada en **Tickets Abiertos**, arriba del servidor. Al cerrarlos pasan a **Tickets Cerrados**.\n\nCada caso permite cerrar, reabrir, descargar su transcripción y verificar una compra después de comprobarla en Tebex.\n\nUsa `/studio tickets` para consultar los casos abiertos y cerrados. Asigna los roles del equipo solo a las personas que deban atender pedidos.'),
             'log': ('📋 Registro de soporte', 'Aquí se registran aperturas, cierres, reaperturas y verificaciones de cliente.\n\nLos tickets cerrados se conservan con acceso privado. El estado anterior de la instalación y las copias de canales se guardan en el volumen privado del bot.'),
         }
-        return panels[key]
+        return panel_copy(key, 'es', *panels[key], self.panel_values())
 
     def panel_view(self, key):
         factory = {'welcome': EntryView, 'notifications': NotificationsView, 'support': SupportView,
@@ -717,7 +730,7 @@ class EssChino:
         view = factory(self) if factory else None
         if key in {'suggestions', 'reviews'} and hasattr(self, 'community'):
             view = self.community.panel_view(key)
-        if key == 'shop' and self.store.get('shop_url'):
+        if key in {'shop', 'catalog', 'buying'} and self.store.get('shop_url'):
             view = discord.ui.View(timeout=None)
             view.add_item(discord.ui.Button(label='Visitar tienda oficial', emoji='🛒', style=discord.ButtonStyle.link,
                                            url=self.store.get('shop_url')))

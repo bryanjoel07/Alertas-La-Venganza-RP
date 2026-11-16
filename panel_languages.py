@@ -4,6 +4,7 @@ import logging
 import discord
 
 from panel_translations import LANGUAGES, TRANSLATIONS, UI_TEXT
+from launch_content import panel_copy
 
 log = logging.getLogger('EssChinoStudio.languages')
 GUILD_ID = 1514871828189941881
@@ -70,14 +71,13 @@ class PanelLanguages:
 
     def translated_embed(self, key, language, source):
         title, body = TRANSLATIONS[language][key]
-        values = {name: f'<#{self.system.channel_id(name)}>' for name in
-                  ('welcome','rules','catalog','demos','shop','support','changelog','install','suggestions','reviews')}
+        values = self.system.panel_values()
         url = self.system.store.get('shop_url')
         values['shop_url'] = url or ''
         values['shop_intro'] = TRANSLATIONS[language]['shop_configured' if url else 'shop_pending'][1].format_map(values)
         values['setup_shop'] = TRANSLATIONS[language]['setup_configured' if url else 'setup_pending'][1]
         embed = source.embeds[0].copy()
-        embed.title, embed.description = title, body.format_map(values)
+        embed.title, embed.description = panel_copy(key, language, title, body.format_map(values), values)
         if embed.fields:
             raise ValueError('Este panel contiene campos nuevos que todavía no tienen traducción.')
         embed.set_footer(text='EssChino Studio · ' + next(x['name'] for x in LANGUAGES if x['code'] == language))

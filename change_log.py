@@ -18,16 +18,16 @@ def is_bot_admin(member):
     return check(member)
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='esschino-studio-personal-welcome-v3'
-SUMMARY=('Añade tarjetas individuales de bienvenida con el nombre visible, usuario y avatar real de Discord sobre una plantilla de EssChino Studio. '
-    'Las entradas reales de miembros publican su propia tarjeta en Bienvenida; un recibo duradero evita duplicados al reiniciar y reconcilia respuestas de envío ambiguas. '
-    'Los miembros actuales pueden abrir una vista privada con Mi bienvenida en el panel existente. '
-    'La tarjeta respeta el idioma elegido en la copia privada y conserva los cuatro botones de idiomas. '
-    'Solo opera sobre el bot 1571639486591402174 y el servidor 1514871828189941881; no crea categorías, casos ficticios ni bienvenidas retroactivas.')
-RESTORE=('Código anterior de EssChino Studio: 670d61a385e077c24568734ab68b11b9dd8b20f0. Conservar /data y SQLite actuales, incluidos studio_welcomes y sus recibos. '
-    'Antes de volver al código anterior, restaurar los componentes del panel desde el registro WELCOME_PANEL para retirar solo Mi bienvenida, manteniendo los idiomas y los demás controles. '
-    'Conservar las tarjetas ya publicadas. El ajuste anterior de notificaciones nativas está en la copia del registro. '
-    'La autorización de entrada de miembros del nuevo bot puede permanecer; no modificar el bot original ni restaurar una base antigua.')
+RELEASE='esschino-studio-store-launch-v4'
+SUMMARY=('Actualiza los veinte paneles existentes y sus traducciones para el lanzamiento de Community Sanctions System. '
+    'La ficha, requisitos, guía, FAQ, soporte y cambios usan la documentación del ZIP 1.42.2 enviado por el propietario. '
+    'Conserva IDs, banners, controles, categorías, permisos y datos. Los temas de los canales reflejan el producto a la venta. '
+    'Rechaza enlaces de editor o vistas previas para compras. Cuando se conecta un enlace público, actualiza los paneles y controles de compra. '
+    'No publica precios, ofertas, demostraciones ni pagos inventados; solo opera sobre el bot y servidor nuevos de EssChino Studio.')
+RESTORE=('Código anterior de EssChino Studio: 8fb1218ef70a894625ae7027ce165aa7a8d28fb8. Conservar /data y SQLite actuales, '
+    'incluidos tickets, pedidos, reseñas y recibos de bienvenida. Restaurar únicamente texto, componentes y temas '
+    'desde las copias anteriores de STORE_LAUNCH mediante una nueva operación registrada. '
+    'No borrar publicaciones de clientes, repetir la instalación ni restaurar una base antigua; no modificar el bot original.')
 
 
 

@@ -21,7 +21,7 @@ log = logging.getLogger('EssChinoStudio')
 GUILD_ID = 1514871828189941881
 BOT_ID = 1571639486591402174
 GUILD = discord.Object(id=GUILD_ID)
-RELEASE = 'esschino-studio-personal-welcome-v3'
+RELEASE = 'esschino-studio-store-launch-v4'
 
 
 class StoreBot(discord.Client):
@@ -90,6 +90,7 @@ class StoreBot(discord.Client):
                 guild = self.get_guild(GUILD_ID)
                 await self.esschino.languages.ready(guild, [row[0] for row in CHANNELS])
                 await self.welcome.install(guild)
+                await self.esschino.launch.ready(guild)
                 if not self.intents.members:
                     raise ValueError('Discord todavía no habilitó la recepción de entradas de miembros para el nuevo bot.')
                 async def command_state():
@@ -154,7 +155,9 @@ class StoreBot(discord.Client):
             self.authorize(i)
             url = self.esschino.store.get('shop_url')
             await i.response.send_message((f'🛍️ Tienda oficial: {url}' if url else
-                f'Consulta <#{self.esschino.channel_id("shop")}>. El propietario todavía debe indicar el enlace oficial de Tebex.'), ephemeral=True)
+                f'🛍️ Community Sanctions System ya está a la venta en Tebex. '
+                f'Consulta <#{self.esschino.channel_id("shop")}> o solicita el enlace de compra '
+                f'en <#{self.esschino.channel_id("support")}>.'), ephemeral=True)
 
         @self.tree.command(name='soporte', description='Abrir una consulta privada de compras o scripts', guild=GUILD)
         async def support(i: discord.Interaction):
@@ -189,8 +192,8 @@ class StoreBot(discord.Client):
             await i.response.defer(ephemeral=True)
             async def apply():
                 await self.esschino.call('put', 'shop_url', url)
-                await self.esschino.publish_panel(i.guild, 'shop', refresh=True)
             await self.esschino.tracked(f'shop-command:{i.id}', 'Conectar la tienda oficial de Tebex', apply)
+            await self.esschino.launch.ready(i.guild)
             await i.followup.send('Enlace oficial conectado al panel de compra.', ephemeral=True)
 
         @group.command(name='publicar', description='Publicar contenido oficial en uno de los canales de la tienda')

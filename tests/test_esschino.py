@@ -98,7 +98,9 @@ class ScopeTests(unittest.TestCase):
 
     def test_shop_url_rejects_non_https_and_embedded_credentials(self):
         self.assertEqual(valid_shop_url('https://example.tebex.io/'), 'https://example.tebex.io/')
-        for value in ('http://example.tebex.io', 'javascript:alert(1)', 'https://secret@example.com', 'https://a b.com'):
+        for value in ('http://example.tebex.io', 'javascript:alert(1)', 'https://secret@example.com', 'https://a b.com',
+                      'https://builder.tebex.io/_storefront/preview?projectId=1928009',
+                      'https://CREATOR.tebex.io/packages', 'https://accounts.tebex.io/'):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 valid_shop_url(value)
 
