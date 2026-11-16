@@ -14,14 +14,15 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='scheduled-voice-room-hours-v45'
-SUMMARY=('Por solicitud del propietario, el canal de voz 1513652447371853937 abre todos los días a las 06:30 y cierra a las 18:30 de America/Puerto_Rico. '
+RELEASE='scheduled-voice-room-guild-cache-v46'
+SUMMARY=('Corrige la lectura de ocupantes usando la caché de voz real de discord.py, verificada con un objeto Guild nativo. '
+    'Por solicitud del propietario, el canal de voz 1513652447371853937 abre todos los días a las 06:30 y cierra a las 18:30 de America/Puerto_Rico. '
     'El horario aplica Ver canal y Conectar para @everyone y Ciudadanos exclusivamente en ese canal. Durante la noche suspende otros permisos explícitos ordinarios que permitirían verlo o entrar y los restaura al abrir. '
     'Desconecta de esa sala a todos los ocupantes, incluidos administradores, al cerrar, reiniciar fuera de horario o recibir una entrada nocturna; no expulsa a nadie del servidor. '
     'Comprueba nuevamente la ubicación y la hora antes de desconectar. Un fallo individual no impide retirar al resto y se reintenta. '
     'Guarda los permisos previos y registra antes y después cada cambio y desconexión. Conserva intactos los permisos de roles protegidos, las definiciones de roles, escritura, nombres, categorías, otras salas y funciones del bot. '
     'Los administradores de Discord pueden seguir viendo canales privados por las reglas de Discord; también se les aplica la desconexión nocturna. EssChino sigue separado.')
-RESTORE=('Código anterior: 10af1ec359c2cb914256f79b423d8b34ceae3de3. Conservar /data y SQLite actuales. '
+RESTORE=('Versión previa: 73631e571a2882d744e4b14db1d0856a70a63f33, con fallo conocido de lectura de voz; para retirar el horario usar la versión estable 10af1ec359c2cb914256f79b423d8b34ceae3de3. Conservar /data y SQLite actuales. '
     'Antes de desplegar el código anterior, establecer VOICE_QUIET_HOURS_ENABLED=0 en este servicio y esperar VOICE_HOURS permissions_verified mode=disabled con managed_targets=0. '
     'Ese modo restaura solo Ver canal y Conectar guardados en lv_voice_hours_targets, conserva cambios manuales diferentes y detiene las desconexiones. Revisar /cambios detalle para estados anteriores y posteriores si aparece algún conflicto. '
     'Después desplegar el commit anterior; sus otras funciones no requieren migración. La tabla y registros de respaldo pueden permanecer. '

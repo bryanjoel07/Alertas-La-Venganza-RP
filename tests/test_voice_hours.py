@@ -46,7 +46,7 @@ class Member:
     async def move_to(self, destination, *, reason):
         self.moves.append(destination)
         self.voice = NS(channel=destination)
-        self.guild.voice_states.pop(self.id, None)
+        self.guild._voice_states.pop(self.id, None)
 
 
 class Room(discord.VoiceChannel):
@@ -85,7 +85,7 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / 'voice.sqlite3'
-        self.guild = NS(id=GUILD_ID, voice_states={})
+        self.guild = NS(id=GUILD_ID, _voice_states={})
         self.roles = {}
         for rid in [GUILD_ID, CITIZENS_ID, *PROTECTED, 200000000000000001]:
             self.roles[rid] = discord.Role(guild=self.guild, state=Mock(), data=dict(
@@ -121,7 +121,7 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         member = Member(self.guild, uid, admin)
         member.voice = NS(channel=self.room)
         self.members[uid] = member
-        self.guild.voice_states[uid] = member.voice
+        self.guild._voice_states[uid] = member.voice
         return member
 
     async def test_night_closes_both_roles_and_other_grants_preserving_protected_and_other_bits(self):
@@ -156,7 +156,7 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         await self.system.reconcile()
         self.assertEqual(ordinary.moves, [None])
         self.assertEqual(admin.moves, [None])
-        self.assertEqual(self.guild.voice_states, {})
+        self.assertEqual(self.guild._voice_states, {})
         for row in self.bot.changes.journal.rows():
             self.assertEqual(row['status'], 'completado')
 
@@ -187,12 +187,12 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs('LaVenganzaRP.voice_hours', level='ERROR'):
             await self.system.reconcile()
         self.assertEqual(other.moves, [None])
-        self.assertIn(10, self.guild.voice_states)
+        self.assertIn(10, self.guild._voice_states)
         failing.move_to.side_effect = None
-        failing.move_to.side_effect = lambda destination, reason: self.guild.voice_states.pop(10)
+        failing.move_to.side_effect = lambda destination, reason: self.guild._voice_states.pop(10)
         await self.system.reconcile()
         self.assertEqual(failing.move_to.await_count, 2)
-        self.assertNotIn(10, self.guild.voice_states)
+        self.assertNotIn(10, self.guild._voice_states)
 
     async def test_disable_restores_original_permissions_and_does_not_disconnect(self):
         await self.system.reconcile()
@@ -244,3 +244,10 @@ class VoiceHoursTests(unittest.IsolatedAsyncioTestCase):
         self.room._state.http.edit_channel_permissions.assert_awaited_once_with(CHANNEL_ID, 44, str(allow.value), str(deny.value), 1, reason='Horario')
         await self.system.write(self.room, target, None, 'Restaurar')
         self.room._state.http.delete_channel_permissions.assert_awaited_once_with(CHANNEL_ID, 44, reason='Restaurar')
+
+    async def test_occupant_collection_uses_an_actual_discord_guild(self):
+        guild = discord.Guild(data=dict(id=str(GUILD_ID), name='Offline', owner_id='1', roles=[]), state=Mock())
+        guild._voice_states[10] = NS(channel=NS(id=CHANNEL_ID))
+        guild._voice_states[11] = NS(channel=NS(id=77))
+        guild._voice_states[12] = NS(channel=None)
+        self.assertEqual(self.system.occupants(guild), [10])

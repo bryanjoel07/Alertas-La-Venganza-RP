@@ -120,7 +120,7 @@ class VoiceHours:
             occupants=self.occupants(channel.guild), records=await asyncio.to_thread(self.store.rows))
 
     def occupants(self, guild):
-        return sorted(uid for uid, state in guild.voice_states.items()
+        return sorted(uid for uid, state in guild._voice_states.items()
             if state.channel and state.channel.id == CHANNEL_ID)
 
     def protected(self, target):
