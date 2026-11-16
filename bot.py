@@ -52,6 +52,7 @@ from feedback import FeedbackSystem
 from bugs import BugSystem
 from suggestions import SuggestionSystem
 from rules_lookup import RulesLookup
+from voice_hours import VoiceHours
 
 # LA VENGANZA RP — ALERTAS + MANTENIMIENTO + EVENTOS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -273,10 +274,12 @@ class LaVenganzaBot(discord.Client):
         self.connect_message = None
         self.original_panel = OriginalPanel(os.getenv("TXADMIN_PANEL_BOT_TOKEN"),CONNECT_CHANNEL_ID,PANEL_MESSAGE_ID)
         self.obscenity_filter = ObscenityFilter(self, GUILD_ID, get_setting, set_setting)
+        self.voice_hours = VoiceHours(self, DB_PATH)
 
     async def setup_hook(self):
         await asyncio.to_thread(init_db)
         await asyncio.to_thread(self.changes.journal.initialize)
+        await self.voice_hours.start()
         await self.settings_panel.start()
         await self.economy.start()
         await self.tickets.start()
@@ -321,7 +324,7 @@ class LaVenganzaBot(discord.Client):
         loops=(self.obscenity_filter.install,self.streamer_panel.install,self.live_alerts.poll)
         loop_tasks=[loop.get_task() for loop in loops]
         for loop in loops:loop.cancel()
-        tasks = [task for task in (self.settings_panel.task, self.rules.task, self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
+        tasks = [task for task in (self.voice_hours.task, self.settings_panel.task, self.rules.task, self.suggestions.task, self.bugs.task, self.feedback.task, self.recruitment.task, self.photos.task, self.tickets.task, self.economy.task, self.monitor_task, self.meetings.task, self.event_features.task, self.backups.task, self.backups.manual_task, *self.summaries.countdowns.values()) if task]
         tasks=list({task for task in [*tasks,*loop_tasks] if task is not None and task is not asyncio.current_task()})
         for task in tasks:
             task.cancel()
@@ -1765,6 +1768,10 @@ async def on_ready():
 @client.event
 async def on_voice_state_update(member, before, after):
     try:
+        await client.voice_hours.voice_update(member, before, after)
+    except Exception:
+        log.exception('No se pudo aplicar el horario del canal de voz')
+    try:
         await client.meetings.voice_update(member, before, after)
     except Exception:
         log.exception("No se pudo registrar una entrada a voz")
@@ -1772,6 +1779,7 @@ async def on_voice_state_update(member, before, after):
 
 @client.event
 async def on_disconnect():
+    client.voice_hours.invalidate()
     try:
         await client.meetings.voice_disconnected()
     except Exception:

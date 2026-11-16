@@ -14,22 +14,19 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='restore-original-bot-after-esschino-split-v44'
-SUMMARY=('Restaura todas las funciones originales de La Venganza RP y retira su integración temporal de la tienda EssChino. '
-    'EssChino pasa a un repositorio, bot, proyecto de Railway y volumen independientes, por solicitud expresa del propietario. '
-    'La funcionalidad original de esta versión es idéntica al commit a4e163ae6a4aec3bc9777177845c18901f2a2c74; conserva la base y los respaldos actuales. '
-    'Amplía los recordatorios únicamente para entrevistas de solicitudes de staff agendadas desde este bot. '
-    'Avisa por privado al candidato y al entrevistador asignado con la anticipación configurada (60 minutos por defecto), 15 minutos antes si corresponde y al comenzar. '
-    'Incluye la fecha adaptada al usuario, instrucciones y acceso a la sala cuando está disponible; los controles del candidato y entrevistador conservan sus autorizaciones. '
-    'Cada reprogramación tiene identidad propia, incluso al volver a la misma fecha. Cancela avisos anteriores al cambiar la cita, retirar o finalizar la solicitud o completar la entrevista. '
-    'Guarda recibos duraderos, reconoce los avisos anteriores y entrega solo la fase vigente tras una interrupción. Una confirmación cercana evita repetir inmediatamente el mismo aviso. '
-    'Si el candidato no recibe privados, avisa una vez al entrevistador; las fechas siguen en Mi solicitud. Revalida los permisos del entrevistador al entregar. '
-    'Los nuevos envíos de entrevista registran estado privado antes y después. No añade recordatorios generales ni modifica roles protegidos ni asigna roles de staff.')
-RESTORE=('Referencia funcional original: a4e163ae6a4aec3bc9777177845c18901f2a2c74. Conservar /data y SQLite actuales, solicitudes, entrevistas, historial y recibos. '
-    'No reactivar ESSCHINO_SETUP_REQUEST_ID ni reinstalar la integración de EssChino en este bot; su servidor se administra con el bot y proyecto nuevos. '
-    'Antes de arrancar la versión anterior, guardar una copia verificada y marcar como cancelled solo los avisos pendientes nuevos de entrevista o recordatorio cuyo kind contenga :v; no borrar los recibos. '
-    'La versión anterior usa un único aviso al candidato y no interpreta los nuevos destinatarios ni fases. El índice lv_recruit_interview_events puede permanecer. '
-    'No restaurar una base antigua, reenviar avisos ya entregados ni modificar roles, permisos o canales para revertir esta función.')
+RELEASE='scheduled-voice-room-hours-v45'
+SUMMARY=('Por solicitud del propietario, el canal de voz 1513652447371853937 abre todos los días a las 06:30 y cierra a las 18:30 de America/Puerto_Rico. '
+    'El horario aplica Ver canal y Conectar para @everyone y Ciudadanos exclusivamente en ese canal. Durante la noche suspende otros permisos explícitos ordinarios que permitirían verlo o entrar y los restaura al abrir. '
+    'Desconecta de esa sala a todos los ocupantes, incluidos administradores, al cerrar, reiniciar fuera de horario o recibir una entrada nocturna; no expulsa a nadie del servidor. '
+    'Comprueba nuevamente la ubicación y la hora antes de desconectar. Un fallo individual no impide retirar al resto y se reintenta. '
+    'Guarda los permisos previos y registra antes y después cada cambio y desconexión. Conserva intactos los permisos de roles protegidos, las definiciones de roles, escritura, nombres, categorías, otras salas y funciones del bot. '
+    'Los administradores de Discord pueden seguir viendo canales privados por las reglas de Discord; también se les aplica la desconexión nocturna. EssChino sigue separado.')
+RESTORE=('Código anterior: 10af1ec359c2cb914256f79b423d8b34ceae3de3. Conservar /data y SQLite actuales. '
+    'Antes de desplegar el código anterior, establecer VOICE_QUIET_HOURS_ENABLED=0 en este servicio y esperar VOICE_HOURS permissions_verified mode=disabled con managed_targets=0. '
+    'Ese modo restaura solo Ver canal y Conectar guardados en lv_voice_hours_targets, conserva cambios manuales diferentes y detiene las desconexiones. Revisar /cambios detalle para estados anteriores y posteriores si aparece algún conflicto. '
+    'Después desplegar el commit anterior; sus otras funciones no requieren migración. La tabla y registros de respaldo pueden permanecer. '
+    'Volver al código anterior sin desactivar antes detiene el horario, pero no restaura por sí solo los permisos de Discord. Las desconexiones ya realizadas no se revierten automáticamente. '
+    'No restaurar una base antigua ni borrar o recrear canales, roles, mensajes ni datos. No reactivar ESSCHINO_SETUP_REQUEST_ID ni integrar de nuevo EssChino en este bot.')
 
 
 

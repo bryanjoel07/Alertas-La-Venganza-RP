@@ -50,7 +50,7 @@ def runtime_tasks(bot):
     if hasattr(bot,'monitor_task'):result.append(('Monitor',bot.monitor_task))
     for name,label in (('meetings','Reuniones'),('event_features','Eventos'),('economy','Tienda'),('tickets','Tickets'),
         ('feedback','Feedback'),('bugs','Reportes'),('suggestions','Sugerencias'),('rules','Normas'),('photos','Fotos'),
-        ('recruitment','Solicitudes de staff'),('backups','Respaldos'),('settings_panel','Ajustes')):
+        ('recruitment','Solicitudes de staff'),('backups','Respaldos'),('settings_panel','Ajustes'),('voice_hours','Horario de voz')):
         system=getattr(bot,name,None)
         if system is not None:result.append((label,getattr(system,'task',None)))
     for name,attribute,label in (('live_alerts','poll','Avisos de directos'),('streamer_panel','install','Panel de creadores'),

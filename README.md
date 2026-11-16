@@ -450,3 +450,11 @@ Desde la solicitud, el revisor pulsa **Entrevista → Agendar entrevista** y eli
 La anticipación se cambia en `/ajustes panel` → **Solicitudes de staff → Postulaciones y entrevistas**. Solo se generan recordatorios para entrevistas programadas en este sistema. Reprogramar cancela los avisos pendientes de la cita anterior; completar la entrevista, retirar la solicitud o decidirla detiene los recordatorios. Si una cita se agenda cerca de su hora, la confirmación sustituye el recordatorio de esa misma franja.
 
 Los recibos sobreviven a reinicios y un aviso atrasado se sustituye por la fase que siga vigente. Si el candidato tiene los privados bloqueados, el entrevistador recibe un único aviso y la fecha continúa disponible en **Mi solicitud**. Los mensajes del entrevistador requieren que siga autorizado para revisar solicitudes. La aceptación conserva la asignación manual del rol por administración.
+
+## Horario del canal de voz
+
+El canal `1513652447371853937` de La Venganza RP abre a las **6:30 a. m.** y cierra a las **6:30 p. m.** todos los días, usando `America/Puerto_Rico`. De día, @everyone y Ciudadanos pueden verlo y conectarse. De noche se oculta y bloquea para esos roles; los permisos explícitos ordinarios que permitieran saltarse el cierre se suspenden hasta la apertura. Los demás permisos y los accesos de los roles protegidos se conservan.
+
+Al cerrar se desconecta de ese canal a todos sus ocupantes, también a administradores. Si alguien entra durante la noche se vuelve a desconectar. Reiniciar o reconectar el bot comprueba el horario actual y retira a quienes sigan dentro. Discord permite que sus administradores sigan viendo canales privados. El bot necesita Gestionar permisos y Mover miembros; no necesita conectarse al audio.
+
+Los cambios y las desconexiones se guardan de forma privada antes y después de ejecutarse. `/estado-bot` incluye la tarea **Horario de voz**. Para desactivar y restaurar los permisos anteriores, establecer `VOICE_QUIET_HOURS_ENABLED=0` y esperar la confirmación `mode=disabled managed_targets=0`. No borrar SQLite ni restaurar copias antiguas para cambiar este horario.
