@@ -49,12 +49,6 @@ class WelcomePanel(SafeView):
         await interaction.followup.send('🌴 ¡Ya eres parte del distrito! Al unirte aceptas las normas. '
             f'Ahora personaliza tu perfil en <#{self.system.channel_id("roles")}>.', ephemeral=True)
 
-    @discord.ui.button(label='Elegir mis roles', emoji='🎭', style=discord.ButtonStyle.secondary,
-                       custom_id='vice:v1:roles', row=0)
-    async def roles(self, interaction, button):
-        await interaction.response.send_message('Elige tus plataformas, región e intereses. Cada grupo se guarda por separado.',
-            view=RolesPanel(self.system), ephemeral=True)
-
     @discord.ui.button(label='Mi bienvenida', emoji='🖼️', style=discord.ButtonStyle.secondary,
                        custom_id='vice:v1:preview', row=1)
     async def preview(self, interaction, button):

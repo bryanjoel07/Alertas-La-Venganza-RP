@@ -1,6 +1,8 @@
 # GTA VI Latino | VIce District
 
-Owner-authorized community release: `vice-district-community-v1`, 2026-11-17.
+Owner-authorized community release: `vice-district-community-v2`, 2026-11-17.
+The welcome panel has no role menu or role-menu button, as explicitly requested.
+Role selections live only in their dedicated channel (and the optional /vice roles command).
 Guild: `1572462544302383164`. Bot: `1571639486591402174` (EssChino Studio Bot).
 
 The existing Studio guild retains its handlers, store layout and `/data/esschino.sqlite3`.

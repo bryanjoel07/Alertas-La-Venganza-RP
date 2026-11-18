@@ -4,7 +4,7 @@ from pathlib import Path
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-district-community-v1'
+VERSION = 'vice-district-community-v2'
 ASSETS = Path(__file__).parent / 'assets' / 'vice-district'
 FONTS = Path(__file__).parent / 'assets' / 'esschino' / 'fonts'
 PINK, CYAN, CORAL = 0xFF168A, 0x00D9E8, 0xFF795D
