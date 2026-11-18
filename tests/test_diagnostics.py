@@ -102,6 +102,22 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(task_state(task), '🔴 Terminada con error')
         self.assertNotIn('private detail', task_state(task))
 
+    def test_authentication_failure_explains_required_action_without_raw_error(self):
+        bot = SimpleNamespace(is_ready=lambda: True, latency=0.1,
+            started_monotonic=time.monotonic(), monitor_last_read=None,
+            monitor_last_error=None, tracker=None,
+            meetings=SimpleNamespace(task=None, last_check_at=None),
+            event_features=SimpleNamespace(task=None, last_check_at=None))
+        automation = dict(enabled=True, time_pr='03:00', phase='failed', busy=False,
+            last_check_at=None, error_stage='authentication', error_message='fixture-private-value')
+        embed = status_embed(bot, str(self.path), read_database(self.path),
+            read_backup(self.path), automation)
+        text = str(embed.to_dict())
+        self.assertIn('revisa la autorización', text)
+        self.assertIn('GOOGLE_DRIVE_CREDENTIALS_JSON', text)
+        self.assertNotIn('fixture-private-value', text)
+        self.assertTrue(all(len(field.value) <= 1024 for field in embed.fields))
+
     def test_all_workers_including_discord_loops_report_failure_without_overflow_or_secrets(self):
         failed=Mock();failed.cancelled.return_value=False;failed.done.return_value=True
         failed.exception.return_value=ValueError('private detail')

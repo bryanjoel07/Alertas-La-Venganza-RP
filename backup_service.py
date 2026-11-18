@@ -281,7 +281,7 @@ class BackupService:
             await self.execute(probe_only=probe_only)
             message = '✅ Copia de Drive descargada y restaurada en un archivo temporal. Integridad, esquema y conteos correctos.' if probe_only else '✅ Respaldo subido a Drive y recuperación de prueba verificada. La base activa no se reemplazó.'
         except BackupFailure as error:
-            message = f'❌ No se confirmó la operación ({error.stage}). Consulta /estado-bot y la guía RESPALDOS_DRIVE.md.'
+            message = f'❌ No se confirmó la operación ({error.stage}). {error} Consulta /estado-bot y la guía RESPALDOS_DRIVE.md.'
         try:
             await interaction.followup.send(message, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException:

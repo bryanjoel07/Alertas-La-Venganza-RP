@@ -1,8 +1,8 @@
 # Respaldos diarios de LA VENGANZA RP en Google Drive
 
-El código está preparado, pero **no está activado ni probado contra tu cuenta real** hasta
-configurar OAuth en Railway y completar una copia/prueba real. No cambia DB_PATH, no restaura
-sobre la base activa y no elimina respaldos anteriores. No hay nuevas tablas ni migraciones.
+La confirmación de cada respaldo requiere una subida, descarga y recuperación de prueba
+verificadas. Activar el horario no garantiza que Google mantenga vigente la autorización.
+No cambia DB_PATH, no restaura sobre la base activa y no elimina respaldos anteriores.
 
 ## Qué hace
 
@@ -29,6 +29,27 @@ Usa **OAuth de usuario con refresh token**. No necesitas una cuenta de servicio.
  de servicio no disponen de cuota propia para guardar estas copias en un My Drive personal.
 La conexión de Drive en ChatGPT no transfiere sus credenciales a un proceso en Railway.
 La autorización del bot debe configurarse por separado, sin compartir tokens por chat.
+
+### Si aparece «la autorización caducó o fue revocada»
+
+Google devuelve `invalid_grant` cuando rechaza el refresh token; reiniciar o volver a intentar
+el respaldo no renueva el consentimiento. El bot identifica este fallo como **authentication**,
+lo explica en el aviso para staff y conserva la copia local y los respaldos anteriores.
+
+1. Revisa **Google Auth Platform → Audience** en el proyecto del cliente OAuth. Si sigue en
+   Testing/Prueba, revisa la publicación a producción para evitar la caducidad de siete días
+   y cumple los requisitos que muestre Google. Un `invalid_grant` también puede ser una revocación;
+   no confirma por sí solo que la aplicación esté en Testing.
+2. Repite la autorización del apartado 2 con **el mismo cliente OAuth y la misma cuenta de Google**
+   que tienen acceso a la carpeta de respaldos. Obtén un refresh token nuevo.
+3. Actualiza `refresh_token` dentro de **GOOGLE_DRIVE_CREDENTIALS_JSON** directamente en las
+   Variables privadas del servicio de Railway. El bot lee esa variable; cambiar solamente
+   una variable separada `GOOGLE_DRIVE_REFRESH_TOKEN` no actualiza la autenticación que usa.
+4. Aplica el cambio y ejecuta `/respaldo crear`. Confirma subida y recuperación verificadas
+   con `/estado-bot` antes de dar por restablecido el respaldo.
+
+No borres la carpeta, la base, los manifiestos ni el volumen para renovar la autorización.
+Los tickets no se eliminan mientras no se pueda verificar su respaldo.
 
 ### 1. Crear un cliente OAuth propio en Google
 
@@ -162,6 +183,6 @@ SQLite para evitar que una operación quede abierta indefinidamente. Mantén una
 Un proceso interrumpido puede haber subido un archivo sin confirmar el resultado; se conserva
 la copia, se avisa al reconectar y no se intenta duplicarla automáticamente.
 
-En esta entrega las pruebas locales usan una base SQLite real y un Drive simulado. La autorización,
-la carpeta real, el envío de avisos a Discord y el ciclo contra tu Drive solo se pueden confirmar
-cuando completes la configuración privada y las pruebas del apartado 4.
+Las pruebas locales usan una base SQLite real y un Drive simulado. La autorización vigente,
+la carpeta real, el envío de avisos a Discord y el ciclo contra Drive requieren una prueba real
+como la del apartado 4; una prueba anterior no garantiza que el permiso siga vigente.

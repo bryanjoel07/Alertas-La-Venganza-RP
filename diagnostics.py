@@ -117,6 +117,8 @@ def status_embed(bot, path, database, backup, automation=None):
         daily += "\nTarea diaria: " + ('Activa' if automation.get('scheduler_active') else 'No iniciada o detenida')
         if automation.get('config_error'):
             daily += '\n⚠️ Configuración inválida: revisa RESPALDOS_DRIVE.md.'
+        if automation.get('error_stage') == 'authentication':
+            daily += '\n⚠️ Autenticación de Google: revisa la autorización de la cuenta y GOOGLE_DRIVE_CREDENTIALS_JSON en Railway antes de usar /respaldo crear.'
         if automation.get('last_success_at'):
             stamp = int(datetime.fromisoformat(automation['last_success_at']).timestamp())
             daily += f'\nÚltima copia con recuperación verificada: <t:{stamp}:f>'

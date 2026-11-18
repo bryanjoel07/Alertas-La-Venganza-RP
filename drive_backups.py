@@ -10,6 +10,8 @@ import tempfile
 import time
 from urllib.parse import urlparse
 
+from google.auth.exceptions import RefreshError
+
 
 class BackupFailure(RuntimeError):
     def __init__(self, stage, message):
@@ -55,10 +57,22 @@ class DriveBackupClient:
             response = self.session.request(method, url, **kwargs)
             if response.status_code >= 400:
                 response.close()
+                if response.status_code == 401:
+                    raise BackupFailure('authentication', 'Google Drive rechazó la autenticación. Revisa la autorización de la cuenta y GOOGLE_DRIVE_CREDENTIALS_JSON en Railway antes de reintentar.')
                 raise BackupFailure('drive', f'Google Drive rechazó la operación (HTTP {response.status_code}).')
             return response
         except BackupFailure:
             raise
+        except RefreshError as error:
+            # Solo se consulta el código OAuth; el texto y la respuesta pueden contener secretos.
+            codes = [arg.get('error') for arg in error.args if isinstance(arg, dict)]
+            if 'invalid_grant' in codes:
+                message = 'La autorización de Google Drive caducó o fue revocada. Vuelve a autorizar la cuenta en Google y actualiza GOOGLE_DRIVE_CREDENTIALS_JSON en Railway antes de reintentar.'
+            elif 'invalid_client' in codes or 'unauthorized_client' in codes:
+                message = 'Google rechazó el cliente OAuth. Revisa el cliente y su configuración privada en GOOGLE_DRIVE_CREDENTIALS_JSON de Railway.'
+            else:
+                message = 'No se pudo renovar la autenticación de Google Drive. Revisa la autorización y la configuración privada de Railway.'
+            raise BackupFailure('authentication', message) from None
         except Exception:
             # Nunca propagar una excepción de HTTP que pueda contener URL de sesión o tokens.
             raise BackupFailure('drive', 'No se pudo completar la conexión con Google Drive.') from None

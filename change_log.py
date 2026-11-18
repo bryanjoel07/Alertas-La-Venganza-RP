@@ -14,20 +14,17 @@ from bot_access import is_bot_admin
 from discord_channels import fetch_channels,UnsupportedChannel
 
 log=logging.getLogger('LaVenganzaRP.changes')
-RELEASE='voice-hours-citizens-schedule-everyone-denied-v48'
-SUMMARY=('Por aclaración del propietario, @everyone conserva Ver canal y Conectar denegados todo el día en 1513652447371853937. Solo Ciudadanos sigue el horario de apertura y cierre. '
-    'Todos los demás permisos de roles y miembros permanecen intactos, incluidos los accesos del staff. Restaura desde las copias privadas cualquier excepción adicional tratada por la versión anterior y no vuelve a incluirla en el horario. '
-    'Ciudadanos puede ver y entrar todos los días desde las 06:30 hasta las 18:30 de America/Puerto_Rico. Comprueba y registra sus permisos efectivos y las autorizaciones adicionales que pueden permitir que el staff vea el canal, sin modificarlas. '
-    'Desconecta de esa sala a todos los ocupantes, incluidos administradores, al cerrar, reiniciar fuera de horario o recibir una entrada nocturna; no expulsa a nadie del servidor. '
-    'Comprueba nuevamente la ubicación y la hora antes de desconectar. Un fallo individual no impide retirar al resto y se reintenta. '
-    'Guarda los permisos previos y registra antes y después cada cambio y desconexión. Conserva intactos los permisos de roles protegidos, las definiciones de roles, escritura, nombres, categorías, otras salas y funciones del bot. '
-    'Los administradores de Discord pueden seguir viendo canales privados por las reglas de Discord; también se les aplica la desconexión nocturna. EssChino sigue separado.')
-RESTORE=('Código anterior: dc7172a2fa2070ebe1d39df7136d956109b4d7d9. No reactivar su horario, porque abriría @everyone por la mañana y contradice la última aclaración. Tampoco reactivar v45/v46, que alterarían otros roles. '
-    'Para retirar el horario usar la versión estable 10af1ec359c2cb914256f79b423d8b34ceae3de3. Conservar /data y SQLite actuales. '
-    'Antes de desplegar el código anterior, establecer VOICE_QUIET_HOURS_ENABLED=0 en este servicio y esperar VOICE_HOURS permissions_verified mode=disabled con managed_targets=0. '
-    'Ese modo restaura solo Ver canal y Conectar guardados en lv_voice_hours_targets, conserva cambios manuales diferentes y detiene las desconexiones. Revisar /cambios detalle para estados anteriores y posteriores si aparece algún conflicto. '
-    'Después desplegar el commit anterior; sus otras funciones no requieren migración. La tabla y registros de respaldo pueden permanecer. '
-    'Volver al código anterior sin desactivar antes detiene el horario, pero no restaura por sí solo los permisos de Discord. Las desconexiones ya realizadas no se revierten automáticamente. '
+RELEASE='drive-backup-oauth-failure-diagnostics-v49'
+SUMMARY=('Los respaldos identifican la autorización de Google caducada o revocada como fallo de autenticación, en lugar de un error genérico de conexión con Drive. '
+    'El aviso para staff y la respuesta privada de /respaldo explican cómo renovar el permiso y actualizar GOOGLE_DRIVE_CREDENTIALS_JSON en Railway; /estado-bot indica que hay que revisar la autorización antes de reintentar. '
+    'Distingue también el rechazo del cliente OAuth y HTTP 401 sin publicar respuestas privadas de Google, tokens ni URLs de sesión. '
+    'La guía documenta la renovación con la misma cuenta y cliente OAuth, la caducidad de siete días en Testing y la prueba real necesaria antes de confirmar recuperación. '
+    'Esta corrección no renueva por sí sola una autorización revocada. Conserva copias locales, respaldos anteriores y el bloqueo de eliminación de tickets sin respaldo verificado. '
+    'No cambia permisos, roles, horarios de voz ni otras funciones del bot.')
+RESTORE=('Código anterior: 738ad858f56925b38999f1b44f5209d156067617. Desplegarlo conservando /data, SQLite, respaldos, manifiestos, configuración y registros actuales. '
+    'No requiere migraciones y mantiene la política vigente del horario de voz: @everyone denegado todo el día y solo Ciudadanos programado. '
+    'La reversión devuelve los avisos genéricos de Drive; no restablece una autorización de Google caducada o revocada. '
+    'Si se renovaron las credenciales, conservar la autorización válida y verificar un respaldo completo con /respaldo crear. '
     'No restaurar una base antigua ni borrar o recrear canales, roles, mensajes ni datos. No reactivar ESSCHINO_SETUP_REQUEST_ID ni integrar de nuevo EssChino en este bot.')
 
 

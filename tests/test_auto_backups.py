@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 import discord
+from google.auth.exceptions import RefreshError
 from backup import snapshot
 from backup_meta import read_backup, record_backup
 from backup_service import BackupService
@@ -136,6 +137,46 @@ class AutoBackupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('file', self.channel.send.call_args.kwargs)
         self.assertEqual(read_backup(self.source)['drive_state'], 'failed')
         self.assertEqual(self.source.read_bytes(), self.original)
+
+    async def test_expired_google_grant_preserves_local_and_previous_verified_backup(self):
+        successful = await self.service.execute()
+        session = Mock()
+        session.request.side_effect = RefreshError('fixture-private-value', {
+            'error': 'invalid_grant', 'error_description': 'fixture-refresh-value'})
+        info = dict(type='authorized_user', client_id='test-client',
+            client_secret='fixture-private-value', refresh_token='fixture-refresh-value')
+        with patch.dict('os.environ', {'GOOGLE_DRIVE_CREDENTIALS_JSON': json.dumps(info)}), \
+                patch('backup_service.DriveBackupClient', DriveBackupClient), \
+                patch('google.auth.transport.requests.AuthorizedSession', return_value=session), \
+                patch('backup_service.log.error'):
+            with self.assertRaises(BackupFailure) as error:
+                await self.service.execute()
+        self.assertEqual(error.exception.stage, 'authentication')
+        self.assertEqual((await self.service.describe())['error_stage'], 'authentication')
+        self.assertEqual(self.source.read_bytes(), self.original)
+        self.assertEqual(self.service._copy()['last_success']['file'], successful['file'])
+        self.assertTrue(Path(successful['file']).exists())
+        self.assertEqual(len(list(self.service.directory.glob('*.sqlite3'))), 2)
+        self.assertTrue(read_backup(self.source)['local_available'])
+        self.assertEqual(read_backup(self.source)['drive_state'], 'failed')
+        self.assertEqual(FakeDrive.uploads, 1)
+        self.channel.send.assert_awaited_once()
+        notice = str(self.channel.send.call_args.kwargs['embed'].to_dict())
+        self.assertIn('authentication', notice)
+        self.assertIn('Vuelve a autorizar', notice)
+        for secret in ('fixture-private-value', 'fixture-refresh-value'):
+            self.assertNotIn(secret, notice)
+            self.assertNotIn(secret, self.service.state_path.read_text())
+
+    async def test_manual_auth_failure_explains_reauthorization_in_private(self):
+        interaction = Mock()
+        interaction.followup.send = AsyncMock()
+        error = BackupFailure('authentication', 'Vuelve a autorizar la cuenta en Google.')
+        with patch.object(self.service, 'execute', AsyncMock(side_effect=error)):
+            await self.service._manual(interaction, False)
+        sent = interaction.followup.send.call_args
+        self.assertTrue(sent.kwargs['ephemeral'])
+        self.assertIn('Vuelve a autorizar', sent.args[0])
 
     async def test_uncertain_upload_not_automatically_duplicated(self):
         self.service.enabled = True
@@ -328,6 +369,31 @@ class DriveProtocolTests(unittest.TestCase):
         with self.assertRaises(BackupFailure) as forbidden:
             self.drive.request('GET', 'https://www.googleapis.com/drive/v3/files/copy-id')
         self.assertIn('403', str(forbidden.exception))
+
+    def test_oauth_refresh_rejections_are_safe_authentication_errors(self):
+        for code in ('invalid_grant', 'invalid_client', 'unauthorized_client', 'unknown'):
+            with self.subTest(code=code):
+                self.session.request.side_effect = RefreshError('fixture-private-value', {
+                    'error': code, 'error_description': 'fixture-refresh-value',
+                    'url': 'https://private/session?secret=fixture-private-value'})
+                with self.assertRaises(BackupFailure) as error:
+                    self.drive.request('GET', 'https://www.googleapis.com/drive/v3/files/copy-id')
+                self.assertEqual(error.exception.stage, 'authentication')
+                self.assertIn('Google', str(error.exception))
+                if code == 'invalid_grant':
+                    self.assertIn('Vuelve a autorizar', str(error.exception))
+                    self.assertIn('GOOGLE_DRIVE_CREDENTIALS_JSON', str(error.exception))
+                for private in ('fixture-private-value', 'fixture-refresh-value', 'private/session'):
+                    self.assertNotIn(private, str(error.exception))
+                self.assertTrue(error.exception.__suppress_context__)
+
+    def test_unauthorized_drive_response_is_authentication_and_closed(self):
+        response = self.response(status=401)
+        self.session.request.return_value = response
+        with self.assertRaises(BackupFailure) as error:
+            self.drive.request('GET', 'https://www.googleapis.com/drive/v3/files/copy-id')
+        self.assertEqual(error.exception.stage, 'authentication')
+        response.close.assert_called_once()
 
     def test_service_account_requires_shared_drive_folder(self):
         self.drive.service_account = True
