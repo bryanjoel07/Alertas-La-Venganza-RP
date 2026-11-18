@@ -4,7 +4,7 @@ import logging
 from vice_design import ASSETS, BOT_ID, GUILD_ID
 
 log = logging.getLogger('ViceDistrict.expressions')
-EXPRESSIONS_VERSION = 'vice-expressions-expanded-v2'
+EXPRESSIONS_VERSION = 'vice-expressions-expanded-v3'
 STATIC_EMOJIS = ('vd_coqui_risa', 'vd_coqui_llora', 'vd_coqui_sus',
                  'vd_coqui_shock', 'vd_coqui_facepalm', 'vd_coqui_chill')
 ANIMATED_EMOJIS = ('vd_vi_neon', 'vd_wepa', 'vd_alerta', 'vd_cargando', 'vd_hype', 'vd_rip')
@@ -12,11 +12,16 @@ MASCOT_ANIMATED_EMOJIS = ('vd_coqui_fiesta', 'vd_coqui_carcajada', 'vd_coqui_lla
                          'vd_coqui_rabia', 'vd_coqui_amor', 'vd_coqui_saludo')
 HYPE_ANIMATED_EMOJIS = ('vd_pr_onda', 'vd_duro', 'vd_gg_brillo',
                        'vd_corona', 'vd_drift', 'vd_boom')
-ALL_ANIMATED_EMOJIS = ANIMATED_EMOJIS + MASCOT_ANIMATED_EMOJIS + HYPE_ANIMATED_EMOJIS
+MAX_MASCOT_EMOJIS = tuple(name + '_max' for name in MASCOT_ANIMATED_EMOJIS)
+MAX_HYPE_EMOJIS = tuple(name + '_max' for name in HYPE_ANIMATED_EMOJIS)
+ALL_ANIMATED_EMOJIS = (ANIMATED_EMOJIS + MASCOT_ANIMATED_EMOJIS + HYPE_ANIMATED_EMOJIS
+                       + MAX_MASCOT_EMOJIS + MAX_HYPE_EMOJIS)
 EMOJI_PACKS = ((False, STATIC_EMOJIS, 'emojis-v2/static', '.png'),
                (True, ANIMATED_EMOJIS, 'emojis-v2/animated', '.gif'),
                (True, MASCOT_ANIMATED_EMOJIS, 'emojis-v3/mascot', '.gif'),
-               (True, HYPE_ANIMATED_EMOJIS, 'emojis-v3/hype', '.gif'))
+               (True, HYPE_ANIMATED_EMOJIS, 'emojis-v3/hype', '.gif'),
+               (True, MAX_MASCOT_EMOJIS, 'emojis-v4/mascot', '.gif'),
+               (True, MAX_HYPE_EMOJIS, 'emojis-v4/hype', '.gif'))
 
 
 async def install_expansion(system):

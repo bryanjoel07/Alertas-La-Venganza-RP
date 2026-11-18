@@ -106,11 +106,17 @@ The third pack adds 12 original vector/canvas animated GIFs under emojis-v3: six
 expressive coquí mascots (party, laughter, tears, anger, love and wave) and six
 Puerto Rico/crew reactions (waving flag, DURO, GG, crown, drift and BOOM). Large
 silhouettes and contrasting outlines are checked at both 128 and 32 pixels.
-The server now has 12 static and 18 animated emojis, plus the existing three stickers.
+The fourth pack responds to feedback that those loops were too subtle: 12 `_max`
+variants in emojis-v4 use full-body hops/tilts, large facial changes, travelling tears,
+hand waves, falls/rebounds, spins, car travel and expanding bursts. Each has a before/after
+comparison at 32 px. Existing emoji IDs and reactions are retained; Discord's guild
+emoji edit endpoint cannot replace image bytes. The new variants have distinct names
+and are featured first in the announcements panel.
+The server now has 12 static and 30 animated emojis, plus the existing three stickers.
 `vice_expressions.py` prevalidates every asset and aggregates capacity across all
 packs of each format before any upload. It preserves unrelated expressions and
 existing emoji IDs, with tracked writes and durable ID/release markers. The announcements
-panel displays all 30 expressions. To stop further installation, revert the expression
+panel displays all 42 expressions. To stop further installation, revert the expression
 installer and showcase release together; keep the installed emojis and their journal.
 
 View-only panels (`vice_readonly.py`, vice-view-only-v1) deny member publication,

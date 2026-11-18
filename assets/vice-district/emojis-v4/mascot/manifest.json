@@ -1,0 +1,172 @@
+{
+  "mode": "original vector animation",
+  "renderer": "renderer.py",
+  "style": "VIce District coqui; mint, plum, fuchsia, coral, cyan and ivory",
+  "frame_count": 24,
+  "frame_duration_ms": 80,
+  "loop": "infinite",
+  "assets": [
+    {
+      "name": "vd_coqui_fiesta_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_fiesta_max.gif",
+      "description": "Saltos de 16 px, baile de 36 grados, brazos alternos y squash/stretch",
+      "bytes": 126300,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 1920,
+      "transparent": true,
+      "sha256": "b3bb46de988ddc2330c464cda20ec1c660290fd6274466dc51580c32400e3c39",
+      "motion_at_32px": {
+        "v3": {
+          "mean_adjacent_rgb_distance": 12.829,
+          "max_pair_rgb_distance": 40.44,
+          "max_pair_changed_pixel_fraction": 0.532
+        },
+        "v4": {
+          "mean_adjacent_rgb_distance": 20.262,
+          "max_pair_rgb_distance": 42.926,
+          "max_pair_changed_pixel_fraction": 0.543
+        },
+        "adjacent_motion_ratio": 1.579
+      },
+      "prompt": "Original scalable vector coqui mascot: Saltos de 16 px, baile de 36 grados, brazos alternos y squash/stretch. Broad action; smooth 1.92-second loop."
+    },
+    {
+      "name": "vd_coqui_carcajada_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_carcajada_max.gif",
+      "description": "Carcajada abierta-cerrada, balanceo amplio y lagrimas rebotando",
+      "bytes": 121431,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 1920,
+      "transparent": true,
+      "sha256": "3dcd4a792a3a4dd9dcfe71d298ac4a8114dcc878ed31fa63072db0be8b31c905",
+      "motion_at_32px": {
+        "v3": {
+          "mean_adjacent_rgb_distance": 6.559,
+          "max_pair_rgb_distance": 29.702,
+          "max_pair_changed_pixel_fraction": 0.455
+        },
+        "v4": {
+          "mean_adjacent_rgb_distance": 16.107,
+          "max_pair_rgb_distance": 39.489,
+          "max_pair_changed_pixel_fraction": 0.499
+        },
+        "adjacent_motion_ratio": 2.456
+      },
+      "prompt": "Original scalable vector coqui mascot: Carcajada abierta-cerrada, balanceo amplio y lagrimas rebotando. Broad action; smooth 1.92-second loop."
+    },
+    {
+      "name": "vd_coqui_llanto_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_llanto_max.gif",
+      "description": "Grandes lagrimas que caen y salpican con cuerpo sollozando",
+      "bytes": 119425,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 23,
+      "duration_ms": 1920,
+      "transparent": true,
+      "sha256": "5c273c0e79fd8f9878d7d55f490c260a1ae4b579db44df667590421b3a76f167",
+      "motion_at_32px": {
+        "v3": {
+          "mean_adjacent_rgb_distance": 6.691,
+          "max_pair_rgb_distance": 30.736,
+          "max_pair_changed_pixel_fraction": 0.434
+        },
+        "v4": {
+          "mean_adjacent_rgb_distance": 14.141,
+          "max_pair_rgb_distance": 33.406,
+          "max_pair_changed_pixel_fraction": 0.467
+        },
+        "adjacent_motion_ratio": 2.113
+      },
+      "prompt": "Original scalable vector coqui mascot: Grandes lagrimas que caen y salpican con cuerpo sollozando. Broad action; smooth 1.92-second loop."
+    },
+    {
+      "name": "vd_coqui_rabia_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_rabia_max.gif",
+      "description": "Sacudida de cabeza de 20 px con nubes de vapor que crecen y desaparecen",
+      "bytes": 126690,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 1920,
+      "transparent": true,
+      "sha256": "e309513cf1c8123304d113ae3b4ec8c946fe168d28d56a0d43c6701d54f4873e",
+      "motion_at_32px": {
+        "v3": {
+          "mean_adjacent_rgb_distance": 8.62,
+          "max_pair_rgb_distance": 30.564,
+          "max_pair_changed_pixel_fraction": 0.457
+        },
+        "v4": {
+          "mean_adjacent_rgb_distance": 22.698,
+          "max_pair_rgb_distance": 48.426,
+          "max_pair_changed_pixel_fraction": 0.594
+        },
+        "adjacent_motion_ratio": 2.633
+      },
+      "prompt": "Original scalable vector coqui mascot: Sacudida de cabeza de 20 px con nubes de vapor que crecen y desaparecen. Broad action; smooth 1.92-second loop."
+    },
+    {
+      "name": "vd_coqui_amor_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_amor_max.gif",
+      "description": "Corazon grande que se expande y contrae, ojos de corazon alternos",
+      "bytes": 111563,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 1920,
+      "transparent": true,
+      "sha256": "bbbafae6fa4074ba3b64f3e08165ee7bf1ca11e31f04c3be747b6a06acc3067c",
+      "motion_at_32px": {
+        "v3": {
+          "mean_adjacent_rgb_distance": 3.975,
+          "max_pair_rgb_distance": 24.687,
+          "max_pair_changed_pixel_fraction": 0.399
+        },
+        "v4": {
+          "mean_adjacent_rgb_distance": 6.338,
+          "max_pair_rgb_distance": 29.286,
+          "max_pair_changed_pixel_fraction": 0.392
+        },
+        "adjacent_motion_ratio": 1.594
+      },
+      "prompt": "Original scalable vector coqui mascot: Corazon grande que se expande y contrae, ojos de corazon alternos. Broad action; smooth 1.92-second loop."
+    },
+    {
+      "name": "vd_coqui_saludo_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_saludo_max.gif",
+      "description": "Saludo amplio de 60 grados con mano grande, inclinacion y parpadeo",
+      "bytes": 123053,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 1920,
+      "transparent": true,
+      "sha256": "9395fc50a48246a8aee3b51ca3fd59ca69acc72f9fd6096bb5a781f67180ff8c",
+      "motion_at_32px": {
+        "v3": {
+          "mean_adjacent_rgb_distance": 5.034,
+          "max_pair_rgb_distance": 17.569,
+          "max_pair_changed_pixel_fraction": 0.267
+        },
+        "v4": {
+          "mean_adjacent_rgb_distance": 7.79,
+          "max_pair_rgb_distance": 23.379,
+          "max_pair_changed_pixel_fraction": 0.356
+        },
+        "adjacent_motion_ratio": 1.547
+      },
+      "prompt": "Original scalable vector coqui mascot: Saludo amplio de 60 grados con mano grande, inclinacion y parpadeo. Broad action; smooth 1.92-second loop."
+    }
+  ]
+}

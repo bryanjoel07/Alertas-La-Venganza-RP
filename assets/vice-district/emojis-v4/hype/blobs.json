@@ -1,0 +1,35 @@
+{
+  "repository": "bryanjoel07/Alertas-La-Venganza-RP",
+  "assets": [
+    {
+      "name": "vd_pr_onda_max",
+      "path": "assets/vice-district/emojis-v4/hype/vd_pr_onda_max.gif",
+      "sha": "f4eee6606a48ce274c120cd9df1402af81c44549"
+    },
+    {
+      "name": "vd_duro_max",
+      "path": "assets/vice-district/emojis-v4/hype/vd_duro_max.gif",
+      "sha": "7e6229738ecd0944417ae71876d90cf2c90def41"
+    },
+    {
+      "name": "vd_gg_brillo_max",
+      "path": "assets/vice-district/emojis-v4/hype/vd_gg_brillo_max.gif",
+      "sha": "db00f7eb0b9f479e44c84ccb98516f62da613761"
+    },
+    {
+      "name": "vd_corona_max",
+      "path": "assets/vice-district/emojis-v4/hype/vd_corona_max.gif",
+      "sha": "95b5c59c7706eee7076af8c8a8666bf20d72989e"
+    },
+    {
+      "name": "vd_drift_max",
+      "path": "assets/vice-district/emojis-v4/hype/vd_drift_max.gif",
+      "sha": "5905397150ec6e3ee4b330f27247441676cf107b"
+    },
+    {
+      "name": "vd_boom_max",
+      "path": "assets/vice-district/emojis-v4/hype/vd_boom_max.gif",
+      "sha": "a582e190e673670c6308f7fe8682b40c78d8938b"
+    }
+  ]
+}

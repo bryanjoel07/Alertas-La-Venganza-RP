@@ -1,0 +1,35 @@
+{
+  "repository": "bryanjoel07/Alertas-La-Venganza-RP",
+  "assets": [
+    {
+      "name": "vd_coqui_fiesta_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_fiesta_max.gif",
+      "sha": "6b8a37545c5e7740005deb4b6c2d3ca450ea88b0"
+    },
+    {
+      "name": "vd_coqui_carcajada_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_carcajada_max.gif",
+      "sha": "1db07cd08e49b36cc32298aedd4e2349188eb9f7"
+    },
+    {
+      "name": "vd_coqui_llanto_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_llanto_max.gif",
+      "sha": "d361fe2cbae08dccabaefe360a3a2f173a6097ce"
+    },
+    {
+      "name": "vd_coqui_rabia_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_rabia_max.gif",
+      "sha": "5f767a5c37ebb151ed38a91f8f82200942929134"
+    },
+    {
+      "name": "vd_coqui_amor_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_amor_max.gif",
+      "sha": "7864760301310213ddddaca8b8e21baf0f1f7cbd"
+    },
+    {
+      "name": "vd_coqui_saludo_max",
+      "path": "assets/vice-district/emojis-v4/mascot/vd_coqui_saludo_max.gif",
+      "sha": "28cc238a90ad78ce869cf63988cc6277cc4853d7"
+    }
+  ]
+}

@@ -7,11 +7,12 @@ import discord
 
 from vice_design import ASSETS, GUILD_ID, BOT_ID, OWNER_ID, CYAN, PINK
 from vice_expressions import (install_expansion, STATIC_EMOJIS, ANIMATED_EMOJIS,
-                              MASCOT_ANIMATED_EMOJIS, HYPE_ANIMATED_EMOJIS)
+                              MASCOT_ANIMATED_EMOJIS, HYPE_ANIMATED_EMOJIS,
+                              MAX_MASCOT_EMOJIS, MAX_HYPE_EMOJIS)
 
 log = logging.getLogger('ViceDistrict.community')
 ART_VERSION = 'vice-expressions-v1'
-COMMUNITY_TOOLS_VERSION = 'vice-tools-expanded-v3'
+COMMUNITY_TOOLS_VERSION = 'vice-tools-expanded-v4'
 EVENT_VERSION = 'vice-opening-events-v1'
 PR_TIME = timezone(timedelta(hours=-4), 'Puerto Rico AST')
 OPENING_WEEKDAY = 4  # Friday, selected as the initial planning default.
@@ -271,12 +272,18 @@ class CommunityExtras:
             animated = '  '.join(f'<a:{name}:{self.system.store.get("emoji:"+name)}>' for name in ANIMATED_EMOJIS)
             mascots = '  '.join(f'<a:{name}:{self.system.store.get("emoji:"+name)}>' for name in MASCOT_ANIMATED_EMOJIS)
             hype = '  '.join(f'<a:{name}:{self.system.store.get("emoji:"+name)}>' for name in HYPE_ANIMATED_EMOJIS)
+            max_mascots = '  '.join(f'<a:{name}:{self.system.store.get("emoji:"+name)}>' for name in MAX_MASCOT_EMOJIS)
+            max_hype = '  '.join(f'<a:{name}:{self.system.store.get("emoji:"+name)}>' for name in MAX_HYPE_EMOJIS)
             async def publish():
                 await self.system.panel(guild, 'announcements', ('🌴 NOVEDADES DEL CORILLO',
                     '**Tu comunidad, con identidad propia.**\n\n'
+                    '**🔥 NUEVOS ANIMADOS MAX**\n'
+                    'Saltos, carcajadas, lágrimas, corazones y saludos con mucho movimiento:\n' + max_mascots + '\n\n'
+                    'Bandera ondeando, DURO, GG, corona, derrape y BOOM:\n' + max_hype + '\n'
+                    'Búscalos escribiendo **:vd_** y elige los que terminan en **_max**.\n\n'
                     f'🎙️ **Salas para tu crew:** crea y administra tu sala en <#{self.system.channel_id("voicepanel")}>.\n\n'
                     f'🎉 **Eventos:** revisa las próximas convocatorias en <#{self.system.channel_id("events")}> y pulsa «Me interesa».\n\n'
-                    '**30 emojis exclusivos · 18 animados:**\nDistrito: ' + emojis + '\n\n'
+                    '**42 emojis exclusivos · 30 animados:**\nDistrito: ' + emojis + '\n\n'
                     '**Memes de nuestro coquí:**\n' + memes + '\n\n'
                     '**Animados:**\n' + animated + '\n\n'
                     '**El coquí cobra vida:** fiesta, carcajada, llanto, rabia, amor y saludo.\n' + mascots + '\n\n'
