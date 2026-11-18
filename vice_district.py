@@ -14,7 +14,8 @@ from discord import app_commands
 from esschino import StudioStore
 from studio_journal import ChangeLog, server_snapshot
 from vice_design import (GUILD_ID, BOT_ID, OWNER_ID, VERSION, STAFF_VERSION, PINK, CYAN, CORAL, DESCRIPTION,
-                         ROLES, GROUPS, SELF_ROLES, CATEGORIES, CHANNELS, panel_copy)
+                         ROLES, GROUPS, SELF_ROLES, CATEGORIES, CHANNELS, panel_copy,
+                         DECORATION_VERSION, CLOSED_CATEGORY, TICKET_OPEN_PREFIX, TICKET_CLOSED_PREFIX)
 from vice_welcome import ViceWelcome, render_card, render_cover
 from welcome_cards import WelcomeCards, clean_name
 
@@ -218,11 +219,49 @@ class ViceDistrict:
             if self.store.get('staff_release') != STAFF_VERSION:
                 await self.track('STAFF_SETUP', 'Configurar equipo y despedidas privadas',
                     lambda: self.install_staff(guild), STAFF_VERSION)
+            if self.store.get('decoration_release') != DECORATION_VERSION:
+                await self.track('DECORATION', 'Decorar categorías y canales del distrito',
+                    lambda: self.decorate(guild), DECORATION_VERSION)
             self.configured = True
             self.ready_event.set()
             if self.welcome.task is None or self.welcome.task.done():
                 self.welcome.task = asyncio.create_task(self.welcome.recover(), name='vice-welcome-recovery')
             log.info('VICE_READY guild=%s roles=%s channels=%s release=%s staff=%s', GUILD_ID, len(ROLES) + 1, len(CHANNELS), VERSION, STAFF_VERSION)
+
+    async def decorate(self, guild):
+        """Rename existing objects only; preserve parents, IDs and permissions."""
+        self.validate_guild(guild)
+        channels = await guild.fetch_channels()
+        by_id = {channel.id: channel for channel in channels}
+        plan = []
+        for key, name, _ in CATEGORIES:
+            category = by_id.get(self.store.get('category:' + key))
+            if category is None:
+                raise ValueError('No se encontró la categoría del distrito: ' + key)
+            plan.append((category, name))
+        for key, _, name, *_ in CHANNELS:
+            channel = by_id.get(self.channel_id(key))
+            if channel is None:
+                raise ValueError('No se encontró el canal del distrito: ' + key)
+            plan.append((channel, name))
+        archive = by_id.get(self.store.get('category:closed'))
+        archive = archive or discord.utils.get(channels, name='🔒 TICKETS ARCHIVADOS')
+        if archive:
+            plan.append((archive, CLOSED_CATEGORY))
+        for channel in channels:
+            topic = getattr(channel, 'topic', '') or ''
+            if topic.startswith('VIce ticket owner=') or topic.startswith('VIce ticket closed owner='):
+                owner = topic.rsplit('=', 1)[-1]
+                if owner.isdecimal():
+                    prefix = TICKET_CLOSED_PREFIX if topic.startswith('VIce ticket closed ') else TICKET_OPEN_PREFIX
+                    plan.append((channel, prefix + owner[-6:]))
+        changed = 0
+        for channel, name in plan:
+            if channel.name != name:
+                await channel.edit(name=name, reason=REASON)
+                changed += 1
+        await self.call('put', 'decoration_release', DECORATION_VERSION)
+        log.info('VICE_DECORATION_READY guild=%s changed=%s release=%s', GUILD_ID, changed, DECORATION_VERSION)
 
     async def install_staff(self, guild):
         """Small additive migration; preserve community panels and all histories."""
@@ -505,7 +544,7 @@ class ViceDistrict:
             async def apply():
                 guild = interaction.guild
                 category = guild.get_channel(self.store.get('category:help'))
-                channel = await guild.create_text_channel('🎫・ticket-' + str(interaction.user.id)[-6:],
+                channel = await guild.create_text_channel(TICKET_OPEN_PREFIX + str(interaction.user.id)[-6:],
                     category=category, topic=marker, overwrites=self.overwrites(guild, 'ticket', interaction.user), reason=REASON)
                 await self.call('add_ticket', channel.id, interaction.user.id, 'comunidad')
                 await channel.send(embed=self.embed('🎫 Te escuchamos',
@@ -526,15 +565,16 @@ class ViceDistrict:
             async def apply():
                 guild = interaction.guild
                 category = guild.get_channel(self.store.get('category:closed'))
+                category = category or discord.utils.get(guild.categories, name=CLOSED_CATEGORY)
                 category = category or discord.utils.get(guild.categories, name='🔒 TICKETS ARCHIVADOS')
                 if category is None:
-                    category = await guild.create_category('🔒 TICKETS ARCHIVADOS', overwrites=self.overwrites(guild, 'staff'), reason=REASON)
+                    category = await guild.create_category(CLOSED_CATEGORY, overwrites=self.overwrites(guild, 'staff'), reason=REASON)
                 await self.call('put', 'category:closed', category.id)
                 try:
                     owner = await guild.fetch_member(int(row['owner']))
                 except discord.NotFound:
                     owner = discord.Object(id=int(row['owner']), type=discord.Member)
-                await interaction.channel.edit(name='🔒・cerrado-' + str(row['owner'])[-6:], category=category,
+                await interaction.channel.edit(name=TICKET_CLOSED_PREFIX + str(row['owner'])[-6:], category=category,
                     topic='VIce ticket closed owner=' + str(row['owner']),
                     overwrites=self.overwrites(guild, 'closed', owner), reason=REASON)
                 await interaction.channel.send(embed=self.embed('🔒 Conversación archivada',
@@ -705,4 +745,3 @@ class ViceDistrict:
             await interaction.followup.send('Publicado: ' + message.jump_url, ephemeral=True)
 
         self.bot.tree.add_command(group, guild=discord.Object(id=GUILD_ID))
-

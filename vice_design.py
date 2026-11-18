@@ -6,6 +6,10 @@ BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
 VERSION = 'vice-district-community-v4-pr'
 STAFF_VERSION = 'vice-staff-departures-v2-admin-only'
+DECORATION_VERSION = 'vice-decorated-channels-v1'
+CLOSED_CATEGORY = '━━ 🔒 ARCHIVO ━━'
+TICKET_OPEN_PREFIX = '┊・🎫│ticket-'
+TICKET_CLOSED_PREFIX = '┊・🔒│cerrado-'
 ASSETS = Path(__file__).parent / 'assets' / 'vice-district'
 FONTS = Path(__file__).parent / 'assets' / 'esschino' / 'fonts'
 PINK, CYAN, CORAL = 0xFF168A, 0x00D9E8, 0xFF795D
@@ -53,37 +57,37 @@ GROUPS = {
 }
 SELF_ROLES = frozenset(key for _, keys, _ in GROUPS.values() for key in keys)
 CATEGORIES = [
-    ('info', '🌴 EMPIEZA AQUÍ', 'read'),
-    ('community', '🇵🇷 CORILLO LATINO', 'chat'),
-    ('game', '🎮 UNIVERSO GTA VI', 'chat'),
-    ('voice', '🔊 VICE RADIO', 'chat'),
-    ('help', '🛟 SOPORTE', 'read'),
-    ('team', '🛠 EQUIPO', 'staff'),
+    ('info', '━━ 🌴 EMPIEZA AQUÍ ━━', 'read'),
+    ('community', '━━ 🇵🇷 CORILLO LATINO ━━', 'chat'),
+    ('game', '━━ 🎮 UNIVERSO GTA VI ━━', 'chat'),
+    ('voice', '━━ 🔊 VICE RADIO ━━', 'chat'),
+    ('help', '━━ 🎫 AYUDA Y TICKETS ━━', 'read'),
+    ('team', '━━ 🛡️ EQUIPO ━━', 'staff'),
 ]
 # key, category, name, topic, policy, voice, slowmode/user limit
 CHANNELS = [
-    ('welcome','info','👋・bienvenida','Tu llegada a VIce District. Lee las normas, elige tus roles y conoce a la comunidad.','read',False,0),
-    ('rules','info','📜・normas','Convivencia, privacidad, spoilers y juego limpio.','read',False,0),
-    ('roles','info','🎭・elige-tus-roles','Personaliza tu perfil: plataformas, región y avisos. Puedes cambiar tus elecciones cuando quieras.','read',False,0),
-    ('announcements','info','📢・anuncios','Comunicados de la comunidad y novedades del servidor.','read',False,0),
-    ('general','community','💬・general','El punto de encuentro del corillo boricua y latinoamericano. Charla, comparte y disfruta del ambiente.','chat',False,5),
-    ('introductions','community','🙌・presentaciones','Cuéntanos tu apodo, región, plataformas y tu GTA favorito. No publiques datos personales.','chat',False,10),
-    ('clips','community','📸・clips-y-capturas','Tus mejores momentos de GTA. Da crédito, marca spoilers y evita contenido gráfico.','chat',False,15),
-    ('memes','community','😂・memes','Humor y memes de GTA con respeto. Sin spam ni ataques personales.','chat',False,10),
-    ('suggestions','community','💡・sugerencias','Una idea por mensaje: propuesta, beneficio y ejemplo. Opina con respeto.','chat',False,30),
-    ('news','game','📰・noticias','Noticias con fuentes verificables. Los rumores se comentan en teorías.','read',False,0),
-    ('theories','game','🔎・teorías','Analiza pistas y comparte teorías. Distingue especulación de hechos y oculta spoilers.','chat',False,10),
-    ('guides','game','🧭・guías-y-ayuda','Dudas sobre GTA y ayuda entre jugadores. Explica tu plataforma y lo que ya probaste.','chat',False,5),
-    ('crew','game','🤝・busca-crew','Encuentra gente afín: plataforma, zona horaria, horario y estilo de juego.','chat',False,30),
-    ('events','game','🎉・eventos','Quedadas, retos y actividades de la comunidad. Horarios y requisitos en cada convocatoria.','read',False,0),
-    ('lobby','voice','🌴 Lobby',None,'chat',True,0),
-    ('voice1','voice','🚗 Crew 01',None,'chat',True,6),
-    ('voice2','voice','🌇 Crew 02',None,'chat',True,6),
-    ('support','help','🎫・soporte','Abre un ticket privado para ayuda del servidor o reportes al equipo.','read',False,0),
-    ('staff','team','👥・chat-staff','Coordinación privada de Fundador, Administrador, Moderación y Soporte.','staff',False,0),
-    ('log','team','📋・registro-staff','Resumen privado de la instalación y actividad de soporte.','staffread',False,0),
-    ('goodbye','team','🚪・despedidas','Registro privado de salidas, expulsiones y baneos. Acceso exclusivo de Fundador y Administrador.','adminread',False,0),
-    ('staffvoice','team','🛠 Sala del equipo',None,'staff',True,0),
+    ('welcome','info','╭・👋│bienvenida','Tu llegada a VIce District. Lee las normas, elige tus roles y conoce a la comunidad.','read',False,0),
+    ('rules','info','├・📜│normas','Convivencia, privacidad, spoilers y juego limpio.','read',False,0),
+    ('roles','info','├・🎭│elige-tus-roles','Personaliza tu perfil: plataformas, región y avisos. Puedes cambiar tus elecciones cuando quieras.','read',False,0),
+    ('announcements','info','╰・📢│anuncios','Comunicados de la comunidad y novedades del servidor.','read',False,0),
+    ('general','community','╭・💬│general','El punto de encuentro del corillo boricua y latinoamericano. Charla, comparte y disfruta del ambiente.','chat',False,5),
+    ('introductions','community','├・🙌│presentaciones','Cuéntanos tu apodo, región, plataformas y tu GTA favorito. No publiques datos personales.','chat',False,10),
+    ('clips','community','├・📸│clips-y-capturas','Tus mejores momentos de GTA. Da crédito, marca spoilers y evita contenido gráfico.','chat',False,15),
+    ('memes','community','├・😂│memes','Humor y memes de GTA con respeto. Sin spam ni ataques personales.','chat',False,10),
+    ('suggestions','community','╰・💡│sugerencias','Una idea por mensaje: propuesta, beneficio y ejemplo. Opina con respeto.','chat',False,30),
+    ('news','game','╭・📰│noticias','Noticias con fuentes verificables. Los rumores se comentan en teorías.','read',False,0),
+    ('theories','game','├・🔎│teorías','Analiza pistas y comparte teorías. Distingue especulación de hechos y oculta spoilers.','chat',False,10),
+    ('guides','game','├・🧭│guías-y-ayuda','Dudas sobre GTA y ayuda entre jugadores. Explica tu plataforma y lo que ya probaste.','chat',False,5),
+    ('crew','game','├・🤝│busca-crew','Encuentra gente afín: plataforma, zona horaria, horario y estilo de juego.','chat',False,30),
+    ('events','game','╰・🎉│eventos','Quedadas, retos y actividades de la comunidad. Horarios y requisitos en cada convocatoria.','read',False,0),
+    ('lobby','voice','╭・🌴│Lobby',None,'chat',True,0),
+    ('voice1','voice','├・🚗│Crew 01',None,'chat',True,6),
+    ('voice2','voice','╰・🌇│Crew 02',None,'chat',True,6),
+    ('support','help','╰・🎫│abrir-ticket','Abre un ticket privado para ayuda del servidor o reportes al equipo.','read',False,0),
+    ('staff','team','╭・👥│chat-staff','Coordinación privada de Fundador, Administrador, Moderación y Soporte.','staff',False,0),
+    ('log','team','├・📋│registro-staff','Resumen privado de la instalación y actividad de soporte.','staffread',False,0),
+    ('goodbye','team','├・🚪│despedidas','Registro privado de salidas, expulsiones y baneos. Acceso exclusivo de Fundador y Administrador.','adminread',False,0),
+    ('staffvoice','team','╰・🛠│Sala del equipo',None,'staff',True,0),
 ]
 
 def panel_copy(key, c):
@@ -163,4 +167,3 @@ def panel_copy(key, c):
             'El equipo revisará las propuestas; publicar una idea no garantiza su aprobación.', CORAL),
     }
     return panels.get(key)
-

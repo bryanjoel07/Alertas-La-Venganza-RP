@@ -1,6 +1,12 @@
 # GTA VI Latino | VIce District
 
 Owner-authorized community release: `vice-district-community-v4-pr`, 2026-11-17.
+Visual naming migration: `vice-decorated-channels-v1`, 2026-11-18. Category
+headers use heavy line separators and channels use matching first/middle/last
+branches with emoji labels. This tracked migration edits names only, using saved
+IDs; it never changes parent categories, ordering, permission overwrites or
+message history. Existing and future tickets share the same visual style.
+The private departures channel retains its explicit admin-only permissions.
 Additive staff migration: `vice-staff-departures-v2-admin-only`, 2026-11-18.
 Adds a private departures channel and the Administrator role without rebuilding
 the community layout or reposting the welcome sample. Administrator has full
@@ -75,4 +81,3 @@ studio_guard.py to the original single-guild allowlist, then deploy the restored
 Do not delete the new Discord channels or their histories. The new journal's bot_changes
 table contains the original roles, positions, permissions and channel overwrites for
 review if the owner requests a layout rollback. Never apply that snapshot to another guild.
-
