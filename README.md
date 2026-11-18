@@ -49,6 +49,14 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
+### Recordatorios privados de tickets de VIce District
+
+El primer aviso llega cuando un ticket lleva dos horas sin su primera respuesta humana del equipo. Después de esa primera respuesta, las nuevas consultas del autor esperan veinticuatro horas. Mientras siga pendiente, se envía como máximo un recordatorio por ticket cada veinticuatro horas; los mensajes adicionales del autor no reinician la espera. Una respuesta del equipo pausa los avisos hasta la siguiente consulta, y cerrar el ticket los detiene. Pulsar Atender no cuenta como respuesta.
+
+El aviso se publica únicamente dentro del ticket privado y menciona al responsable actual. Si no hay asignación, menciona exclusivamente el rol registrado de Soporte. El bot comprueba el historial antes de avisar, valida permisos y estado, y conserva metadatos de espera y recibos de entrega en la base propia de VIce. No almacena el texto privado de las consultas para esta función. Los reinicios conservan la cadencia y no acumulan avisos atrasados. Las comprobaciones periódicas se realizan aproximadamente cada minuto.
+
+Para desactivar esta función, desplegar `05f8676a7998912a6881942d2bf747405b55afe7` en el servicio independiente y conservar la base y sus recibos actuales. Los avisos ya publicados permanecen en el historial; no borrar tickets, restablecer una base antigua ni repetir la instalación. El código anterior conserva las comparaciones visuales de auditoría y el resto del sistema de tickets.
+
 ### Comparaciones visuales de VIce District — revisión v7
 
 Las actualizaciones del servidor explican qué cambió: fondo de invitación, banner, icono, nombre, descripción o canal del sistema. Los cambios de imagen se comparan por su identidad real y se describen sin mostrar hashes; los identificadores se distinguen como Usuario y Servidor, con el nombre real de cada uno junto al ID. Los nombres se obtienen de las identidades coincidentes del evento; si Discord no resuelve un nombre, se conserva su ID sin inventarlo. Los permisos conservan su lista por líneas.

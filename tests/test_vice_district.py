@@ -252,7 +252,8 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_archive_start_failure_does_not_block_antispam_audit_or_ticket_panel(self):
         for service in (self.system.tickets, self.system.ticket_archive,
-                        self.system.ticket_feedback, self.system.ticket_deletion, self.system.audit, self.system.antispam):
+                        self.system.ticket_feedback, self.system.ticket_reminders,
+                        self.system.ticket_deletion, self.system.audit, self.system.antispam):
             service.ready = AsyncMock()
         self.system.optional_roles.ready=AsyncMock(side_effect=ValueError('Role catalog not available'))
         self.system.ticket_archive.ready.side_effect=ValueError('Archive not available')
@@ -261,7 +262,8 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs('ViceDistrict',level='ERROR'):
             await self.system.ready_community_services()
         for service in (self.system.tickets, self.system.ticket_deletion,
-                        self.system.ticket_feedback, self.system.audit, self.system.antispam):
+                        self.system.ticket_feedback, self.system.ticket_reminders,
+                        self.system.audit, self.system.antispam):
             service.ready.assert_awaited_once()
         self.system.refresh_ticket_panel.assert_awaited_once()
         self.system.optional_roles.ready.assert_awaited_once()

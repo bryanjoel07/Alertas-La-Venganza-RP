@@ -26,6 +26,7 @@ from vice_ticket_delete import TicketDeletion
 from vice_tickets import TicketCenter
 from vice_ticket_archive import TicketArchive
 from vice_ticket_feedback import TicketFeedback
+from vice_ticket_reminders import TicketReminders
 from vice_optional_roles import OptionalRoles
 from vice_identity_panels import refresh_identity_panels
 from vice_role_icons import RoleIcons
@@ -139,6 +140,7 @@ class ViceDistrict:
         self.tickets = TicketCenter(self)
         self.ticket_archive = TicketArchive(self)
         self.ticket_feedback = TicketFeedback(self)
+        self.ticket_reminders = TicketReminders(self)
         self.optional_roles = OptionalRoles(self)
         self.role_icons = RoleIcons(self)
         self.bot_separator = BotSeparator(self)
@@ -209,6 +211,7 @@ class ViceDistrict:
         await self.tickets.start()
         await self.ticket_archive.start()
         await self.ticket_feedback.start()
+        await self.ticket_reminders.start()
         await self.antispam.start()
         for view in [WelcomePanel(self, links=False), RolesPanel(self), SupportPanel(self), CloseTicketPanel(self)]:
             self.bot.add_view(view)
@@ -289,6 +292,7 @@ class ViceDistrict:
                 ('boost_notices', self.boost_notices.ready),
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
                 ('ticket_feedback', self.ticket_feedback.ready),
+                ('ticket_reminders', self.ticket_reminders.ready),
                 ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),
                 ('audit', self.audit.ready), ('antispam', self.antispam.ready)):
             try:
@@ -847,6 +851,7 @@ class ViceDistrict:
             return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
+        await self.ticket_reminders.close()
         await self.tickets.close()
         await self.ticket_feedback.close()
         if self.ticket_backfill_task:

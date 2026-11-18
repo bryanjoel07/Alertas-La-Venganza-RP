@@ -17,9 +17,10 @@ class AuditDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.activity = NS(member_join=AsyncMock(), member_remove=AsyncMock(),
                            voice_state_update=AsyncMock())
         self.antispam = NS(message=AsyncMock(), member_join=AsyncMock())
+        self.reminders = NS(message=AsyncMock())
         self.vice = NS(activity=self.activity, member_join=AsyncMock(), member_remove=AsyncMock(),
             antispam=self.antispam, voice=NS(voice_state_update=AsyncMock()),
-            audit=NS(entry_create=AsyncMock()))
+            audit=NS(entry_create=AsyncMock()), ticket_reminders=self.reminders)
         self.bot = NS(vice=self.vice, get_guild=Mock(return_value=self.guild),
             configured_event=NS(wait=AsyncMock()), welcome=NS(joined=AsyncMock()),
             esschino=NS(observe=AsyncMock()))
@@ -32,7 +33,7 @@ class AuditDispatchTests(unittest.IsolatedAsyncioTestCase):
                          self.activity.voice_state_update, self.vice.member_join,
                          self.vice.member_remove, self.vice.voice.voice_state_update,
                          self.vice.audit.entry_create, self.antispam.message,
-                         self.antispam.member_join):
+                         self.antispam.member_join, self.reminders.message):
             callback.assert_not_awaited()
 
     async def test_unrelated_guild_is_rejected_before_any_district_callback(self):
@@ -83,10 +84,11 @@ class AuditDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.bot.welcome.joined.assert_not_awaited()
         self.logger.exception.assert_called()
 
-    async def test_district_message_routes_only_to_antispam(self):
+    async def test_district_message_routes_to_antispam_and_ticket_reminders(self):
         message = NS(id=123, guild=self.guild, channel=NS(id=456))
         await StoreBot.on_message(self.bot, message)
         self.antispam.message.assert_awaited_once_with(message)
+        self.reminders.message.assert_awaited_once_with(message)
         self.bot.esschino.observe.assert_not_awaited()
         self.bot.configured_event.wait.assert_not_awaited()
 

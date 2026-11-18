@@ -127,6 +127,10 @@ class StoreBot(discord.Client):
                 await self.vice.antispam.message(message)
             except Exception:
                 log.exception('VICE_ANTISPAM_MESSAGE failed channel=%s', message.channel.id)
+            try:
+                await self.vice.ticket_reminders.message(message)
+            except Exception:
+                log.exception('VICE_TICKET_REMINDER_MESSAGE failed channel=%s', message.channel.id)
             return
         if message.guild and message.guild.id == GUILD_ID:
             try:
