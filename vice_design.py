@@ -5,6 +5,7 @@ GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
 VERSION = 'vice-district-community-v4-pr'
+STAFF_VERSION = 'vice-staff-departures-v1'
 ASSETS = Path(__file__).parent / 'assets' / 'vice-district'
 FONTS = Path(__file__).parent / 'assets' / 'esschino' / 'fonts'
 PINK, CYAN, CORAL = 0xFF168A, 0x00D9E8, 0xFF795D
@@ -13,12 +14,16 @@ DESCRIPTION = ('Desde Puerto Rico para toda Latinoamérica. Tu corillo de GTA VI
                'Encuentra gente con quien jugar. Comunidad de fans no oficial.')
 
 # Keys, display names, color, permission flags, display separately, old name.
+STAFF_CHAT = dict(view_channel=True, read_message_history=True, send_messages=True,
+                 embed_links=True, attach_files=True, add_reactions=True,
+                 connect=True, speak=True, use_application_commands=True)
 ROLES = [
     ('team_separator', '━━ 🛡️ EQUIPO ━━', PINK, {}, False, None),
-    ('mod', '🛡️ Moderación', PINK, dict(manage_messages=True, manage_threads=True,
-        moderate_members=True, kick_members=True, mute_members=True, deafen_members=True,
+    ('admin', '⚙️ Administrador', 0xFF4866, dict(administrator=True), True, None),
+    ('mod', '🛡️ Moderación', PINK, dict(**STAFF_CHAT, manage_messages=True, pin_messages=True, manage_threads=True,
+        moderate_members=True, kick_members=True, ban_members=True, manage_nicknames=True, mute_members=True, deafen_members=True,
         move_members=True, view_audit_log=True), True, 'Moderación'),
-    ('support', '🛟 Soporte', 0x38CFAE, {}, True, None),
+    ('support', '🛟 Soporte', 0x38CFAE, dict(STAFF_CHAT), True, None),
     ('creator', '🎬 Creadores', 0xB87AFF, {}, True, 'Creadores'),
     ('community_separator', '━━ 🌆 COMUNIDAD ━━', CYAN, {}, False, None),
     ('legend', '💎 Leyenda de Vice', 0xFFD36A, {}, True, None),
@@ -75,8 +80,9 @@ CHANNELS = [
     ('voice1','voice','🚗 Crew 01',None,'chat',True,6),
     ('voice2','voice','🌇 Crew 02',None,'chat',True,6),
     ('support','help','🎫・soporte','Abre un ticket privado para ayuda del servidor o reportes al equipo.','read',False,0),
-    ('staff','team','👥・chat-staff','Coordinación privada de Fundador, Moderación y Soporte.','staff',False,0),
+    ('staff','team','👥・chat-staff','Coordinación privada de Fundador, Administrador, Moderación y Soporte.','staff',False,0),
     ('log','team','📋・registro-staff','Resumen privado de la instalación y actividad de soporte.','staffread',False,0),
+    ('goodbye','team','🚪・despedidas','Registro automático de salidas. Visible únicamente para Fundador, Administrador, Moderación y Soporte.','staffread',False,0),
     ('staffvoice','team','🛠 Sala del equipo',None,'staff',True,0),
 ]
 
@@ -110,7 +116,7 @@ def panel_copy(key, c):
             '🔔 **Intereses:** avisos de GTA VI, eventos y búsqueda de crew.\n\n'
             'Cada menú reemplaza solo las opciones de su grupo. Déjalo vacío para retirarlas. '
             'Puedes volver cuando quieras.\n\n'
-            '**Equipo:** Fundador, Moderación y Soporte.\n'
+            '**Equipo:** Fundador, Administrador, Moderación y Soporte.\n'
             '**Tu recorrido:** 👤 Miembro → 🌴 Ciudadano → 🌆 Veterano → 💎 Leyenda de Vice.\n'
             '**Miembro** se entrega al entrar; **Ciudadano**, al aceptar las normas. '
             'Veterano, Leyenda, Creadores y los roles del equipo los asigna la administración.', CYAN),
@@ -144,6 +150,12 @@ def panel_copy(key, c):
             'Explica el problema y añade enlaces o pruebas útiles.\n\n'
             'Nunca compartas contraseñas, tokens o datos de pago. Un ticket abierto por persona. '
             'Al cerrarlo, la conversación se conserva en privado.', CYAN),
+        'goodbye': ('🚪 SALIDAS DEL DISTRITO',
+            '**Registro privado del equipo.**\n\n'
+            'EssChino registrará aquí a las personas que salgan del servidor, con su nombre, avatar y hora. '
+            'La fecha de entrada se mostrará cuando esté disponible.\n\n'
+            'Este registro es visible para **Fundador, Administrador, Moderación y Soporte**. '
+            'Una salida no indica por sí sola si fue voluntaria, una expulsión o un veto.', CORAL),
         'suggestions': ('💡 DISEÑEMOS EL BARRIO JUNTOS',
             '**Tu idea puede mejorar la comunidad.**\n\n'
             'Publica una propuesta por mensaje con **qué cambiarías**, **a quién ayuda** y **un ejemplo**. '
@@ -151,3 +163,4 @@ def panel_copy(key, c):
             'El equipo revisará las propuestas; publicar una idea no garantiza su aprobación.', CORAL),
     }
     return panels.get(key)
+

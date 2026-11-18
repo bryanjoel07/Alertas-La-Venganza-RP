@@ -1,6 +1,7 @@
 """Guild-isolated GTA VI community, persistent panels and private support."""
 import asyncio
 from contextlib import closing
+from datetime import datetime, timezone
 import io
 import json
 import logging
@@ -11,7 +12,7 @@ from discord import app_commands
 
 from esschino import StudioStore
 from studio_journal import ChangeLog, server_snapshot
-from vice_design import (GUILD_ID, BOT_ID, OWNER_ID, VERSION, PINK, CYAN, DESCRIPTION,
+from vice_design import (GUILD_ID, BOT_ID, OWNER_ID, VERSION, STAFF_VERSION, PINK, CYAN, CORAL, DESCRIPTION,
                          ROLES, GROUPS, SELF_ROLES, CATEGORIES, CHANNELS, panel_copy)
 from vice_welcome import ViceWelcome, render_cover
 
@@ -113,6 +114,7 @@ class ViceDistrict:
         self.ready_lock = asyncio.Lock()
         self.roles_lock = asyncio.Lock()
         self.ticket_lock = asyncio.Lock()
+        self.goodbye_lock = asyncio.Lock()
         self.ready_event = asyncio.Event()
         self.configured = False
         self.role_cache = {}
@@ -149,7 +151,7 @@ class ViceDistrict:
     def is_staff(self, member):
         if member.guild.id != GUILD_ID:
             return False
-        allowed = {self.store.get('role:mod'), self.store.get('role:support')}
+        allowed = {self.store.get('role:admin'), self.store.get('role:mod'), self.store.get('role:support')}
         return member.id == OWNER_ID or member.guild_permissions.administrator or any(r.id in allowed for r in member.roles)
 
     def embed(self, title, description, color=PINK):
@@ -179,13 +181,15 @@ class ViceDistrict:
         rules[guild.me] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
             send_messages=True, embed_links=True, attach_files=True, connect=True, speak=True,
             manage_channels=True, manage_messages=True, pin_messages=True)
-        for key in ['founder', 'mod', 'support']:
+        for key in ['founder', 'admin', 'mod', 'support']:
             role = self.role(guild, key)
             if role:
                 rules[role] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
                     send_messages=policy not in {'closed', 'staffread'} and (key != 'support' or policy != 'read'),
                     send_messages_in_threads=policy not in {'closed', 'staffread', 'read'},
                     connect=True, speak=True, attach_files=True, embed_links=True)
+                if key == 'support' and policy == 'ticket':
+                    rules[role].manage_messages = True
         if owner:
             rules[owner] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
                 send_messages=policy != 'closed', attach_files=True, embed_links=True,
@@ -205,11 +209,84 @@ class ViceDistrict:
             if self.store.get('release') != VERSION:
                 await self.track('INSTALL', 'Diseñar GTA VI Latino y publicar sus paneles',
                     lambda: self.install(guild), VERSION)
+            if self.store.get('staff_release') != STAFF_VERSION:
+                await self.track('STAFF_SETUP', 'Configurar equipo y despedidas privadas',
+                    lambda: self.install_staff(guild), STAFF_VERSION)
             self.configured = True
             self.ready_event.set()
             if self.welcome.task is None or self.welcome.task.done():
                 self.welcome.task = asyncio.create_task(self.welcome.recover(), name='vice-welcome-recovery')
-            log.info('VICE_READY guild=%s roles=%s channels=%s release=%s', GUILD_ID, len(ROLES) + 1, len(CHANNELS), VERSION)
+            log.info('VICE_READY guild=%s roles=%s channels=%s release=%s staff=%s', GUILD_ID, len(ROLES) + 1, len(CHANNELS), VERSION, STAFF_VERSION)
+
+    async def install_staff(self, guild):
+        """Small additive migration; preserve community panels and all histories."""
+        self.validate_guild(guild)
+        roles = await guild.fetch_roles()
+        for key, name, color, permissions, hoist, old in ROLES:
+            if key not in {'admin', 'mod', 'support'}:
+                continue
+            role = discord.utils.get(roles, id=self.store.get('role:' + key))
+            role = role or discord.utils.get(roles, name=name)
+            values = dict(name=name, colour=discord.Colour(color), permissions=discord.Permissions(**permissions),
+                          hoist=hoist, mentionable=False, reason=REASON)
+            role = await role.edit(**values) if role else await guild.create_role(**values)
+            await self.call('put', 'role:' + key, role.id)
+            self.role_cache[key] = role
+        roles = await guild.fetch_roles()
+        admin = discord.utils.get(roles, id=self.store.get('role:admin'))
+        mod = discord.utils.get(roles, id=self.store.get('role:mod'))
+        bot_role = max(r for r in roles if r.id in {r.id for r in guild.me.roles})
+        if not mod < bot_role or admin >= bot_role:
+            raise ValueError('El bot debe estar por encima de los roles del equipo.')
+        if admin <= mod:
+            target = min(mod.position + 1, bot_role.position - 1)
+            await guild.edit_role_positions(positions={admin: target}, reason=REASON)
+        roles = await guild.fetch_roles()
+        for key in ('admin', 'mod', 'support'):
+            self.role_cache[key] = discord.utils.get(roles, id=self.store.get('role:' + key))
+        if not self.role_cache['admin'] > self.role_cache['mod'] > self.role_cache['support']:
+            raise ValueError('Revisa el orden: Administrador, Moderación, Soporte.')
+        channels = await guild.fetch_channels()
+        team = discord.utils.get(channels, id=self.store.get('category:team'))
+        if team is None:
+            raise ValueError('No se encontró la categoría privada del equipo.')
+        await team.edit(overwrites=self.overwrites(guild, 'staff'), reason=REASON)
+        for key in ('staff', 'log', 'staffvoice', 'goodbye'):
+            spec = next(x for x in CHANNELS if x[0] == key)
+            _, _, name, topic, policy, voice, limit = spec
+            channel = discord.utils.get(channels, id=self.channel_id(key)) or discord.utils.get(channels, name=name)
+            values = dict(overwrites=self.overwrites(guild, policy), reason=REASON)
+            if not voice:
+                values['topic'] = topic
+            if channel:
+                channel = await channel.edit(**values)
+            elif key == 'goodbye':
+                channel = await guild.create_text_channel(name, category=team, **values)
+            else:
+                raise ValueError('Falta un canal del equipo: ' + key)
+            await self.call('put', 'channel:' + key, channel.id)
+            self.channel_cache[key] = channel
+        # Existing ticket participants/history stay intact. Add only staff access.
+        for channel in channels:
+            topic = getattr(channel, 'topic', '') or ''
+            if not topic.startswith('VIce ticket '):
+                continue
+            closed = topic.startswith('VIce ticket closed ')
+            rules = channel.overwrites
+            rules[self.role_cache['admin']] = self.overwrites(guild, 'closed' if closed else 'ticket')[self.role_cache['admin']]
+            rules[self.role_cache['support']] = self.overwrites(guild, 'closed' if closed else 'ticket')[self.role_cache['support']]
+            await channel.edit(overwrites=rules, reason=REASON)
+        await self.panel(guild, 'goodbye', panel_copy('goodbye', self.channel_id), None)
+        await self.panel(guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self))
+        await self.panel(guild, 'log', ('🛡️ PERMISOS DEL EQUIPO',
+            '**⚙️ Administrador:** control completo del servidor. Solo se asigna manualmente a personas de confianza.\n\n'
+            '**🛡️ Moderación:** mensajes, hilos, apodos, tiempos de espera, expulsiones, vetos, auditoría y moderación de voz.\n\n'
+            '**🛟 Soporte:** atención de tickets y coordinación del equipo. Puede moderar mensajes dentro de tickets abiertos.\n\n'
+            f'**🚪 Despedidas:** salidas automáticas en <#{self.channel_id("goodbye")}>.\n\n'
+            'Los roles del equipo están excluidos de los menús públicos. Administrador tiene acceso completo; '
+            'Moderación y Soporte no pueden administrar roles ni configurar el servidor.', CYAN), None)
+        await self.call('put', 'staff_release', STAFF_VERSION)
+        log.info('VICE_STAFF_READY guild=%s channel=%s release=%s', GUILD_ID, self.channel_id('goodbye'), STAFF_VERSION)
 
     async def install(self, guild):
         roles = await guild.fetch_roles()
@@ -458,6 +535,8 @@ class ViceDistrict:
             return
         await self.ready_event.wait()
         current = await member.guild.fetch_member(member.id)
+        if current.joined_at:
+            await self.call('put', 'member_joined:' + str(current.id), current.joined_at.isoformat())
         role = self.role(member.guild, 'member')
         if role is None or role.permissions.value != 0:
             raise ValueError('El rol automático Miembro necesita revisión del equipo.')
@@ -468,6 +547,57 @@ class ViceDistrict:
             await self.track('AUTO_MEMBER', 'Entregar rol Miembro al entrar', assign, event,
                 snapshot=lambda: self.role_snapshot(member.guild, current.id))
         await self.welcome.joined(current)
+
+    async def member_remove(self, user, guild=None):
+        guild = guild or getattr(user, 'guild', None)
+        if guild is None or guild.id != GUILD_ID or user.bot:
+            return
+        self.validate_guild(guild)
+        await self.ready_event.wait()
+        channel = self.channel(guild, 'goodbye')
+        if (channel is None or channel.guild.id != GUILD_ID or
+                channel.overwrites_for(guild.default_role).view_channel is not False):
+            raise ValueError('El canal de despedidas debe ser privado para el equipo.')
+        joined = getattr(user, 'joined_at', None)
+        joined_value = joined.isoformat() if isinstance(joined, datetime) else self.store.get('member_joined:' + str(user.id))
+        left = datetime.now(timezone.utc)
+        # Membership generations distinguish a second departure after rejoining.
+        # Uncached users without any known join get a fresh event, never a
+        # permanent ID-only receipt that would suppress every future departure.
+        key = f'goodbye:{user.id}:{joined_value or left.isoformat()}'
+        marker = 'VIce District • ' + key
+        async with self.goodbye_lock:
+            existing = self.store.get(key)
+            if existing:
+                return existing
+            async for message in channel.history(limit=100):
+                if message.author.id == BOT_ID and any(e.footer.text == marker for e in message.embeds):
+                    await self.call('put', key, message.id)
+                    return message.id
+            name = discord.utils.escape_markdown(user.display_name)[:100]
+            username = discord.utils.escape_markdown(user.name)[:100]
+            embed = self.embed('🚪 Hasta luego, ' + name,
+                f'**{name}** salió del servidor.\n\n'
+                f'**Usuario:** {username}\n**ID:** `{user.id}`\n'
+                f'**Salida:** {discord.utils.format_dt(left, "F")}\n\n'
+                'Gracias por formar parte del corillo. Registro privado para el equipo.', CORAL)
+            if joined_value:
+                try:
+                    joined_time = datetime.fromisoformat(joined_value)
+                    embed.add_field(name='Se unió al distrito', value=discord.utils.format_dt(joined_time, 'F'))
+                except ValueError:
+                    pass
+            embed.set_thumbnail(url=user.display_avatar.url)
+            embed.set_footer(text=marker)
+            embed.timestamp = left
+            async def snapshot():
+                return dict(guild=GUILD_ID, channel=channel.id, member=user.id, message=self.store.get(key))
+            async def send():
+                message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                await self.call('put', key, message.id)
+                log.info('VICE_GOODBYE_SENT guild=%s member=%s message=%s', GUILD_ID, user.id, message.id)
+                return message.id
+            return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
         await self.welcome.close()
@@ -490,7 +620,8 @@ class ViceDistrict:
             await interaction.response.send_message(f'🟢 **VIce District**\nConfigurado: {self.configured}\n'
                 f'Bienvenidas con avatar: {bool(self.welcome.task and not self.welcome.task.done())}\n'
                 f'Roles de personas: {sum(not r[0].endswith("separator") for r in ROLES) + 1}\n'
-                f'Separadores visuales: 4\nVersión: {VERSION}', ephemeral=True)
+                f'Separadores visuales: 4\nDespedidas privadas: {bool(self.channel_id("goodbye"))}\n'
+                f'Versión: {VERSION}\nEquipo: {STAFF_VERSION}', ephemeral=True)
 
         @group.command(name='publicar', description='Publicar un anuncio, una noticia o un evento')
         @app_commands.choices(destino=[app_commands.Choice(name=n, value=k) for k,n in
@@ -501,7 +632,7 @@ class ViceDistrict:
             # Support can handle tickets; public announcements belong to owner/moderators.
             mod = self.role(interaction.guild, 'mod')
             if interaction.user.id != OWNER_ID and mod not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
-                raise ValueError('Solo Fundador o Moderación puede publicar anuncios.')
+                raise ValueError('Solo Fundador, Administrador o Moderación puede publicar anuncios.')
             if not 1 <= len(titulo) <= 256 or not 1 <= len(texto) <= 3800:
                 raise ValueError('Título: hasta 256 caracteres. Texto: hasta 3800 caracteres.')
             await interaction.response.defer(ephemeral=True)
@@ -514,3 +645,4 @@ class ViceDistrict:
             await interaction.followup.send('Publicado: ' + message.jump_url, ephemeral=True)
 
         self.bot.tree.add_command(group, guild=discord.Object(id=GUILD_ID))
+

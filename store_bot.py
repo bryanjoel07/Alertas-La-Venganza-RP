@@ -148,6 +148,14 @@ class StoreBot(discord.Client):
         except Exception:
             log.exception('WELCOME_CARD member_join_failed member=%s', member.id)
 
+    async def on_raw_member_remove(self, payload):
+        if payload.guild_id != VICE_GUILD_ID:
+            return
+        try:
+            await self.vice.member_remove(payload.user, guild=self.get_guild(payload.guild_id))
+        except Exception:
+            log.exception('VICE_GOODBYE failed member=%s', payload.user.id)
+
     async def close(self):
         await self.vice.close()
         if self.welcome.task:
@@ -302,3 +310,4 @@ class StoreBot(discord.Client):
                 log.error('STUDIO command_failed type=%s', type(cause).__name__, exc_info=cause)
             send = i.followup.send if i.response.is_done() else i.response.send_message
             await send(text[:1500], ephemeral=True)
+

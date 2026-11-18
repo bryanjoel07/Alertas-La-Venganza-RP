@@ -1,6 +1,19 @@
 # GTA VI Latino | VIce District
 
 Owner-authorized community release: `vice-district-community-v4-pr`, 2026-11-17.
+Additive staff migration: `vice-staff-departures-v1`, 2026-11-18.
+Adds a private departures channel and the Administrator role without rebuilding
+the community layout or reposting the welcome sample. Administrator has full
+Discord Administrator permission and remains unassigned until the owner chooses
+trusted people. Moderation can handle messages, pins, threads, nicknames, timeouts,
+kicks, bans, voice moderation and audit logs, but cannot manage server settings,
+roles, channels or webhooks. Support has ordinary communication permissions,
+private staff/ticket access and message moderation only inside open tickets.
+Departures are neutral records (not claims of bans or voluntary departures),
+including avatar, identity, departure time and known joining time. The raw member
+remove event covers members absent from Discord's cache. A private channel is
+required before posting. Membership receipts prevent duplicate cached events.
+All these changes use the separate district journal and database.
 Puerto Rico is the community's primary identity, welcoming all of Latin America.
 The banner, description and welcome reflect this; Puerto Rico is the first optional
 region and the reference timezone for future event announcements.
@@ -12,8 +25,8 @@ The existing Studio guild retains its handlers, store layout and `/data/esschino
 VIce District uses a separate `/data/vice-district.sqlite3`, exact guild and owner checks,
 its own command group `/vice`, persistent component IDs prefixed `vice:v1:` and welcome receipts.
 
-The layout contains six categories and 21 permanent channels: arrival, community,
-GTA discussion, voice, support and private staff. There are 21 human roles (including
+The layout contains six categories and 22 permanent channels: arrival, community,
+GTA discussion, voice, support and private staff. There are 22 human roles (including
 the existing Founder), four visual separator roles, plus the bot's managed role. The
 lowest role, Miembro, is assigned automatically on joining. Accepting the rules through
 the welcome button promotes Miembro to Ciudadano. Veterano and Leyenda de Vice are
@@ -55,3 +68,4 @@ studio_guard.py to the original single-guild allowlist, then deploy the restored
 Do not delete the new Discord channels or their histories. The new journal's bot_changes
 table contains the original roles, positions, permissions and channel overwrites for
 review if the owner requests a layout rollback. Never apply that snapshot to another guild.
+
