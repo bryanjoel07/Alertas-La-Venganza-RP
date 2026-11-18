@@ -154,7 +154,7 @@ class ViceDistrict:
 
     def embed(self, title, description, color=PINK):
         return discord.Embed(title=title, description=description, color=color).set_footer(
-            text='GTA VI Latino • VIce District • Comunidad de fans no oficial')
+            text='GTA VI Latino • Puerto Rico + Latinoamérica • Fans no oficiales')
 
     async def track(self, kind, title, operation, request, snapshot=None):
         self.validate_guild(self.bot.get_guild(GUILD_ID))
@@ -250,6 +250,8 @@ class ViceDistrict:
         categories = {}
         for index, (key, name, policy) in enumerate(CATEGORIES):
             category = discord.utils.get(existing, id=self.store.get('category:' + key)) or discord.utils.get(existing, name=name)
+            if category is None and key == 'community':
+                category = discord.utils.get(existing, name='🌆 COMUNIDAD')
             values = dict(name=name, position=index, overwrites=self.overwrites(guild, policy), reason=REASON)
             category = await category.edit(**values) if category else await guild.create_category(**values)
             categories[key] = category
@@ -336,19 +338,25 @@ class ViceDistrict:
         log.info('VICE_PANEL key=%s channel=%s message=%s', key, channel.id, message.id)
 
     async def owner_example(self, guild):
-        if self.store.get('owner_example'):
+        if self.store.get('owner_example') and self.store.get('owner_example_version') == VERSION:
             return
         member = await guild.fetch_member(OWNER_ID)
         filename = 'vice-bienvenida-muestra.jpg'
         channel = self.channel(guild, 'welcome')
+        existing = None
         async for message in channel.history(limit=100):
             if message.author.id == BOT_ID and any(a.filename == filename for a in message.attachments):
-                await self.call('put', 'owner_example', message.id)
-                return
+                existing = message
+                break
         card = await self.welcome.card(member)
-        message = await channel.send(embed=self.welcome.embed(member, filename, example=True),
-            file=discord.File(io.BytesIO(card), filename=filename), allowed_mentions=discord.AllowedMentions.none())
+        file = discord.File(io.BytesIO(card), filename=filename)
+        embed = self.welcome.embed(member, filename, example=True)
+        if existing:
+            message = await existing.edit(embed=embed, attachments=[file], allowed_mentions=discord.AllowedMentions.none())
+        else:
+            message = await channel.send(embed=embed, file=file, allowed_mentions=discord.AllowedMentions.none())
         await self.call('put', 'owner_example', message.id)
+        await self.call('put', 'owner_example_version', VERSION)
 
     async def role_snapshot(self, guild, user_id):
         member = await guild.fetch_member(user_id)

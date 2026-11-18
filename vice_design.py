@@ -4,13 +4,13 @@ from pathlib import Path
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-district-community-v3'
+VERSION = 'vice-district-community-v4-pr'
 ASSETS = Path(__file__).parent / 'assets' / 'vice-district'
 FONTS = Path(__file__).parent / 'assets' / 'esschino' / 'fonts'
 PINK, CYAN, CORAL = 0xFF168A, 0x00D9E8, 0xFF795D
-DESCRIPTION = ('Tu punto de encuentro latino para GTA VI. Noticias con fuentes, teorías, clips, '
-               'ayuda y crews de toda Latinoamérica. Comparte tu pasión por Vice City y encuentra '
-               'gente con quien jugar. Comunidad de fans no oficial.')
+DESCRIPTION = ('Desde Puerto Rico para toda Latinoamérica. Tu corillo de GTA VI: noticias con fuentes, '
+               'teorías, clips, ayuda y crews. Identidad boricua, ambiente latino y pasión por Vice City. '
+               'Encuentra gente con quien jugar. Comunidad de fans no oficial.')
 
 # Keys, display names, color, permission flags, display separately, old name.
 ROLES = [
@@ -29,6 +29,7 @@ ROLES = [
     ('ps', '🎮 PlayStation', 0x6C9FFF, {}, False, None),
     ('xbox', '🎮 Xbox', 0x58C66A, {}, False, None),
     ('pc', '💻 PC', 0xAC90F5, {}, False, None),
+    ('pr', '🇵🇷 Puerto Rico', 0xFF4866, {}, False, None),
     ('mexico', '🇲🇽 México', 0x54BCAB, {}, False, None),
     ('central', '🌋 Centroamérica', 0x54BCAB, {}, False, None),
     ('caribbean', '🌴 Caribe', 0x54BCAB, {}, False, None),
@@ -42,13 +43,13 @@ ROLES = [
 ]
 GROUPS = {
     'platform': ('Tus plataformas', ['ps', 'xbox', 'pc'], 3),
-    'region': ('Tu región · opcional', ['mexico', 'central', 'caribbean', 'south', 'north', 'europe'], 1),
+    'region': ('Tu región · Puerto Rico y Latinoamérica', ['pr', 'mexico', 'central', 'caribbean', 'south', 'north', 'europe'], 1),
     'interests': ('Tus avisos y tu crew', ['news', 'events', 'crew'], 3),
 }
 SELF_ROLES = frozenset(key for _, keys, _ in GROUPS.values() for key in keys)
 CATEGORIES = [
     ('info', '🌴 EMPIEZA AQUÍ', 'read'),
-    ('community', '🌆 COMUNIDAD', 'chat'),
+    ('community', '🇵🇷 CORILLO LATINO', 'chat'),
     ('game', '🎮 UNIVERSO GTA VI', 'chat'),
     ('voice', '🔊 VICE RADIO', 'chat'),
     ('help', '🛟 SOPORTE', 'read'),
@@ -60,7 +61,7 @@ CHANNELS = [
     ('rules','info','📜・normas','Convivencia, privacidad, spoilers y juego limpio.','read',False,0),
     ('roles','info','🎭・elige-tus-roles','Personaliza tu perfil: plataformas, región y avisos. Puedes cambiar tus elecciones cuando quieras.','read',False,0),
     ('announcements','info','📢・anuncios','Comunicados de la comunidad y novedades del servidor.','read',False,0),
-    ('general','community','💬・general','La avenida principal: charla con la comunidad, comparte ideas y disfruta del ambiente.','chat',False,5),
+    ('general','community','💬・general','El punto de encuentro del corillo boricua y latinoamericano. Charla, comparte y disfruta del ambiente.','chat',False,5),
     ('introductions','community','🙌・presentaciones','Cuéntanos tu apodo, región, plataformas y tu GTA favorito. No publiques datos personales.','chat',False,10),
     ('clips','community','📸・clips-y-capturas','Tus mejores momentos de GTA. Da crédito, marca spoilers y evita contenido gráfico.','chat',False,15),
     ('memes','community','😂・memes','Humor y memes de GTA con respeto. Sin spam ni ataques personales.','chat',False,10),
@@ -82,9 +83,10 @@ CHANNELS = [
 def panel_copy(key, c):
     ref = lambda k: f'<#{c(k)}>'
     panels = {
-        'welcome': ('🌴 BIENVENIDO A VICE DISTRICT',
-            '**GTA VI Latino · Tu próxima crew empieza aquí.**\n\n'
-            'Atardeceres, motores y una comunidad con la que compartir la pasión por GTA. '
+        'welcome': ('🇵🇷 BIENVENIDO A VICE DISTRICT',
+            '**Desde Puerto Rico para toda Latinoamérica.**\n\n'
+            'Un corillo con identidad boricua y espacio para todo el mundo latino. '
+            'Compartimos la pasión por GTA, las buenas conversaciones y las ganas de encontrar crew. '
             'Ponte cómodo: ya estás en el distrito.\n\n'
             f'**01 · Conoce el barrio**\nAl entrar recibes **👤 Miembro**. Lee {ref("rules")} y pulsa '
             '**Unirme a la comunidad** para aceptar las normas y ser **🌴 Ciudadano**.\n\n'
@@ -133,7 +135,8 @@ def panel_copy(key, c):
             'Sin cobros por acceso, spam ni promesas falsas.', CYAN),
         'events': ('🎉 NOS VEMOS EN VICE DISTRICT',
             'Este es el punto de encuentro para quedadas, retos y actividades de la comunidad.\n\n'
-            'Cada convocatoria indicará **fecha, hora con zona horaria, plataforma, cupos y reglas**.\n\n'
+            'Cada convocatoria indicará **fecha, hora de Puerto Rico como referencia, zona horaria, plataforma, cupos y reglas**. '
+            'Cuando corresponda, añadiremos equivalencias para el resto de Latinoamérica.\n\n'
             f'Activa **Avisos de eventos** en {ref("roles")} para enterarte cuando el equipo publique una actividad.', PINK),
         'support': ('🎫 TU EQUIPO, A UN CLIC',
             '**¿Necesitas ayuda con el servidor o quieres hacer un reporte?**\n\n'
