@@ -53,7 +53,7 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.system.track.assert_not_awaited()
 
     async def test_country_switch_preserves_regions_platforms_and_staff(self):
-        self.member.roles = [self.rolemap[key] for key in ['pr', 'caribbean', 'ps', 'pc', 'events', 'support']]
+        self.member.roles = [self.rolemap[key] for key in ['pr', 'caribbean', 'ps', 'pc', 'crew', 'support']]
         await self.system.select_roles(self.interaction, 'country', ['mexico'])
         self.member.remove_roles.assert_awaited_once_with(
             self.rolemap['pr'], reason='Roles opcionales elegidos por el miembro')
@@ -68,7 +68,7 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.member.add_roles.await_args.args, (self.rolemap['pr'],))
 
     async def test_clearing_country_menu_clears_only_country(self):
-        self.member.roles = [self.rolemap['pr'], self.rolemap['caribbean'], self.rolemap['news']]
+        self.member.roles = [self.rolemap['pr'], self.rolemap['caribbean'], self.rolemap['crew']]
         await self.system.select_roles(self.interaction, 'country', [])
         self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['pr'],))
         self.member.add_roles.assert_not_awaited()
@@ -117,14 +117,14 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pc_waiting_platform_can_be_chosen_alongside_console_without_changing_other_groups(self):
         self.member.roles = [self.rolemap['ps'], self.rolemap['pr'], self.rolemap['caribbean'],
-                             self.rolemap['events']]
+                             self.rolemap['crew']]
         await self.system.select_roles(self.interaction, 'platform', ['ps', 'pc'])
         self.member.remove_roles.assert_not_awaited()
         self.member.add_roles.assert_awaited_once_with(
             self.rolemap['pc'], reason='Roles opcionales elegidos por el miembro')
 
     async def test_platform_change_keeps_selected_pc_and_preserves_interests(self):
-        self.member.roles = [self.rolemap['ps'], self.rolemap['pc'], self.rolemap['events']]
+        self.member.roles = [self.rolemap['ps'], self.rolemap['pc'], self.rolemap['crew']]
         await self.system.select_roles(self.interaction, 'platform', ['xbox', 'xbox_one_cloud', 'pc'])
         self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['ps'],))
         self.assertEqual(set(self.member.add_roles.await_args.args),
@@ -135,6 +135,30 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
             await self.system.select_roles(self.interaction, 'interests', ['pc'])
         self.guild.fetch_roles.assert_not_awaited()
         self.assert_no_mutation()
+
+    async def test_owner_removed_region_and_notice_values_cannot_be_reassigned(self):
+        removed = [('region', key) for key in ['andean', 'southern_cone', 'amazon']]
+        removed += [('interests', key) for key in ['news', 'events']]
+        for group, key in removed:
+            with self.subTest(group=group, key=key), self.assertRaisesRegex(ValueError, 'panel actualizado'):
+                await self.system.select_roles(self.interaction, group, [key])
+        self.guild.fetch_roles.assert_not_awaited()
+        self.assert_no_mutation()
+
+    async def test_crew_can_be_added_without_changing_country_region_or_platform(self):
+        self.member.roles = [self.rolemap['pr'], self.rolemap['caribbean'], self.rolemap['pc']]
+        await self.system.select_roles(self.interaction, 'interests', ['crew'])
+        self.member.remove_roles.assert_not_awaited()
+        self.member.add_roles.assert_awaited_once_with(
+            self.rolemap['crew'], reason='Roles opcionales elegidos por el miembro')
+
+    async def test_clearing_crew_preserves_country_region_and_platform(self):
+        self.member.roles = [self.rolemap['pr'], self.rolemap['caribbean'], self.rolemap['pc'],
+                             self.rolemap['crew']]
+        await self.system.select_roles(self.interaction, 'interests', [])
+        self.member.add_roles.assert_not_awaited()
+        self.member.remove_roles.assert_awaited_once_with(
+            self.rolemap['crew'], reason='Roles opcionales elegidos por el miembro')
 
     async def test_permission_drift_is_rejected_using_fresh_role_definitions(self):
         changed = MagicMock(spec=discord.Role)
@@ -180,7 +204,7 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assert_no_mutation()
 
     async def test_corrupt_scope_cannot_remove_or_add_a_staff_role(self):
-        with patch.object(vice_district, 'GROUP_SCOPES', {'platform': ('ps', 'xbox', 'xbox_one_cloud', 'admin')}):
+        with patch.object(vice_district, 'GROUP_SCOPES', {'platform': ('ps', 'xbox', 'xbox_one_cloud', 'pc', 'admin')}):
             with self.assertRaises(ValueError):
                 await self.system.select_roles(self.interaction, 'platform', ['ps'])
         self.assert_no_mutation()
@@ -219,8 +243,14 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
             elif item.group == 'platform':
                 self.assertEqual({option.value for option in item.options},
                                  {'ps', 'xbox', 'xbox_one_cloud', 'pc'})
+                self.assertEqual(item.max_values, 4)
+            elif item.group == 'region':
+                self.assertEqual({option.value for option in item.options},
+                                 {'caribbean', 'central', 'south', 'north', 'greater_antilles'})
+                self.assertEqual(item.max_values, 5)
             elif item.group == 'interests':
-                self.assertEqual({option.value for option in item.options}, {'news', 'events', 'crew'})
+                self.assertEqual({option.value for option in item.options}, {'crew'})
+                self.assertEqual(item.max_values, 1)
         self.assertEqual(len(countries), 19)
         self.assertEqual(countries, list(COUNTRY_KEYS))
         self.assertEqual(len(countries), len(set(countries)))

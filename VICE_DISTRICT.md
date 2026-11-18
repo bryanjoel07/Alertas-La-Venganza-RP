@@ -29,7 +29,7 @@ assets/vice-district/goodbye-template.jpg and goodbye-prompt.txt (built-in image
 All these changes use the separate district journal and database.
 Puerto Rico is the community's primary identity, welcoming all of Latin America.
 The banner, description and welcome reflect this; Puerto Rico is the first optional
-region and the reference timezone for future event announcements.
+country option and the reference timezone for future event announcements.
 The welcome panel has no role menu or role-menu button, as explicitly requested.
 Role selections live only in their dedicated channel (and the optional /vice roles command).
 Guild: `1572462544302383164`. Bot: `1571639486591402174` (EssChino Studio Bot).
@@ -39,13 +39,13 @@ VIce District uses a separate `/data/vice-district.sqlite3`, exact guild and own
 its own command group `/vice`, persistent component IDs prefixed `vice:v1:` and welcome receipts.
 
 The layout contains seven main categories and 23 permanent channels: arrival, community,
-GTA discussion, voice, temporary rooms, support and private staff, plus the private ticket archive. There are 22 human roles (including
-the existing Founder), four visual separator roles, plus the bot's managed role. The
+GTA discussion, voice, temporary rooms, support and private staff, plus the private ticket archive.
+The current catalog keeps six visual separator roles across staff, community,
+countries, regions, platforms and entry ranks. The
 lowest role, Miembro, is assigned automatically on joining. Accepting the rules through
 the welcome button promotes Miembro to Ciudadano. Veterano and Leyenda de Vice are
 manual recognition ranks; no automatic XP or activity-based promotions are claimed.
-Optional platform, region and
-notification roles have zero administrative permissions; staff roles are never offered
+Optional country, region, platform and Crew roles have zero administrative permissions; staff roles are never offered
 by the role menus. Moderation has message, timeout and voice tools without Administrator.
 
 Welcome cards use the owner's supplied GTA artwork, edited with the built-in image
@@ -57,7 +57,8 @@ uses a durable receipt, retry recovery and attachment-based duplicate reconcilia
 
 Support creates one private active ticket per person. Owner, Moderation, Soporte and
 the bot can access it. Closing moves the same channel into a private archive and
-preserves its history and the requester's read access; no ticket deletion is implemented.
+preserves its history and the requester's read access. Closed tickets may be individually
+deleted through the separately confirmed, backed-up lifecycle documented below.
 
 Initial provisioning runs once per release and reuses the existing roles/channels.
 It never deletes roles, permanent channels or messages. Only registered empty temporary voice rooms
@@ -262,22 +263,34 @@ delete feedback history or create demonstration ratings on the live server.
 
 ### Country, region and platform roles
 
-The optional role catalog includes the 18 Spanish-speaking Latin American states
-plus Puerto Rico, eight overlapping regional identity tags, and four platform
-choices: three supported options plus PC explicitly marked as waiting. This replaces the wider Caribbean/device catalog following the
-owner's explicit correction. Puerto Rico comes first.
-The old Preferences divider retains its ID and becomes Platforms. Countries,
-Regions and Alerts each receive a separate divider. Existing roles and member
-assignments are preserved; all added roles are cosmetic with zero permissions.
+Catalog `vice-optional-role-catalog-v4-owner-curated` includes the 18 Spanish-speaking
+Latin American states plus Puerto Rico, five overlapping regional identity tags,
+and four platform choices: three supported options plus PC explicitly marked as
+waiting. This replaces the wider Caribbean/device catalog following the owner's
+explicit correction. Puerto Rico comes first. The five regions are Caribbean,
+Central America, South America, North America and Greater Antilles.
+The old Preferences divider retains its ID and becomes Platforms. Countries and
+Regions have their own dividers. These 31 optional role specifications comprise
+19 countries, five regions, four platforms and three dividers. Existing active
+role IDs and assignments are preserved; added roles are cosmetic with zero permissions.
 
 `vice_optional_roles.py` applies only its versioned catalog migration, using
 journaled before-states and durable creation nonces with exact audit recovery.
 It does not replay base/staff installation or modify welcome/ticket permissions.
 The country selector allows one choice among 19 options. Regions,
-platforms and alerts remain independent, multi-select groups. Every selection
+platforms and the existing Crew role remain independent groups. Every selection
 fetches current roles and member data; managed, protected or privileged roles
 are rejected. Staff/rank roles remain manually assigned. The four controls stay
-in `elige-tus-roles`; none is added to the welcome panel.
+in `elige-tus-roles`; none is added to the welcome panel. Crew is the fourth menu's
+only choice and keeps its original Community role, without an extra separator.
+
+The owner manually removed the Andean Region, Southern Cone, Amazonia, GTA VI Alerts
+and Event Alerts roles. They are no longer part of the active catalog and must not
+be recreated. The now-empty Alerts divider is also retired. The frozen retirement
+scope therefore contains 47 keys, preserving earlier receipts and acknowledging
+already missing registered IDs. The remaining country, region and platform roles
+are unchanged by this removal. Panels no longer instruct members to select deleted
+alerts; event registration continues through Discord's native Me interesa control.
 
 To disable, remove the optional migration hook and adapt the roles panel together.
 Keep the role registry, creation receipts and member assignments. Do not delete

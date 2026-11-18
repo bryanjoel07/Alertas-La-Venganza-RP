@@ -218,7 +218,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         foreign.edit.assert_not_awaited()
 
     async def test_role_capacity_is_checked_before_any_create(self):
-        for offset in range(200):
+        for offset in range(249 - len(self.roles)):
             self.roles.append(Role(self.guild, 80000 + offset, 'existing', 100 + offset))
         with self.assertRaises(ValueError):
             await self.manager.ready(self.refresh)
@@ -259,7 +259,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.get(RELEASE_KEY), CATALOG_VERSION)
         positions = self.guild.edit_role_positions.await_args.kwargs['positions']
         self.assertEqual(len(positions), EXPECTED_ACTIVE_COUNT)
-        self.assertEqual(set(positions.values()), set(range(5, 16)))
+        self.assertEqual(set(positions.values()), set(range(7, 16)))
         self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL)
         self.assertEqual(self.by_key['pc'].position, 7)
         self.assertIn(self.by_key['pc'], self.roles)
@@ -361,7 +361,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
             if hasattr(role, 'delete'):
                 role.delete.assert_not_awaited()
 
-    async def test_completed_v2_retirement_is_reused_when_pc_returns_to_platforms(self):
+    async def test_completed_v4_retirement_is_not_repeated_on_catalog_retry(self):
         self.complete_previous_catalog()
         await self.manager.ready(self.refresh)
         retained_pc = self.by_key['pc']
@@ -372,7 +372,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         retained_pc.position = 5  # The previous v2 catalog placed PC in interests.
         self.store.put(RELEASE_KEY, 'vice-optional-role-catalog-v2-hispano')
         await self.manager.ready(self.refresh)
-        self.assertEqual(RETIREMENT_KEY, 'optional_roles:retirement:vice-optional-role-catalog-v2-hispano')
+        self.assertEqual(RETIREMENT_KEY, 'optional_roles:retirement:vice-optional-role-catalog-v4-owner-curated')
         self.assertEqual(self.store.get(RETIREMENT_KEY), before_plan)
         self.assertEqual(self.guild.fetch_members.call_count, membership_reads)
         self.assertEqual(self.guild.create_role.await_count, created)
@@ -381,6 +381,40 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retained_pc.position, 7)
         self.assertEqual(self.store.get(RELEASE_KEY), CATALOG_VERSION)
         self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL)
+
+    async def test_curated_live_state_preserves_owner_deletions_and_only_removes_empty_divider(self):
+        self.complete_previous_catalog()
+        manually_removed = {'andean', 'southern_cone', 'amazon', 'news', 'events'}
+        previous_retired = set(RETIRED_KEYS) - manually_removed - {'interests_separator'}
+        old_receipts = [dict(key=key, id=self.store.get('role:' + key), state='deleted')
+                        for key in sorted(previous_retired)]
+        old_key = 'optional_roles:retirement:vice-optional-role-catalog-v2-hispano'
+        self.store.put(old_key, old_receipts)
+        gone = previous_retired | manually_removed
+        gone_ids = {self.store.get('role:' + key) for key in gone}
+        self.roles[:] = [role for role in self.roles if role.id not in gone_ids]
+        # Xbox cloud was successfully created in v2; there is no new role to add.
+        cloud = await self.create_role(name=self.specs['xbox_one_cloud'][1],
+                                       colour=discord.Colour(self.specs['xbox_one_cloud'][2]),
+                                       permissions=discord.Permissions.none())
+        self.store.put('role:xbox_one_cloud', cloud.id)
+        self.assertEqual(len(self.roles), 47)
+        await self.manager.ready(self.refresh)
+        self.guild.create_role.assert_not_awaited()
+        self.assertEqual(len(self.roles), 46)
+        self.by_key['interests_separator'].delete.assert_awaited_once()
+        for key in manually_removed:
+            self.by_key[key].delete.assert_not_awaited()
+            self.assertNotIn(self.by_key[key], self.roles)
+        self.assertEqual(self.store.get(old_key), old_receipts)
+        plan = self.store.get(RETIREMENT_KEY)
+        self.assertEqual(len(plan), 47)
+        self.assertEqual(sum(row['state'] == 'deleted' for row in plan), 1)
+        self.assertEqual(sum(row['state'] == 'deleted_or_absent' for row in plan), 46)
+        self.assertEqual(self.guild.fetch_members.call_count, 1)
+        self.assertEqual(self.by_key['pc'].position, 7)
+        self.assertEqual(self.by_key['bot'].position, 26)
+        self.assertEqual(self.by_key['founder'].position, 27)
 
     async def test_interrupted_creation_recovers_only_exact_bot_audit_nonce(self):
         spec = next(spec for spec in OPTIONAL_ROLES if not self.store.get('role:' + spec[0]))

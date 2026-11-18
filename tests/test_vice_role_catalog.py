@@ -25,7 +25,7 @@ class OptionalRoleCatalogTests(unittest.TestCase):
         self.assertEqual({row[1] for row in COUNTRY_DATA}, expected_codes)
         self.assertEqual(len(COUNTRY_KEYS), 19)
         self.assertEqual(COUNTRY_KEYS[0], 'pr')
-        self.assertEqual(CATALOG_VERSION, 'vice-optional-role-catalog-v3-gta-platforms')
+        self.assertEqual(CATALOG_VERSION, 'vice-optional-role-catalog-v4-owner-curated')
 
     def test_selects_fit_discord_and_cannot_assign_staff_or_separators(self):
         self.assertEqual(len(OPTIONAL_GROUPS), 4)
@@ -54,7 +54,7 @@ class OptionalRoleCatalogTests(unittest.TestCase):
     def test_existing_identity_roles_and_platform_separator_keep_keys(self):
         keys = {role[0] for role in OPTIONAL_ROLES}
         self.assertTrue({'pr', 'mexico', 'ps', 'xbox', 'pc', 'central',
-            'caribbean', 'south', 'north', 'news', 'events'} <= keys)
+            'caribbean', 'south', 'north'} <= keys)
         self.assertEqual(PLATFORM_SEPARATOR_KEY, 'preferences_separator')
         roles = {role[0]: role for role in OPTIONAL_ROLES}
         self.assertIn('PLATAFORMAS', roles[PLATFORM_SEPARATOR_KEY][1])
@@ -71,19 +71,20 @@ class OptionalRoleCatalogTests(unittest.TestCase):
             'saint_vincent_grenadines', 'saint_lucia', 'sint_maarten', 'suriname',
             'trinidad_tobago', 'lesser_antilles', 'guianas', 'europe',
             'nintendo', 'steam_deck', 'android', 'ios', 'macos', 'linux', 'vr',
+            'andean', 'southern_cone', 'amazon', 'news', 'events', 'interests_separator',
         }
         self.assertIsInstance(RETIRED_KEYS, frozenset)
         self.assertEqual(RETIRED_KEYS, expected)
-        self.assertEqual(len(RETIRED_KEYS), 41)
+        self.assertEqual(len(RETIRED_KEYS), 47)
         self.assertFalse(RETIRED_KEYS & {role[0] for role in OPTIONAL_ROLES})
         self.assertFalse(RETIRED_KEYS & set.union(*(set(keys) for _, keys, _ in OPTIONAL_GROUPS.values())))
         self.assertEqual(set(REGION_KEYS), {'caribbean', 'central', 'south',
-            'north', 'greater_antilles', 'andean', 'southern_cone', 'amazon'})
+            'north', 'greater_antilles'})
         self.assertEqual(PLATFORM_KEYS, ('ps', 'xbox', 'xbox_one_cloud', 'pc'))
 
     def test_pc_keeps_key_as_explicitly_requested_waiting_platform(self):
         roles = {role[0]: role for role in OPTIONAL_ROLES}
-        self.assertEqual(len(OPTIONAL_ROLES), 37)
+        self.assertEqual(len(OPTIONAL_ROLES), 31)
         self.assertEqual(roles['ps'][1], '🎮 PlayStation 5')
         self.assertEqual(roles['xbox'][1], '🎮 Xbox Series X|S')
         self.assertEqual(roles['xbox_one_cloud'][1], '☁️ Xbox One · Nube')
@@ -92,8 +93,17 @@ class OptionalRoleCatalogTests(unittest.TestCase):
         self.assertNotIn('pc', GROUP_SCOPES['interests'])
         self.assertNotIn('pc', RETIRED_KEYS)
         role_order = list(roles)
-        self.assertLess(role_order.index('pc'), role_order.index('interests_separator'))
         self.assertGreater(role_order.index('pc'), role_order.index(PLATFORM_SEPARATOR_KEY))
+
+    def test_manually_removed_roles_are_not_recreated_or_selectable(self):
+        keys = {role[0] for role in OPTIONAL_ROLES}
+        removed = {'andean', 'southern_cone', 'amazon', 'news', 'events', 'interests_separator'}
+        self.assertFalse(keys & removed)
+        self.assertTrue(removed <= RETIRED_KEYS)
+        self.assertEqual(OPTIONAL_GROUPS['interests'],
+            ('Tu crew · encuentra con quién jugar', ['crew'], 1))
+        self.assertEqual(GROUP_SCOPES['interests'], ('crew',))
+        self.assertNotIn('crew', RETIRED_KEYS)
 
 
 if __name__ == '__main__':

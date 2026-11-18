@@ -53,7 +53,7 @@ CATEGORIES = [
 CHANNELS = [
     ('welcome','info','╭・👋│bienvenida','Tu llegada a VIce District. Lee las normas, elige tus roles y conoce a la comunidad.','read',False,0),
     ('rules','info','├・📜│normas','Convivencia, privacidad, spoilers y juego limpio.','read',False,0),
-    ('roles','info','├・🎭│elige-tus-roles','Personaliza tu perfil: país o territorio, regiones, plataformas y avisos. Todo es opcional y puedes cambiarlo cuando quieras.','read',False,0),
+    ('roles','info','├・🎭│elige-tus-roles','Personaliza tu perfil: país, regiones, plataformas y crew. Todo es opcional y puedes cambiarlo cuando quieras.','read',False,0),
     ('announcements','info','╰・📢│anuncios','Comunicados de la comunidad y novedades del servidor.','read',False,0),
     ('general','community','╭・💬│general','El punto de encuentro del corillo boricua y latinoamericano. Charla, comparte y disfruta del ambiente.','chat',False,5),
     ('introductions','community','├・🙌│presentaciones','Cuéntanos tu apodo, región, plataformas y tu GTA favorito. No publiques datos personales.','chat',False,10),
@@ -85,7 +85,7 @@ def panel_copy(key, c):
             'Ponte cómodo: ya estás en el distrito.\n\n'
             f'**01 · Conoce el barrio**\nAl entrar recibes **👤 Miembro**. Lee {ref("rules")} y pulsa '
             '**Unirme a la comunidad** para aceptar las normas y ser **🌴 Ciudadano**.\n\n'
-            f'**02 · Dale tu estilo**\nElige plataformas, región y avisos en {ref("roles")}.\n\n'
+            f'**02 · Dale tu estilo**\nElige tu país, regiones, plataformas y el rol Crew en {ref("roles")}.\n\n'
             f'**03 · Encuentra tu gente**\nPreséntate en {ref("introductions")} y pásate por {ref("general")}.', PINK),
         'rules': ('📜 EL CÓDIGO DEL DISTRITO',
             '**Un buen ambiente lo construimos entre todos.**\n\n'
@@ -101,9 +101,9 @@ def panel_copy(key, c):
         'roles': ('🎭 TU IDENTIDAD EN EL DISTRITO',
             '**Tu comunidad, a tu manera.**\n\n'
             '🌎 **País:** los 18 países de Hispanoamérica y Puerto Rico, primero en la lista. Elige uno si quieres.\n'
-            '🧭 **Regiones:** elige las zonas con las que te identificas.\n'
+            '🧭 **Regiones:** Caribe, Centroamérica, Sudamérica, Norteamérica y Antillas Mayores.\n'
             '🎮 **Plataformas:** PlayStation 5, Xbox Series X|S, Xbox One mediante juego en la nube y PC en espera.\n'
-            '🔔 **Intereses:** avisos de GTA VI, eventos y búsqueda de crew.\n\n'
+            '🤝 **Crew:** encuentra gente con quien jugar.\n\n'
             'Todo es opcional. Elige un país y tantas regiones o plataformas como quieras. Cada lista es independiente. '
             'Deja un menú vacío para retirar los roles de ese grupo.\n\n'
             '⌛ **PC** está incluida por petición de la comunidad, marcada **Esperando GTA VI**. Una versión de PC no figura como confirmada por Rockstar. '
@@ -114,7 +114,7 @@ def panel_copy(key, c):
             'Veterano, Leyenda, Creadores y los roles del equipo los asigna la administración.', CYAN),
         'announcements': ('📢 LA VOZ DEL DISTRITO',
             'Aquí encontrarás los comunicados de **GTA VI Latino | VIce District**: cambios, novedades y avisos importantes.\n\n'
-            f'Activa solo los avisos que te interesen en {ref("roles")}. Las sugerencias van en {ref("suggestions")}.', PINK),
+            f'Consulta aquí las novedades del equipo. Comparte tus ideas en {ref("suggestions")}.', PINK),
         'introductions': ('🙌 PRESENTA TU ESTILO',
             '**Rompe el hielo con esta pequeña ficha:**\n\n'
             '🌴 **Apodo:**\n🌎 **Región / zona horaria:** (opcional)\n🎮 **Plataformas:**\n'
@@ -135,7 +135,7 @@ def panel_copy(key, c):
             'Este es el punto de encuentro para quedadas, retos y actividades de la comunidad.\n\n'
             'Cada convocatoria indicará **fecha, hora de Puerto Rico como referencia, zona horaria, plataforma, cupos y reglas**. '
             'Cuando corresponda, añadiremos equivalencias para el resto de Latinoamérica.\n\n'
-            f'Activa **Avisos de eventos** en {ref("roles")} para enterarte cuando el equipo publique una actividad.', PINK),
+            'Consulta las próximas actividades y pulsa **Me interesa** en el evento al que quieras unirte.', PINK),
         'support': ('🎫 TU EQUIPO, A UN CLIC',
             'Pulsa **Abrir ticket** y elige el motivo:\n'
             '💬 Ayuda general · 🚩 Reportar a un jugador\n'

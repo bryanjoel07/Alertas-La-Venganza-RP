@@ -8,16 +8,16 @@ import discord
 from studio_journal import server_snapshot
 from vice_design import BOT_ID, GUILD_ID
 from vice_role_catalog import (CATALOG_VERSION, OPTIONAL_ROLES, COUNTRY_KEYS,
-                               REGION_KEYS, PLATFORM_KEYS, INTEREST_ROLES, RETIRED_KEYS)
+                               REGION_KEYS, PLATFORM_KEYS, RETIRED_KEYS)
 
 log = logging.getLogger('ViceDistrict.optional_roles')
 RELEASE_KEY = 'optional_roles_release'
-ROLES_TOPIC = ('Personaliza tu perfil: país o territorio, regiones, plataformas y avisos. '
+ROLES_TOPIC = ('Personaliza tu perfil: país, regiones, plataformas y crew. '
                'Todo es opcional y puedes cambiarlo cuando quieras.')
 REASON = 'Países, regiones y plataformas solicitados por el propietario'
-# The owner-authorized removal set belongs to v2 permanently. Cosmetic catalog
-# revisions must reuse its receipts rather than freezing/deleting those IDs anew.
-RETIREMENT_KEY = 'optional_roles:retirement:vice-optional-role-catalog-v2-hispano'
+# The owner-curated v4 scope adds only the five manually removed roles and their
+# empty divider. Keep the old v2 receipts untouched and freeze this exact set.
+RETIREMENT_KEY = 'optional_roles:retirement:vice-optional-role-catalog-v4-owner-curated'
 
 
 class OptionalRoles:
@@ -124,7 +124,15 @@ class OptionalRoles:
         pending = [row for row in plan if row['state'] == 'pending']
         if not pending:
             return
+        initially_present = {role.id for role in await guild.fetch_roles()}
         for row in pending:
+            # Deleted Discord snowflake IDs cannot be recreated. A single fresh
+            # inventory safely confirms the old v2/manual deletions without one
+            # REST round trip per absent role.
+            if row['id'] not in initially_present:
+                row['state'] = 'deleted_or_absent'
+                await self.system.call('put', RETIREMENT_KEY, plan)
+                continue
             self.validate(guild)
             roles = {role.id: role for role in await guild.fetch_roles()}
             role = roles.get(row['id'])
@@ -170,8 +178,7 @@ class OptionalRoles:
         mexico_index = country_keys.index('mexico')
         groups = [('country_separator',), ('pr',), country_keys[:mexico_index],
                   ('mexico',), country_keys[mexico_index + 1:],
-                  ('region_separator',), REGION_KEYS, ('preferences_separator',), PLATFORM_KEYS,
-                  ('interests_separator',), tuple(role[0] for role in INTEREST_ROLES)]
+                  ('region_separator',), REGION_KEYS, ('preferences_separator',), PLATFORM_KEYS]
         top = crew.position - 1
         if top - len(groups) + 1 <= entry.position:
             raise ValueError('No hay espacio entre Comunidad y Recién llegados para ordenar las secciones.')

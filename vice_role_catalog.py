@@ -11,7 +11,7 @@ request. PC retains its existing role ID and is labeled as waiting for GTA VI,
 never as a confirmed release. All role specifications have zero permissions.
 """
 
-CATALOG_VERSION = 'vice-optional-role-catalog-v3-gta-platforms'
+CATALOG_VERSION = 'vice-optional-role-catalog-v4-owner-curated'
 COUNTRY_SOURCE = 'https://unstats.un.org/unsd/methodology/m49/'
 PLATFORM_SOURCE = ('https://support.rockstargames.com/articles/'
                    '4QfG4FmZCf5W1gS8jy4UVT/grand-theft-auto-vi-platform-editions-and-versions')
@@ -30,6 +30,9 @@ RETIRED_KEYS = frozenset({
     'saint_vincent_grenadines', 'saint_lucia', 'sint_maarten', 'suriname',
     'trinidad_tobago', 'lesser_antilles', 'guianas', 'europe',
     'nintendo', 'steam_deck', 'android', 'ios', 'macos', 'linux', 'vr',
+    # The owner removed these five roles manually; retire the now-empty divider
+    # as well rather than recreating their earlier catalog entries.
+    'andean', 'southern_cone', 'amazon', 'news', 'events', 'interests_separator',
 })
 
 
@@ -75,9 +78,6 @@ REGION_ROLES = [
     _role('south', '🌎 Sudamérica', 0x65C98A),
     _role('north', '🌎 Norteamérica', 0x70ACF7),
     _role('greater_antilles', '🏝️ Antillas Mayores', 0x50D3EA),
-    _role('andean', '⛰️ Región Andina', 0xBC97F5),
-    _role('southern_cone', '🧉 Cono Sur', 0xF0BD76),
-    _role('amazon', '🌳 Amazonía', 0x4AD29F),
 ]
 REGION_KEYS = tuple(role[0] for role in REGION_ROLES)
 
@@ -89,10 +89,9 @@ PLATFORM_ROLES = [
 ]
 PLATFORM_KEYS = tuple(role[0] for role in PLATFORM_ROLES)
 
-INTEREST_ROLES = [
-    _role('news', '📰 Avisos de GTA VI', 0xFFB36A),
-    _role('events', '🎉 Avisos de eventos', 0xFF8EBE),
-]
+# Crew already belongs to the original community block, so it needs no new
+# optional role or extra divider after the owner's manual removals.
+INTEREST_ROLES = []
 
 OPTIONAL_ROLES = [
     _role('country_separator', '━━ 🌎 PAÍSES ━━', 0xFF6D9F),
@@ -101,8 +100,6 @@ OPTIONAL_ROLES = [
     *REGION_ROLES,
     _role(PLATFORM_SEPARATOR_KEY, '━━ 🎮 PLATAFORMAS ━━', 0x829EFF),
     *PLATFORM_ROLES,
-    _role('interests_separator', '━━ 🔔 AVISOS ━━', 0xFFB36A),
-    *INTEREST_ROLES,
 ]
 
 # Discord permits 25 options per select and five select rows per message.
@@ -115,7 +112,7 @@ OPTIONAL_GROUPS = {
     **COUNTRY_GROUPS,
     'region': ('Tus regiones · puedes elegir varias', list(REGION_KEYS), len(REGION_KEYS)),
     'platform': ('Plataformas de GTA VI · PC en espera', list(PLATFORM_KEYS), len(PLATFORM_KEYS)),
-    'interests': ('Tus avisos y tu crew', ['news', 'events', 'crew'], 3),
+    'interests': ('Tu crew · encuentra con quién jugar', ['crew'], 1),
 }
 GROUP_SCOPES = {
     group: COUNTRY_KEYS if group in COUNTRY_GROUPS else tuple(keys)

@@ -27,6 +27,7 @@ from vice_tickets import TicketCenter
 from vice_ticket_archive import TicketArchive
 from vice_ticket_feedback import TicketFeedback
 from vice_optional_roles import OptionalRoles
+from vice_identity_panels import refresh_identity_panels
 from vice_antispam import AntiSpam
 from vice_role_catalog import GROUP_SCOPES
 from welcome_cards import WelcomeCards, clean_name
@@ -273,6 +274,7 @@ class ViceDistrict:
         for name, operation in (
                 ('optional_roles', lambda: self.optional_roles.ready(lambda: self.panel(
                     guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))),
+                ('identity_guidance', lambda: refresh_identity_panels(self)),
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
                 ('ticket_feedback', self.ticket_feedback.ready),
                 ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),

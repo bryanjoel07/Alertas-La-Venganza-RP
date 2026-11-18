@@ -112,7 +112,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         separators = {row[0]: row for row in ROLES if row[0].endswith('separator')}
         self.assertEqual(set(separators), {
             'team_separator', 'community_separator', 'country_separator',
-            'region_separator', 'preferences_separator', 'interests_separator', 'entry_separator'})
+            'region_separator', 'preferences_separator', 'entry_separator'})
         self.assertTrue(all(not row[3] and row[4] is False for row in separators.values()))
         self.assertIn('PLATAFORMAS', separators['preferences_separator'][1])
         self.assertNotIn('PREFERENCIAS', separators['preferences_separator'][1])
@@ -168,9 +168,9 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.system.track.assert_awaited_once()
 
     async def test_empty_selection_removes_only_its_group(self):
-        self.member.roles = [self.rolemap['events'],self.rolemap['ps']]
+        self.member.roles = [self.rolemap['crew'],self.rolemap['ps']]
         await self.system.select_roles(self.interaction,'interests',[])
-        self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['events'],))
+        self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['crew'],))
         self.member.add_roles.assert_not_awaited()
 
     async def test_role_accidentally_given_power_cannot_be_self_assigned(self):
