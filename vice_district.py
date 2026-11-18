@@ -28,7 +28,7 @@ from vice_ticket_archive import TicketArchive
 from vice_ticket_feedback import TicketFeedback
 from vice_ticket_reminders import TicketReminders
 from vice_ticket_dashboard import TicketDashboard
-from vice_channel_style import ChannelStyle, stylize
+from vice_channel_style import ChannelStyle, stylize, format_name
 from vice_optional_roles import OptionalRoles
 from vice_identity_panels import refresh_identity_panels
 from vice_role_icons import RoleIcons
@@ -700,7 +700,7 @@ class ViceDistrict:
                 category = guild.get_channel(self.store.get('category:help'))
                 if not isinstance(category, discord.CategoryChannel) or category.guild.id != GUILD_ID:
                     raise ValueError('La categoría privada de ayuda necesita revisión del equipo.')
-                channel = await guild.create_text_channel(stylize(TICKET_OPEN_PREFIX + str(interaction.user.id)[-6:]),
+                channel = await guild.create_text_channel(format_name(TICKET_OPEN_PREFIX + str(interaction.user.id)[-6:]),
                     category=category, topic=marker, overwrites=self.overwrites(guild, 'ticket', interaction.user), reason=REASON)
                 await self.call('add_ticket', channel.id, interaction.user.id, kind)
                 await self.tickets.ensure_open_panel(channel)
@@ -724,16 +724,17 @@ class ViceDistrict:
                 guild = interaction.guild
                 category = guild.get_channel(self.store.get('category:closed'))
                 category = category or discord.utils.get(guild.categories, name=stylize(CLOSED_CATEGORY))
+                category = category or discord.utils.get(guild.categories, name=format_name(CLOSED_CATEGORY, category=True))
                 category = category or discord.utils.get(guild.categories, name=CLOSED_CATEGORY)
                 category = category or discord.utils.get(guild.categories, name='🔒 TICKETS ARCHIVADOS')
                 if category is None:
-                    category = await guild.create_category(stylize(CLOSED_CATEGORY), overwrites=self.overwrites(guild, 'staff'), reason=REASON)
+                    category = await guild.create_category(format_name(CLOSED_CATEGORY, category=True), overwrites=self.overwrites(guild, 'staff'), reason=REASON)
                 await self.call('put', 'category:closed', category.id)
                 try:
                     owner = await guild.fetch_member(int(row['owner']))
                 except discord.NotFound:
                     owner = discord.Object(id=int(row['owner']), type=discord.Member)
-                closed_channel = await interaction.channel.edit(name=stylize(TICKET_CLOSED_PREFIX + str(row['owner'])[-6:]), category=category,
+                closed_channel = await interaction.channel.edit(name=format_name(TICKET_CLOSED_PREFIX + str(row['owner'])[-6:]), category=category,
                     topic='VIce ticket closed owner=' + str(row['owner']),
                     overwrites=self.overwrites(guild, 'closed', owner), reason=REASON)
                 await self.call('ticket_state', interaction.channel_id, 'closed')

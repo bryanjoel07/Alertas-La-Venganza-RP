@@ -13,8 +13,14 @@ import discord
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-channel-style-v1'
-MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v1.json'
+VERSION = 'vice-channel-style-v2'
+MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v2.json'
+TEAM_CATEGORY_ID = 1572467006999896074
+CATEGORY_SEPARATOR = '၊၊||၊'
+ALIGN_BLANK = '\u2800'
+ALIGN_TARGET_PX = 190
+ALIGN_MAX_CHANNEL = 8
+ALIGN_MAX_CATEGORY = 12
 SUPPORTED_TYPES = frozenset((0, 2, 4, 5, 13, 15, 16))
 SMALL_CAPS = dict(zip('abcdefghijklmnopqrstuvwxyz', 'ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡXʏᴢ'))
 FROM_SMALL_CAPS = {value: key for key, value in SMALL_CAPS.items()}
@@ -51,6 +57,98 @@ def stylize(name):
     return ''.join(result)
 
 
+def _icon_only(text):
+    """Recognize existing icon clusters without guessing from channel names."""
+    text = text.strip(' \t\r\n' + ALIGN_BLANK)
+    if not text:
+        return False
+    for index, character in enumerate(text):
+        if character == ALIGN_BLANK:
+            return False
+        if character.isspace() or character in ('\ufe0f', '\ufe0e', '\u200d', '\u20e3'):
+            continue
+        if character in '0123456789#*' and (text[index + 1:index + 3] == '\ufe0f\u20e3'
+                                            or text[index + 1:index + 2] == '\u20e3'):
+            continue
+        if unicodedata.category(character) not in ('So', 'Sk'):
+            return False
+    return True
+
+
+def _leading_icon(text):
+    # Prefixes use symbols, flag pairs, variation selectors and ZWJ clusters.
+    # Try boundaries from longest to shortest so a full emoji is never split.
+    for index in range(len(text), 0, -1):
+        prefix = text[:index].strip(' \t\r\n' + ALIGN_BLANK)
+        tail = text[index:].strip(' \t\r\n' + ALIGN_BLANK)
+        if tail and _icon_only(prefix):
+            return prefix, tail
+    return '', text
+
+
+def _text_width(text):
+    """Conservative fixed 16 px font estimate, never a device-width promise."""
+    total = 0.0
+    narrow = {'i': 3.5, 'l': 4.5, 'j': 4.5, 'f': 6, 'r': 6, 't': 6,
+              'm': 10, 'w': 11, ' ': 4, '-': 5, '|': 4, '│': 4}
+    for character in text:
+        if unicodedata.combining(character) or character in ('\ufe0f', '\ufe0e', '\u200d'):
+            continue
+        base = FROM_SMALL_CAPS.get(character, character).lower()
+        total += narrow.get(base, 16 if unicodedata.category(character) in ('So', 'Sk') else 8)
+    return total
+
+
+def _rightward(icon, words, *, category):
+    words = stylize(words)
+    # Icons stay on the left. A short cap limits blank space on narrower mobile
+    # sidebars; long labels remain whole and receive no extra blank padding.
+    if category:
+        prefix = CATEGORY_SEPARATOR + ' ' + icon
+        available = ALIGN_TARGET_PX - 26 - (12 if icon else 0) - _text_width(words) * .75
+        count = min(ALIGN_MAX_CATEGORY, max(0, int(available / 8)))
+    else:
+        prefix = icon + '│' if icon else ''
+        available = ALIGN_TARGET_PX - (20 if icon else 0) - _text_width(words)
+        count = min(ALIGN_MAX_CHANNEL, max(0, int(available / 10)))
+    # Discord names have a 100-character limit. Never truncate an actual name.
+    count = min(count, max(0, 100 - len(prefix) - len(words)))
+    return prefix + ALIGN_BLANK * count + words
+
+
+def format_name(name, *, category=False):
+    """Place icons left and smallcap words right with bounded blank spacing.
+
+    U+2800 is visible-width whitespace, not a bidi control. Width is an
+    approximation; native Discord sidebars cannot enforce flush-right text.
+    Generated padding is stripped before parsing, so repeated calls are stable.
+    """
+    trim = ' \t\r\n' + ALIGN_BLANK
+    text = str(name).strip(trim)
+    if not text:
+        return ''
+    if category:
+        if text.startswith(CATEGORY_SEPARATOR):
+            text = text[len(CATEGORY_SEPARATOR):].strip(trim)
+        # The previous layout framed categories with heavy horizontal bars.
+        text = text.strip('━─').strip(trim)
+        icon, words = _leading_icon(text)
+        return _rightward(icon, words, category=True)
+    for branch in ('╭・', '├・', '╰・', '┊・'):
+        if text.startswith(branch):
+            text = text[len(branch):].strip(trim)
+            break
+    if '│' in text:
+        head, tail = text.rsplit('│', 1)
+        if head.strip(trim) and _icon_only(tail):
+            return _rightward(tail.strip(trim), head.strip(trim), category=False)
+        head, tail = text.split('│', 1)
+        if tail.strip(trim) and _icon_only(head):
+            return _rightward(head.strip(trim), tail.strip(trim), category=False)
+    icon, words = _leading_icon(text)
+    return _rightward(icon, words, category=False)
+
+
 def type_number(channel):
     value = getattr(channel.type, 'value', channel.type)
     return int(value)
@@ -71,6 +169,8 @@ def load_manifest(path=MANIFEST):
         raise ValueError('La tipografía no pertenece al distrito autorizado.')
     rows, seen = [], set()
     team_id = str(value.get('team_category_id'))
+    if team_id != str(TEAM_CATEGORY_ID):
+        raise ValueError('La categoría Staff no coincide con su identidad comprobada.')
     for raw in value.get('channels', ()):
         row = dict(raw)
         channel_id = str(row.get('id'))
@@ -79,11 +179,10 @@ def load_manifest(path=MANIFEST):
                 or not row['name'] or not isinstance(row.get('target_name'), str)
                 or not 1 <= len(row['target_name']) <= 100):
             raise ValueError('La lista congelada de nombres necesita revisión.')
-        expected = stylize(row['name'])
+        expected = format_name(row['name'], category=row['type'] == 4)
         if channel_id == team_id:
-            if row['type'] != 4 or 'EQUIPO' not in row['name'].upper():
-                raise ValueError('La categoría Staff no coincide con la categoría Equipo comprobada.')
-            expected = stylize(row['name'].replace('EQUIPO', 'STAFF').replace('Equipo', 'Staff'))
+            if row['type'] != 4:
+                raise ValueError('Staff ya no es una categoría.')
         if row['target_name'] != expected:
             raise ValueError('El cambio excede la tipografía y la categoría Staff autorizadas.')
         row['id'] = channel_id
@@ -183,9 +282,7 @@ class ChannelStyle:
         rows, fingerprint = load_manifest()
         guild = await self.context()
         team = int(self.system.store.get('category:team') or 0)
-        manifest_team = next((int(row['id']) for row in rows
-            if row['type'] == 4 and row['target_name'] != stylize(row['name'])), None)
-        if not team or team != manifest_team:
+        if not team or team != TEAM_CATEGORY_ID:
             raise ValueError('La categoría del equipo no coincide con la lista autorizada.')
         counts = dict(changed=0, completed=0, manual_change=0, absent=0, already_styled=0, failed=0)
         for row in rows:

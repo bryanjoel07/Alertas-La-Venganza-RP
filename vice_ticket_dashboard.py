@@ -10,7 +10,7 @@ import uuid
 
 import discord
 
-from vice_channel_style import stylize
+from vice_channel_style import format_name
 from vice_design import BOT_ID, CYAN, GUILD_ID, OWNER_ID
 from vice_readonly import WRITE_FLAGS
 from vice_ticket_reminders import as_time
@@ -22,7 +22,7 @@ KEY = 'ticket_dashboard:destination'
 TOPIC = 'Pendientes privados del equipo: responsables, espera y acceso directo a cada ticket.'
 TITLE = '📋 Tickets pendientes'
 FOOTER = 'VIce District • Panel privado de Staff'
-NAME = stylize('├・📋│pendientes')
+NAME = format_name('├・📋│pendientes')
 PAGE_SIZE = 10
 POLL_SECONDS = 60
 BUTTONS = ('vice:v1:dashboard:previous', 'vice:v1:dashboard:refresh', 'vice:v1:dashboard:next')

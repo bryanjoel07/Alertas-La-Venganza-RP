@@ -49,6 +49,12 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
+### Separadores y nombres hacia la derecha — v2
+
+La revisión `vice-channel-style-v2` aplica `၊၊||၊` a las categorías y coloca los nombres de categorías y canales a la derecha de sus iconos. Un relleno limitado con espacios Unicode aproxima esa posición; su aspecto depende del ancho de la barra lateral y de la fuente del dispositivo. Se conservan las palabras completas, versalitas y emojis. El manifiesto `channel-style-v2.json` fija los 38 objetos observados, incluido Pendientes. Solo cambia el nombre y conserva los recibos previos de v1, permisos, IDs e historial. Los tickets y salas futuros usan el mismo formato.
+
+Para revertir, conservar la base actual y restaurar individualmente los nombres originales del manifiesto v2 solo cuando aún coincidan con el nombre aplicado, mediante operaciones registradas. El canal de mejoras `1572704521371652166` debe recuperar su nombre v1 antes de desplegar `f984035a488f798195226e4df00334645c14def4`, o se debe conservar la validación compatible con v2 en el código anterior. Respetar cambios manuales; no recrear ni eliminar canales ni restaurar una base antigua. El panel de pendientes y sus recordatorios conservan sus mensajes y datos.
+
 ### Panel privado de pendientes y nombres en versalitas
 
 La categoría Equipo pasa a Staff y las 37 categorías/canales existentes reciben letras en versalitas, conservando sus emojis y separadores. `channel-style-v1.json` fija los IDs, tipos y nombres originales; la migración cambia únicamente el nombre, con un recibo y copia anterior por objeto. No recrea objetos ausentes ni vuelve a imponer el nombre tras una edición manual posterior. Los nuevos tickets, sus nombres al cerrar y las salas temporales usan el mismo estilo.

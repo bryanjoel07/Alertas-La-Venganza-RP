@@ -19,7 +19,7 @@ import discord
 
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID
 from vice_tickets import KINDS
-from vice_channel_style import stylize
+from vice_channel_style import format_name
 from vice_readonly import WRITE_FLAGS
 
 log = logging.getLogger('ViceDistrict.ticket_archive')
@@ -282,7 +282,7 @@ class TicketArchive:
                     expected_overwrites = self.overwrites(guild)
                     record['attempted_at'] = datetime.now(timezone.utc).isoformat()
                     await self.system.call('put', DESTINATION_KEY, record)
-                    channel = await guild.create_text_channel(stylize('├・📁│archivo-tickets'),
+                    channel = await guild.create_text_channel(format_name('├・📁│archivo-tickets'),
                         category=category, position=position, topic=TOPIC,
                         overwrites=expected_overwrites, reason=reason)
                 record['channel'] = channel.id

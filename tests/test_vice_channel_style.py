@@ -9,8 +9,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-from vice_channel_style import (BOT_ID, GUILD_ID, OWNER_ID, VERSION, ChannelStyle,
-                                channel_state, load_manifest, stylize)
+from vice_channel_style import (ALIGN_BLANK, ALIGN_MAX_CATEGORY, ALIGN_MAX_CHANNEL,
+                                CATEGORY_SEPARATOR, TEAM_CATEGORY_ID, BOT_ID, GUILD_ID,
+                                OWNER_ID, VERSION, ChannelStyle, _text_width,
+                                channel_state, format_name, load_manifest, stylize)
 
 
 class TypographyTests(unittest.TestCase):
@@ -31,22 +33,59 @@ class TypographyTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(stylize(value), value)
 
-    def test_live_manifest_freezes_exact_ids_and_only_team_word_change(self):
+    def test_live_manifest_freezes_exact_ids_and_only_name_layout_changes(self):
         rows, fingerprint = load_manifest()
-        self.assertEqual(len(rows), 37)
-        self.assertEqual(len({r['id'] for r in rows}), 37)
+        self.assertEqual(len(rows), 38)
+        self.assertEqual(len({r['id'] for r in rows}), 38)
         self.assertEqual(len(fingerprint), 64)
-        changed_word = [r for r in rows if r['target_name'] != stylize(r['name'])]
-        self.assertEqual(len(changed_word), 1)
-        self.assertEqual(changed_word[0]['id'], '1572467006999896074')
-        self.assertEqual(changed_word[0]['target_name'], '━━ 🛡️ ꜱᴛᴀꜰꜰ ━━')
+        for row in rows:
+            category = row['type'] == 4
+            self.assertEqual(row['target_name'], format_name(row['name'], category=category))
+            self.assertEqual(row['target_name'], format_name(row['target_name'], category=category))
+        team = next(row for row in rows if row['id'] == str(TEAM_CATEGORY_ID))
+        self.assertTrue(team['target_name'].startswith(CATEGORY_SEPARATOR + ' 🛡️'))
+        self.assertTrue(team['target_name'].endswith('ꜱᴛᴀꜰꜰ'))
+
+    def test_formatter_parses_raw_v1_and_v2_without_moving_words_or_icons(self):
+        sources = ('╭・👋│bienvenida', '👋│ʙɪᴇɴᴠᴇɴɪᴅᴀ', 'ʙɪᴇɴᴠᴇɴɪᴅᴀ│👋')
+        expected = format_name(sources[0])
+        self.assertTrue(expected.startswith('👋│' + ALIGN_BLANK))
+        self.assertTrue(expected.endswith('ʙɪᴇɴᴠᴇɴɪᴅᴀ'))
+        for source in (*sources, expected):
+            self.assertEqual(format_name(source), expected)
+        for source in ('━━ 🌴 EMPIEZA AQUÍ ━━', '━━ 🌴 ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́ ━━'):
+            result = format_name(source, category=True)
+            self.assertTrue(result.startswith(CATEGORY_SEPARATOR + ' 🌴' + ALIGN_BLANK))
+            self.assertTrue(result.endswith('ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́'))
+            self.assertEqual(format_name(result, category=True), result)
+
+    def test_padding_is_bounded_and_long_names_remain_whole(self):
+        for category, limit in ((False, ALIGN_MAX_CHANNEL), (True, ALIGN_MAX_CATEGORY)):
+            short = format_name('🎙️ A', category=category)
+            self.assertEqual(short.count(ALIGN_BLANK), limit)
+            long = format_name('🎙️ ' + 'bienvenida-' * 7, category=category)
+            self.assertNotIn(ALIGN_BLANK, long)
+            self.assertTrue(long.endswith(stylize('bienvenida-' * 7)))
+        self.assertEqual(_text_width('ɪ́'), _text_width('ɪ'))
+        self.assertEqual(_text_width('🛡️'), _text_width('🛡'))
+
+    def test_dynamic_names_flags_and_keycaps_are_preserved_and_idempotent(self):
+        for icon in ('🎙️', '🇵🇷', '👨‍👩‍👧‍👦', '1️⃣', '#️⃣', '*️⃣'):
+            result = format_name(icon + ' José 01')
+            self.assertTrue(result.startswith(icon + '│'))
+            self.assertTrue(result.endswith('ᴊᴏꜱᴇ́ 01'))
+            self.assertEqual(format_name(result), result)
+            self.assertFalse(any(c in result for c in ('\u202e', '\u202d', '\u200b', '\u2067')))
+        self.assertEqual(format_name(format_name('sin-icono')), format_name('sin-icono'))
 
     def test_manifest_rejects_foreign_identity_duplicates_and_arbitrary_renames(self):
         base = dict(version=VERSION, guild_id=str(GUILD_ID), bot_id=str(BOT_ID), owner_id=str(OWNER_ID),
-            team_category_id='101', channels=[dict(id='101', type=4, name='━━ 🛡️ EQUIPO ━━',
-                                                  target_name=stylize('━━ 🛡️ STAFF ━━'))])
+            team_category_id=str(TEAM_CATEGORY_ID), channels=[dict(id=str(TEAM_CATEGORY_ID), type=4,
+                name='━━ 🛡️ ꜱᴛᴀꜰꜰ ━━', target_name=format_name('━━ 🛡️ ꜱᴛᴀꜰꜰ ━━', category=True))])
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'manifest.json'
+            path.write_text(json.dumps(base), encoding='utf-8')
+            self.assertEqual(len(load_manifest(path)[0]), 1)
             for change in ('foreign', 'duplicate', 'rename', 'unsupported', 'team_missing'):
                 value = deepcopy(base)
                 if change == 'foreign':
@@ -66,12 +105,17 @@ class TypographyTests(unittest.TestCase):
 
 class ChannelStyleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        team_patch = patch('vice_channel_style.TEAM_CATEGORY_ID', 101)
+        team_patch.start()
+        self.addCleanup(team_patch.stop)
         self.values = {'category:team': 101}
         self.guild = NS(id=GUILD_ID, owner_id=OWNER_ID)
         self.channels = {}
         self.before = []
-        self.rows = [dict(id='101', type=4, name='━━ 🛡️ EQUIPO ━━', target_name=stylize('━━ 🛡️ STAFF ━━')),
-                     dict(id='102', type=0, name='├・📋│registro-staff', target_name=stylize('├・📋│registro-staff'))]
+        self.rows = [dict(id='101', type=4, name='━━ 🛡️ ꜱᴛᴀꜰꜰ ━━',
+                         target_name=format_name('━━ 🛡️ ꜱᴛᴀꜰꜰ ━━', category=True)),
+                     dict(id='102', type=0, name='├・📋│registro-staff',
+                          target_name=format_name('├・📋│registro-staff'))]
         for row in self.rows:
             item = NS(id=int(row['id']), type=discord.ChannelType(row['type']), name=row['name'], guild=self.guild,
                       category_id=101 if row['type'] == 0 else None, position=3, topic='Keep this exact topic',
