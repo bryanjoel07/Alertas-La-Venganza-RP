@@ -6,16 +6,18 @@ import hashlib
 import json
 import logging
 import re
+from urllib.parse import unquote, urlsplit
 
 import discord
 
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID, CYAN
 from vice_audit_store import AuditStore
 from vice_audit_format import format_audit_entry, compact_stored_embed, is_permission_field
+from vice_audit_images import AuditVisuals
 
 log = logging.getLogger('ViceDistrict.audit')
 AUDIT_VERSION = 'vice-audit-compact-v2'
-FORMAT_VERSION = 'vice-audit-server-names-v6'
+FORMAT_VERSION = 'vice-audit-server-images-v7'
 POLL_SECONDS = 60
 TOPIC = 'Auditoría y actividad del distrito: miembros, voz y cambios administrativos. Registro privado del equipo.'
 
@@ -44,8 +46,19 @@ def embed_marker(embed):
     return found.group(1) if found else None
 
 
-def semantic_embeds(embeds):
+def semantic_embeds(embeds, attachments=()):
     """Ignore Discord's CDN proxy metadata when comparing delivered payloads."""
+    def image_url(url):
+        parsed = urlsplit(str(url or ''))
+        if parsed.scheme != 'https' or parsed.hostname not in ('cdn.discordapp.com', 'media.discordapp.net'):
+            return url
+        parts = parsed.path.split('/')
+        if len(parts) == 5 and parts[1] == 'attachments':
+            for attachment in attachments:
+                if (str(getattr(attachment, 'id', '')) == parts[3]
+                        and getattr(attachment, 'filename', None) == unquote(parts[4])):
+                    return 'attachment://' + attachment.filename
+        return url
     result = []
     for embed in embeds:
         data = embed.to_dict()
@@ -56,6 +69,8 @@ def semantic_embeds(embeds):
                            ('image', ('url',)), ('thumbnail', ('url',))):
             if part in data:
                 clean[part] = {key: data[part][key] for key in keys if key in data[part]}
+                if part == 'image' and 'url' in clean[part]:
+                    clean[part]['url'] = image_url(clean[part]['url'])
         if data.get('fields'):
             clean['fields'] = [dict(name=field['name'], value=field['value'],
                                     inline=bool(field.get('inline', False)))
@@ -112,6 +127,7 @@ class ViceAudit:
     def __init__(self, system):
         self.system = system
         self.store = AuditStore(system.path)
+        self.visuals = AuditVisuals(system.path)
         self.task = None
         self.wakeup = asyncio.Event()
         self.flush_lock = asyncio.Lock()
@@ -121,6 +137,7 @@ class ViceAudit:
 
     async def start(self):
         await self.db('initialize')
+        await self.visuals.start()
         if not await self.db('state', 'started_at'):
             await self.db('set_state', 'started_at', utcnow().isoformat())
 
@@ -174,6 +191,9 @@ class ViceAudit:
         if old:
             historical = bool(old['historical'])
         embed = format_audit_entry(entry, historical=historical)
+        image_name = await self.visuals.render(entry)
+        if image_name:
+            embed.set_image(url='attachment://' + image_name)
         await self.publish(key, embed, event_type='audit', event_time=entry.created_at,
                            source_id=str(entry.id), historical=historical, cursor=cursor)
 
@@ -360,49 +380,118 @@ class ViceAudit:
                 rows = await self.db('batch', batch)
             if recovery:
                 message = await self.recover(channel, rows)
-            if message:
-                wanted = {marker(row['key']) for row in rows}
-                if (message.author.id != BOT_ID
-                        or {embed_marker(e) for e in message.embeds} != wanted
-                        or len(message.embeds) != len(rows)
-                        or getattr(message, 'content', '')
-                        or getattr(message, 'attachments', [])
-                        or getattr(message, 'components', [])):
-                    raise ValueError('El mensaje no coincide con las tarjetas de auditoría registradas.')
-            before_message = (dict(id=message.id, author=message.author.id,
-                content=getattr(message, 'content', ''),
-                embeds=deepcopy([e.to_dict() for e in message.embeds]),
-                attachments=[], components=[]) if message else None)
             expected = [(row['key'], row['fingerprint']) for row in rows]
             embeds = fit_batch(self.embeds(rows))
+            wanted = {marker(row['key']) for row in rows}
+
+            def require_files_permission():
+                if (any(str(e.image.url or '').startswith('attachment://') for e in embeds)
+                        and not channel.permissions_for(channel.guild.me).attach_files):
+                    raise ValueError('El bot necesita Adjuntar archivos para publicar comparaciones de auditoría.')
+
+            async def validate_message(current, *, allow_stripped_url=False):
+                if (current.author.id != BOT_ID
+                        or len(current.embeds) != len(rows)
+                        or getattr(current, 'content', '')
+                        or not await self.visuals.validate_attachments(
+                            getattr(current, 'attachments', []), rows)
+                        or getattr(current, 'components', [])):
+                    raise ValueError('El mensaje no coincide con las tarjetas de auditoría registradas.')
+                if {embed_marker(e) for e in current.embeds} == wanted:
+                    return False
+                if allow_stripped_url:
+                    actual = semantic_embeds(current.embeds, getattr(current, 'attachments', []))
+                    desired = semantic_embeds(embeds)
+                    # A titleless URL may be stripped by Discord. Accept this only
+                    # when every other byte of the semantic body is still ours.
+                    safe_missing = all(
+                        embed_marker(received) == marker(row['key'])
+                        or (not received.url and embed_marker(received) is None)
+                        for received, row in zip(current.embeds, rows))
+                    for value in actual + desired:
+                        value.pop('url', None)
+                    if safe_missing and actual == desired:
+                        return True
+                raise ValueError('El mensaje no conserva la identidad exacta del registro.')
+
+            require_files_permission()
+            if message:
+                await validate_message(message)
+            def attachment_state(current):
+                return [dict(id=str(a.id), filename=a.filename, size=getattr(a, 'size', None),
+                             url=getattr(a, 'url', None), content_type=getattr(a, 'content_type', None))
+                        for a in getattr(current, 'attachments', [])]
+            def message_state(current):
+                return dict(id=current.id, author=current.author.id,
+                    content=getattr(current, 'content', ''),
+                    embeds=deepcopy([e.to_dict() for e in current.embeds]),
+                    attachments=attachment_state(current), components=[])
+            before_message = message_state(message) if message else None
             async def snapshot():
                 return dict(guild=GUILD_ID, channel=channel.id,
                     records=[dict(key=r['key'], fingerprint=r['fingerprint'], message=r['message_id']) for r in rows],
                     before_message=before_message,
-                    delivered_embeds=deepcopy([e.to_dict() for e in message.embeds]) if message else [])
+                    delivered_embeds=deepcopy([e.to_dict() for e in message.embeds]) if message else [],
+                    delivered_attachments=attachment_state(message) if message else [])
+            async def edit_message(*, correction=False):
+                # Every caller validates the returned message before editing it.
+                # Nonce/fallback corrections get their own durable pre-edit copy,
+                # since the outer snapshot precedes the original send response.
+                require_files_permission()
+                previous = message_state(message) if correction else None
+                async def apply_edit():
+                    nonlocal message
+                    files = await self.visuals.files_for(embeds)
+                    try:
+                        message = await message.edit(embeds=embeds, attachments=files,
+                                                     allowed_mentions=discord.AllowedMentions.none())
+                        return message
+                    finally:
+                        for file in files:
+                            file.close()
+                if not correction:
+                    return await apply_edit()
+                async def correction_snapshot():
+                    return dict(guild=GUILD_ID, channel=channel.id, before_message=previous,
+                                current_message=message_state(message))
+                correction_key = hashlib.sha256(json.dumps(dict(
+                    expected=expected, before=previous,
+                    desired=[e.to_dict() for e in embeds]), sort_keys=True).encode()).hexdigest()
+                return await self.system.track('AUDIT_RECORD_CORRECTION',
+                    'Conservar y corregir respuesta de una tarjeta de auditoría',
+                    apply_edit, correction_key, snapshot=correction_snapshot)
             async def send():
                 nonlocal message
                 if message:
-                    message = await message.edit(embeds=embeds, allowed_mentions=discord.AllowedMentions.none())
+                    message = await edit_message()
                 else:
-                    message = await channel.send(embeds=embeds,
-                        nonce=rows[0]['batch_key'], silent=True,
-                        allowed_mentions=discord.AllowedMentions.none())
+                    files = await self.visuals.files_for(embeds)
+                    try:
+                        message = await channel.send(embeds=embeds, files=files,
+                            nonce=rows[0]['batch_key'], silent=True,
+                            allowed_mentions=discord.AllowedMentions.none())
+                    finally:
+                        for file in files:
+                            file.close()
                     # Discord may return a previously accepted nonce after a lost
                     # response. Its body can predate a concurrent merged update.
-                    if semantic_embeds(message.embeds) != semantic_embeds(embeds):
-                        message = await message.edit(embeds=embeds,
-                                                     allowed_mentions=discord.AllowedMentions.none())
-                wanted = {marker(row['key']) for row in rows}
-                if {embed_marker(e) for e in message.embeds} != wanted:
+                    stripped = await validate_message(message, allow_stripped_url=True)
+                    if (not stripped and semantic_embeds(message.embeds,
+                            getattr(message, 'attachments', [])) != semantic_embeds(embeds)):
+                        message = await edit_message(correction=True)
+                if await validate_message(message, allow_stripped_url=True):
                     # Defensive fallback if Discord ever strips titleless URL metadata.
                     for embed, row in zip(embeds, rows):
                         embed.set_footer(text=str(embed.footer.text or '') + ' • ' + marker(row['key']))
-                    message = await message.edit(embeds=embeds,
-                                                 allowed_mentions=discord.AllowedMentions.none())
-                if ({embed_marker(e) for e in message.embeds} != wanted
-                        or len(message.embeds) != len(rows)):
-                    raise ValueError('Discord no conservó la identidad de las tarjetas publicadas.')
+                    message = await edit_message(correction=True)
+                await validate_message(message)
+                wanted_files = {str(e.image.url)[len('attachment://'):] for e in embeds
+                                if str(e.image.url or '').startswith('attachment://')}
+                actual_files = getattr(message, 'attachments', [])
+                if ({a.filename for a in actual_files} != wanted_files
+                        or len(actual_files) != len(wanted_files)
+                        or not await self.visuals.validate_attachments(actual_files, rows)):
+                    raise ValueError('Discord no confirmó las comparaciones visuales del registro.')
                 await self.db('mark_sent', expected, str(message.id))
             request = hashlib.sha256(json.dumps(expected).encode()).hexdigest()
             await self.system.track('AUDIT_RECORD', 'Publicar registro privado de actividad',

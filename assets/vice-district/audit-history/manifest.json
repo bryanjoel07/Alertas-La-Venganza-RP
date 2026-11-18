@@ -1,0 +1,24 @@
+[
+  {
+    "field": "splash",
+    "guild_id": "1572462544302383164",
+    "discord_hash": "2352b7002eea5e49591f494c92bb876d",
+    "filename": "2352b7002eea5e49591f494c92bb876d.jpg",
+    "source": "assets\\server-backgrounds-v1\\vice-district-invite-background.png",
+    "source_sha256": "6bacd1c50e375ccf23020a9bcfc8de0f27d35f70417553f821a941fd37410a30",
+    "sha256": "c29b9af125c774dec1dbda144bfd8af53cac4a877e1cceb1440e6f5ad4cfb1e7",
+    "bytes": 171787,
+    "provenance": "Exact original uploaded by the owner session; Discord hash verified in server-background before/after snapshots. Resized only for comparison display; no artwork changes."
+  },
+  {
+    "field": "splash",
+    "guild_id": "1572462544302383164",
+    "discord_hash": "1662ee4c26262cd955e7a7ab14362d59",
+    "filename": "1662ee4c26262cd955e7a7ab14362d59.jpg",
+    "source": "assets\\server-backgrounds-v2\\vice-district-invite-background.png",
+    "source_sha256": "ae39ebf6614637f8b81107fbc493bba4adecc3ce7b3fbc78410f77056bad5483",
+    "sha256": "70ba88a73b44748e73e947e5e08aa33aa8c0cb7c06396983588a5867faee6b8c",
+    "bytes": 309378,
+    "provenance": "Exact original uploaded by the owner session; Discord hash verified in server-background before/after snapshots. Resized only for comparison display; no artwork changes."
+  }
+]
