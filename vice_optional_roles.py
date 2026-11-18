@@ -15,7 +15,9 @@ RELEASE_KEY = 'optional_roles_release'
 ROLES_TOPIC = ('Personaliza tu perfil: país o territorio, regiones, plataformas y avisos. '
                'Todo es opcional y puedes cambiarlo cuando quieras.')
 REASON = 'Países, regiones y plataformas solicitados por el propietario'
-RETIREMENT_KEY = 'optional_roles:retirement:' + CATALOG_VERSION
+# The owner-authorized removal set belongs to v2 permanently. Cosmetic catalog
+# revisions must reuse its receipts rather than freezing/deleting those IDs anew.
+RETIREMENT_KEY = 'optional_roles:retirement:vice-optional-role-catalog-v2-hispano'
 
 
 class OptionalRoles:

@@ -25,7 +25,7 @@ class OptionalRoleCatalogTests(unittest.TestCase):
         self.assertEqual({row[1] for row in COUNTRY_DATA}, expected_codes)
         self.assertEqual(len(COUNTRY_KEYS), 19)
         self.assertEqual(COUNTRY_KEYS[0], 'pr')
-        self.assertEqual(CATALOG_VERSION, 'vice-optional-role-catalog-v2-hispano')
+        self.assertEqual(CATALOG_VERSION, 'vice-optional-role-catalog-v3-gta-platforms')
 
     def test_selects_fit_discord_and_cannot_assign_staff_or_separators(self):
         self.assertEqual(len(OPTIONAL_GROUPS), 4)
@@ -79,20 +79,21 @@ class OptionalRoleCatalogTests(unittest.TestCase):
         self.assertFalse(RETIRED_KEYS & set.union(*(set(keys) for _, keys, _ in OPTIONAL_GROUPS.values())))
         self.assertEqual(set(REGION_KEYS), {'caribbean', 'central', 'south',
             'north', 'greater_antilles', 'andean', 'southern_cone', 'amazon'})
-        self.assertEqual(PLATFORM_KEYS, ('ps', 'xbox', 'xbox_one_cloud'))
+        self.assertEqual(PLATFORM_KEYS, ('ps', 'xbox', 'xbox_one_cloud', 'pc'))
 
-    def test_pc_keeps_key_only_as_unconfirmed_release_interest(self):
+    def test_pc_keeps_key_as_explicitly_requested_waiting_platform(self):
         roles = {role[0]: role for role in OPTIONAL_ROLES}
         self.assertEqual(len(OPTIONAL_ROLES), 37)
         self.assertEqual(roles['ps'][1], '🎮 PlayStation 5')
         self.assertEqual(roles['xbox'][1], '🎮 Xbox Series X|S')
         self.assertEqual(roles['xbox_one_cloud'][1], '☁️ Xbox One · Nube')
         self.assertEqual(roles['pc'][1], '⌛ PC · Esperando GTA VI')
-        self.assertNotIn('pc', GROUP_SCOPES['platform'])
-        self.assertIn('pc', GROUP_SCOPES['interests'])
+        self.assertIn('pc', GROUP_SCOPES['platform'])
+        self.assertNotIn('pc', GROUP_SCOPES['interests'])
         self.assertNotIn('pc', RETIRED_KEYS)
         role_order = list(roles)
-        self.assertGreater(role_order.index('pc'), role_order.index('interests_separator'))
+        self.assertLess(role_order.index('pc'), role_order.index('interests_separator'))
+        self.assertGreater(role_order.index('pc'), role_order.index(PLATFORM_SEPARATOR_KEY))
 
 
 if __name__ == '__main__':

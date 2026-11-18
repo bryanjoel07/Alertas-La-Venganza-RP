@@ -263,8 +263,8 @@ delete feedback history or create demonstration ratings on the live server.
 ### Country, region and platform roles
 
 The optional role catalog includes the 18 Spanish-speaking Latin American states
-plus Puerto Rico, eight overlapping regional identity tags, and three supported
-GTA VI platform choices. This replaces the wider Caribbean/device catalog following the
+plus Puerto Rico, eight overlapping regional identity tags, and four platform
+choices: three supported options plus PC explicitly marked as waiting. This replaces the wider Caribbean/device catalog following the
 owner's explicit correction. Puerto Rico comes first.
 The old Preferences divider retains its ID and becomes Platforms. Countries,
 Regions and Alerts each receive a separate divider. Existing roles and member
@@ -286,8 +286,9 @@ correction retires only frozen registered unused cosmetic roles, retaining recei
 and before-states. Grouped numeric positions handle Discord's role-position ties
 without moving the bot or staff hierarchy. The platform choices are PS5, Xbox
 Series X|S and Xbox One (Cloud Gaming), checked against Rockstar's current support
-page on November 18, 2026. The existing assigned PC role is preserved as a waiting
-interest outside Platforms; no PC version is represented as confirmed.
+page on November 18, 2026. The owner explicitly requested keeping PC in Platforms;
+its existing ID and assignments are preserved, and its label says Esperando GTA VI.
+No PC version is represented as confirmed.
 
 ### Closed ticket deletion controls
 

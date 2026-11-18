@@ -5,13 +5,13 @@ plus Puerto Rico. The country selector includes Puerto Rico as explicitly
 requested; this community catalog makes no sovereignty claims.
 
 Regions below are optional community identity tags, not a partition of M49.
-Their overlap is intentional. Platform options reflect Rockstar's confirmed
-GTA VI console options, checked 2026-11-18. PC retains its existing role ID as
-an interest in a future release, never as a confirmed platform. All role
-specifications have zero permissions.
+Their overlap is intentional. Platform options include Rockstar's confirmed
+GTA VI console options, checked 2026-11-18, plus PC at the owner's explicit
+request. PC retains its existing role ID and is labeled as waiting for GTA VI,
+never as a confirmed release. All role specifications have zero permissions.
 """
 
-CATALOG_VERSION = 'vice-optional-role-catalog-v2-hispano'
+CATALOG_VERSION = 'vice-optional-role-catalog-v3-gta-platforms'
 COUNTRY_SOURCE = 'https://unstats.un.org/unsd/methodology/m49/'
 PLATFORM_SOURCE = ('https://support.rockstargames.com/articles/'
                    '4QfG4FmZCf5W1gS8jy4UVT/grand-theft-auto-vi-platform-editions-and-versions')
@@ -85,13 +85,13 @@ PLATFORM_ROLES = [
     _role('ps', '🎮 PlayStation 5', 0x6C9FFF),
     _role('xbox', '🎮 Xbox Series X|S', 0x58C66A),
     _role('xbox_one_cloud', '☁️ Xbox One · Nube', 0x6AC6E5),
+    _role('pc', '⌛ PC · Esperando GTA VI', 0xAC90F5),
 ]
 PLATFORM_KEYS = tuple(role[0] for role in PLATFORM_ROLES)
 
 INTEREST_ROLES = [
     _role('news', '📰 Avisos de GTA VI', 0xFFB36A),
     _role('events', '🎉 Avisos de eventos', 0xFF8EBE),
-    _role('pc', '⌛ PC · Esperando GTA VI', 0xAC90F5),
 ]
 
 OPTIONAL_ROLES = [
@@ -114,8 +114,8 @@ COUNTRY_GROUPS = {
 OPTIONAL_GROUPS = {
     **COUNTRY_GROUPS,
     'region': ('Tus regiones · puedes elegir varias', list(REGION_KEYS), len(REGION_KEYS)),
-    'platform': ('Plataformas confirmadas de GTA VI', list(PLATFORM_KEYS), len(PLATFORM_KEYS)),
-    'interests': ('Tus avisos, tu crew y espera en PC', ['news', 'events', 'crew', 'pc'], 4),
+    'platform': ('Plataformas de GTA VI · PC en espera', list(PLATFORM_KEYS), len(PLATFORM_KEYS)),
+    'interests': ('Tus avisos y tu crew', ['news', 'events', 'crew'], 3),
 }
 GROUP_SCOPES = {
     group: COUNTRY_KEYS if group in COUNTRY_GROUPS else tuple(keys)

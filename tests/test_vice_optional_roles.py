@@ -261,7 +261,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(positions), EXPECTED_ACTIVE_COUNT)
         self.assertEqual(set(positions.values()), set(range(5, 16)))
         self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL)
-        self.assertEqual(self.by_key['pc'].position, 5)
+        self.assertEqual(self.by_key['pc'].position, 7)
         self.assertIn(self.by_key['pc'], self.roles)
 
     def complete_previous_catalog(self):
@@ -360,6 +360,27 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         for role in self.roles:
             if hasattr(role, 'delete'):
                 role.delete.assert_not_awaited()
+
+    async def test_completed_v2_retirement_is_reused_when_pc_returns_to_platforms(self):
+        self.complete_previous_catalog()
+        await self.manager.ready(self.refresh)
+        retained_pc = self.by_key['pc']
+        pc_id = retained_pc.id
+        before_plan = [dict(row) for row in self.store.get(RETIREMENT_KEY)]
+        membership_reads = self.guild.fetch_members.call_count
+        created = self.guild.create_role.await_count
+        retained_pc.position = 5  # The previous v2 catalog placed PC in interests.
+        self.store.put(RELEASE_KEY, 'vice-optional-role-catalog-v2-hispano')
+        await self.manager.ready(self.refresh)
+        self.assertEqual(RETIREMENT_KEY, 'optional_roles:retirement:vice-optional-role-catalog-v2-hispano')
+        self.assertEqual(self.store.get(RETIREMENT_KEY), before_plan)
+        self.assertEqual(self.guild.fetch_members.call_count, membership_reads)
+        self.assertEqual(self.guild.create_role.await_count, created)
+        self.assertEqual(self.store.get('role:pc'), pc_id)
+        self.assertEqual(retained_pc.members, [777])
+        self.assertEqual(retained_pc.position, 7)
+        self.assertEqual(self.store.get(RELEASE_KEY), CATALOG_VERSION)
+        self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL)
 
     async def test_interrupted_creation_recovers_only_exact_bot_audit_nonce(self):
         spec = next(spec for spec in OPTIONAL_ROLES if not self.store.get('role:' + spec[0]))

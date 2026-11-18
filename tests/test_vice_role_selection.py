@@ -108,26 +108,33 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.guild.fetch_roles.assert_not_awaited()
         self.assert_no_mutation()
 
-    async def test_pc_and_retired_platform_values_require_current_menu(self):
-        for obsolete in ['pc', 'nintendo', 'steam_deck', 'android', 'ios', 'macos', 'linux', 'vr']:
+    async def test_retired_platform_values_require_current_menu(self):
+        for obsolete in ['nintendo', 'steam_deck', 'android', 'ios', 'macos', 'linux', 'vr']:
             with self.subTest(value=obsolete), self.assertRaisesRegex(ValueError, 'panel actualizado'):
                 await self.system.select_roles(self.interaction, 'platform', [obsolete])
         self.guild.fetch_roles.assert_not_awaited()
         self.assert_no_mutation()
 
-    async def test_pc_waiting_interest_can_be_chosen_without_changing_platform_or_country(self):
-        self.member.roles = [self.rolemap['ps'], self.rolemap['pr'], self.rolemap['caribbean']]
-        await self.system.select_roles(self.interaction, 'interests', ['pc'])
+    async def test_pc_waiting_platform_can_be_chosen_alongside_console_without_changing_other_groups(self):
+        self.member.roles = [self.rolemap['ps'], self.rolemap['pr'], self.rolemap['caribbean'],
+                             self.rolemap['events']]
+        await self.system.select_roles(self.interaction, 'platform', ['ps', 'pc'])
         self.member.remove_roles.assert_not_awaited()
         self.member.add_roles.assert_awaited_once_with(
             self.rolemap['pc'], reason='Roles opcionales elegidos por el miembro')
 
-    async def test_platform_change_preserves_pc_waiting_interest(self):
+    async def test_platform_change_keeps_selected_pc_and_preserves_interests(self):
         self.member.roles = [self.rolemap['ps'], self.rolemap['pc'], self.rolemap['events']]
-        await self.system.select_roles(self.interaction, 'platform', ['xbox', 'xbox_one_cloud'])
+        await self.system.select_roles(self.interaction, 'platform', ['xbox', 'xbox_one_cloud', 'pc'])
         self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['ps'],))
         self.assertEqual(set(self.member.add_roles.await_args.args),
                          {self.rolemap['xbox'], self.rolemap['xbox_one_cloud']})
+
+    async def test_pc_cannot_be_assigned_from_interest_menu(self):
+        with self.assertRaisesRegex(ValueError, 'panel actualizado'):
+            await self.system.select_roles(self.interaction, 'interests', ['pc'])
+        self.guild.fetch_roles.assert_not_awaited()
+        self.assert_no_mutation()
 
     async def test_permission_drift_is_rejected_using_fresh_role_definitions(self):
         changed = MagicMock(spec=discord.Role)
@@ -211,9 +218,9 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
                 countries.extend(option.value for option in item.options)
             elif item.group == 'platform':
                 self.assertEqual({option.value for option in item.options},
-                                 {'ps', 'xbox', 'xbox_one_cloud'})
+                                 {'ps', 'xbox', 'xbox_one_cloud', 'pc'})
             elif item.group == 'interests':
-                self.assertIn('pc', [option.value for option in item.options])
+                self.assertEqual({option.value for option in item.options}, {'news', 'events', 'crew'})
         self.assertEqual(len(countries), 19)
         self.assertEqual(countries, list(COUNTRY_KEYS))
         self.assertEqual(len(countries), len(set(countries)))
