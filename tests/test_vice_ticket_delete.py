@@ -356,6 +356,20 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.get('ticket_delete:55')['state'], 'deleted')
         self.assertTrue(view.finished)
 
+    async def test_ready_refreshes_exact_legacy_technical_footer_once(self):
+        panel = await self.prepared()
+        panel.embeds[0].set_footer(text='VIce District • ticket-delete:55')
+        panel.edit.reset_mock()
+        self.assertTrue(self.manager.archive_matches(panel, 55))
+        self.assertFalse(self.manager.archive_matches(panel, 56))
+        await self.manager.ready()
+        self.assertEqual(panel.embeds[0].footer.text, 'VIce District • Ticket cerrado')
+        panel.edit.assert_awaited_once()
+        await self.manager.ready()
+        panel.edit.assert_awaited_once()
+        self.channel.send.assert_not_awaited()
+        self.channel.delete.assert_not_awaited()
+
     async def test_ready_updates_only_bot_archive_and_removes_obsolete_bot_close_button_once(self):
         starter = self.message(101, self.system.embed('🎫 Te escuchamos', 'Consulta'), component=CLOSE)
         archive = self.message(102, self.system.embed('🔒 Conversación archivada', 'Historial privado'))

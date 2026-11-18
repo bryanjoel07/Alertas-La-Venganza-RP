@@ -21,7 +21,7 @@ def record_key(channel_id):
 
 
 def panel_footer(channel_id):
-    return 'VIce District • ticket-delete:' + str(channel_id)
+    return 'VIce District • Ticket cerrado'
 
 
 def has_control(message, custom_id):
@@ -143,7 +143,8 @@ class TicketDeletion:
         controls = [child for row in message.components for child in getattr(row, 'children', ())]
         return (message.author.id == BOT_ID and not message.content and not message.attachments
                 and len(message.embeds) == 1 and message.embeds[0].title == ARCHIVE_TITLE
-                and message.embeds[0].footer.text in (LEGACY_FOOTER, panel_footer(channel_id))
+                and message.embeds[0].footer.text in (LEGACY_FOOTER, panel_footer(channel_id),
+                                                     'VIce District • ticket-delete:' + str(channel_id))
                 and (not controls or (len(controls) == 1
                      and getattr(controls[0], 'custom_id', None) == DELETE_CUSTOM_ID)))
 
