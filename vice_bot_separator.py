@@ -20,7 +20,8 @@ class BotSeparator:
         # Never recreate a role the owner subsequently deletes or move an
         # already installed separator back below the bot after its UI placement.
         receipt = self.system.store.get(KEY)
-        if receipt and receipt.get('state') == 'owner_ui_position_pending':
+        if (receipt and receipt.get('state') == 'owner_ui_position_pending'
+                and receipt.get('role', {}).get('position', 0) > 1):
             return
         context = await self.system.role_icons.context()
         if not context['unlocked']:
@@ -40,9 +41,10 @@ class BotSeparator:
             if not latest['unlocked']:
                 return
             current = self.system.store.get(KEY)
-            if current and current.get('state') == 'owner_ui_position_pending':
-                return
             role = roles.get(int((current or {}).get('role_id') or 0))
+            if (current and current.get('state') == 'owner_ui_position_pending'
+                    and (role is None or role.position != 1)):
+                return
             if role is None and current and current.get('attempted'):
                 recovered = []
                 async for entry in guild.audit_logs(limit=100, action=discord.AuditLogAction.role_create,
@@ -69,9 +71,14 @@ class BotSeparator:
                 raise ValueError('El separador no cumple el alcance cosmético.')
             # Place within editable hierarchy so the owner can make one short
             # native drag above the bot. No attempt to bypass bot hierarchy.
-            await role.edit(position=max(1, latest['top_role'].position - 1), reason=REASON)
+            # Role.edit(position=...) expands a cached role range. A freshly
+            # created role can be omitted by that stale range; send only its ID.
+            position = max(1, latest['top_role'].position - 1)
+            await guild.edit_role_positions(positions={role: position}, reason=REASON)
             fresh = await guild.fetch_roles()
             applied = next(r for r in fresh if r.id == role.id)
+            if applied.position != position:
+                raise ValueError('No se confirmó la posición del separador de bots.')
             await self.system.call('put', KEY, dict(state='owner_ui_position_pending',
                 role_id=str(role.id), role=role_state(applied),
                 hierarchy=[{'id': str(r.id), 'position': r.position} for r in fresh],

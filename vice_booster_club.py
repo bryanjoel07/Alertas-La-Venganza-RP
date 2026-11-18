@@ -67,7 +67,7 @@ class BoosterClub:
             raise ValueError('Faltan roles registrados del Club Booster o del equipo.')
         booster = roles[BOOSTER_ID]
         if (booster.guild.id != GUILD_ID or not booster.is_premium_subscriber()
-                or booster.permissions.value != 0 or not booster < max(bot_roles)):
+                or not booster < max(bot_roles)):
             raise ValueError('El rol indicado no es el Booster cosmético administrable de Discord.')
         if not roles[CREATOR_ID] < roles[SUPPORT_ID] < max(bot_roles):
             raise ValueError('La jerarquía del equipo necesita revisión.')
@@ -125,13 +125,21 @@ class BoosterClub:
             before = role_state(role)
             state = self.system.store.get(ROLE_RECEIPT) or dict(state='pending', before=before)
             await self.system.call('put', ROLE_RECEIPT, state)
+            def check_preserved(candidate):
+                after = role_state(candidate)
+                if any(after[key] != before[key] for key in
+                       ('permissions', 'icon_hash', 'unicode_emoji', 'mentionable', 'managed')):
+                    raise ValueError('Los permisos o el icono existentes del rol VIP cambiaron; se requiere revisión.')
             try:
-                if role.name != ROLE_NAME or role.colour.value != ROLE_COLOR or not role.hoist:
+                if (role.name != ROLE_NAME or role.colour.value != ROLE_COLOR or not role.hoist
+                        or role.secondary_colour is not None or role.tertiary_colour is not None):
                     # Omitted permissions/display_icon retain the existing access
                     # and owner's freshly installed image, including on retries.
                     await role.edit(name=ROLE_NAME, colour=discord.Colour(ROLE_COLOR),
+                                    secondary_color=None, tertiary_color=None,
                                     hoist=True, reason=REASON)
                 context = await self.context()
+                check_preserved(context['booster'])
                 current = sorted(context['roles'].values())
                 role = context['booster']
                 remaining = [item for item in current if item.id != BOOSTER_ID]
@@ -150,6 +158,7 @@ class BoosterClub:
                         raise ValueError('No hay una posición aislada para VIP debajo de Soporte.')
                     await context['guild'].edit_role_positions(positions={role: position}, reason=REASON)
                 final = await self.context()
+                check_preserved(final['booster'])
                 ordered = sorted(final['roles'].values())
                 vip_index = next(i for i, item in enumerate(ordered) if item.id == BOOSTER_ID)
                 if (vip_index + 1 >= len(ordered) or ordered[vip_index + 1].id != SUPPORT_ID
@@ -158,7 +167,8 @@ class BoosterClub:
                 if [item.id for item in ordered if item.id != BOOSTER_ID] != [item.id for item in remaining]:
                     raise ValueError('Cambió el orden relativo de otro rol durante el ajuste VIP.')
                 if (final['booster'].name != ROLE_NAME or final['booster'].colour.value != ROLE_COLOR
-                        or not final['booster'].hoist):
+                        or not final['booster'].hoist or final['booster'].secondary_colour is not None
+                        or final['booster'].tertiary_colour is not None):
                     raise ValueError('Discord no confirmó el diseño del rol VIP.')
             except discord.Forbidden:
                 await self.system.call('put', ROLE_RECEIPT, dict(state, state='owner_ui_required'))

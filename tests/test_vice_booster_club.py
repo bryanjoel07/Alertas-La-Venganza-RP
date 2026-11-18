@@ -43,6 +43,7 @@ class Role:
     async def update(self, **values):
         for key, value in values.items():
             if key != 'reason':
+                key = {'secondary_color': 'secondary_colour', 'tertiary_color': 'tertiary_colour'}.get(key, key)
                 setattr(self, key, value)
         self.color = self.colour
         return self
@@ -138,7 +139,8 @@ class BoosterClubTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vip.colour.value, ROLE_COLOR)
         self.assertTrue(vip.hoist)
         self.assertEqual(vip.icon.key, 'existing-owner-icon')
-        self.assertEqual(set(vip.edit.call_args.kwargs), {'name','colour','hoist','reason'})
+        self.assertEqual(set(vip.edit.call_args.kwargs),
+                         {'name','colour','secondary_color','tertiary_color','hoist','reason'})
         self.assertEqual({rid: role.permissions.value for rid, role in self.roles.items()}, before_permissions)
         ordered = sorted(self.roles.values())
         self.assertEqual(ordered[ordered.index(vip)+1].id, SUPPORT_ID)
@@ -178,15 +180,41 @@ class BoosterClubTests(unittest.IsolatedAsyncioTestCase):
             await self.club.ready()
         self.roles[BOOSTER_ID].edit.assert_not_awaited()
 
-    async def test_privileged_or_unrecognized_booster_rejected(self):
-        self.roles[BOOSTER_ID].permissions = discord.Permissions(administrator=True)
-        with self.assertRaises(ValueError):
-            await self.club.ready()
-        self.roles[BOOSTER_ID].permissions = discord.Permissions.none()
+    async def test_existing_permissions_and_icon_preserved_with_solid_color(self):
+        role = self.roles[BOOSTER_ID]
+        role.permissions = discord.Permissions(2221982107422273)
+        role.secondary_colour = discord.Colour(11816191)
+        role.tertiary_colour = discord.Colour(0xFFFFFF)
+        await self.club.ready()
+        receipt = self.store.get(ROLE_RECEIPT)
+        self.assertEqual(receipt['state'], 'complete')
+        for key in ('permissions', 'icon_hash', 'unicode_emoji', 'mentionable', 'managed'):
+            self.assertEqual(receipt['before'][key], receipt['after'][key])
+        self.assertEqual(role.permissions.value, 2221982107422273)
+        self.assertIsNone(role.secondary_colour)
+        self.assertIsNone(role.tertiary_colour)
+        self.assertEqual(role.colour.value, ROLE_COLOR)
+
+    async def test_unrecognized_booster_rejected(self):
         self.roles[BOOSTER_ID].managed = False
         with self.assertRaises(ValueError):
             await self.club.ready()
         self.guild.create_category.assert_not_awaited()
+
+    async def test_changed_icon_or_permissions_stops_before_reordering(self):
+        for key, value in (('permissions', discord.Permissions(1024)), ('icon', None)):
+            with self.subTest(key=key):
+                self.setUp()
+                role = self.roles[BOOSTER_ID]
+                async def unexpected_change(**kwargs):
+                    await role.update(**kwargs)
+                    setattr(role, key, value)
+                role.edit.side_effect = unexpected_change
+                with self.assertRaisesRegex(ValueError, 'permisos o el icono'):
+                    await self.club.ready()
+                self.guild.edit_role_positions.assert_not_awaited()
+                self.guild.create_category.assert_not_awaited()
+                self.assertNotEqual(self.store.get(ROLE_RECEIPT)['state'], 'complete')
 
     async def test_managed_role_forbidden_is_reported_without_bypass(self):
         self.roles[BOOSTER_ID].edit.side_effect = discord.Forbidden(NS(status=403,reason='Forbidden'),'managed role')

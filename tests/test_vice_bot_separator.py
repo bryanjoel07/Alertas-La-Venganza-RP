@@ -8,16 +8,25 @@ from vice_bot_separator import BotSeparator, KEY, NAME
 from vice_design import GUILD_ID
 
 
+class Role(NS):
+    def __hash__(self):
+        return hash(self.id)
+
+
 class BotSeparatorTests(unittest.IsolatedAsyncioTestCase):
     def setup_system(self):
         values = {}
         guild = NS(id=GUILD_ID)
-        role = NS(id=123456789, guild=guild, name=NAME, position=1,
+        role = Role(id=123456789, guild=guild, name=NAME, position=1,
                   permissions=discord.Permissions.none(), colour=discord.Colour(0x33E5E9),
                   hoist=False, mentionable=False, managed=False, icon=NS(key='image'),
                   edit=AsyncMock())
         guild.create_role = AsyncMock(return_value=role)
         guild.fetch_roles = AsyncMock(return_value=[role])
+        async def move(positions, reason):
+            for item, position in positions.items():
+                item.position = position
+        guild.edit_role_positions = AsyncMock(side_effect=move)
         context = dict(guild=guild, roles={}, unlocked=True, top_role=NS(position=45))
         icons = NS(context=AsyncMock(return_value=context),
                    preflight_assets=Mock(return_value=[dict(key='bot', data=b'image')]))
@@ -39,6 +48,7 @@ class BotSeparatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(kwargs['hoist'])
         self.assertFalse(kwargs['mentionable'])
         self.assertEqual(kwargs['display_icon'], b'image')
+        self.assertEqual(values[KEY]['role']['position'], 44)
         self.assertEqual(values[KEY]['state'], 'owner_ui_position_pending')
         system.role_icons.context.reset_mock()
         await BotSeparator(system).ready()
