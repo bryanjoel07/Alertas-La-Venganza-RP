@@ -30,6 +30,8 @@ class StoreBot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = False
+        intents.moderation = True
+        intents.voice_states = True
         super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none())
         self.path = os.getenv('DB_PATH', '/data/esschino.sqlite3')
         self.tree = app_commands.CommandTree(self)
@@ -129,6 +131,10 @@ class StoreBot(discord.Client):
     async def on_member_join(self, member):
         if member.guild.id == VICE_GUILD_ID:
             try:
+                await self.vice.activity.member_join(member)
+            except Exception:
+                log.exception('VICE_ACTIVITY_JOIN failed member=%s', member.id)
+            try:
                 await self.vice.member_join(member)
             except discord.NotFound:
                 pass
@@ -152,6 +158,10 @@ class StoreBot(discord.Client):
         if payload.guild_id != VICE_GUILD_ID:
             return
         try:
+            await self.vice.activity.member_remove(payload.user, self.get_guild(payload.guild_id))
+        except Exception:
+            log.exception('VICE_ACTIVITY_LEAVE failed member=%s', payload.user.id)
+        try:
             await self.vice.member_remove(payload.user, guild=self.get_guild(payload.guild_id))
         except Exception:
             log.exception('VICE_GOODBYE failed member=%s', payload.user.id)
@@ -160,9 +170,21 @@ class StoreBot(discord.Client):
         if member.guild.id != VICE_GUILD_ID:
             return
         try:
+            await self.vice.activity.voice_state_update(member, before, after)
+        except Exception:
+            log.exception('VICE_ACTIVITY_VOICE failed member=%s', member.id)
+        try:
             await self.vice.voice.voice_state_update(member, before, after)
         except Exception:
             log.exception('VICE_VOICE_STATE failed member=%s', member.id)
+
+    async def on_audit_log_entry_create(self, entry):
+        if entry.guild.id != VICE_GUILD_ID:
+            return
+        try:
+            await self.vice.audit.entry_create(entry)
+        except Exception:
+            log.exception('VICE_AUDIT_GATEWAY failed entry=%s', entry.id)
 
     async def on_raw_reaction_add(self, payload):
         if payload.guild_id != VICE_GUILD_ID:

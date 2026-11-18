@@ -96,6 +96,36 @@ Markers and exact creator/name/start recovery prevent duplicate opening events o
 
 ## Validation
 
+### Private audit history and live activity
+
+`vice_audit.py` imports all audit entries Discord still makes available (up to its
+45-day retention) into the existing private registro-staff channel, preserving original
+timestamps and showing Puerto Rico AST in each footer. Initial historical records are
+published chronologically in bounded batches of up to five embeds. The pinned staff
+panel explains coverage and import status. No roles or access permissions are changed.
+
+`vice_activity.py` records member arrivals/departures and observed voice connections,
+disconnections, channel transitions, mute/deaf, camera and streaming changes from
+activation onward. Gateway voice changes do not identify an administrative actor;
+separate evidenced audit entries supply the actor and grouped count when Discord does.
+The formatter includes avatars, names, IDs, relevant channels and before/after values,
+with explicit unavailable values instead of guesses. Kick/ban reasons remain reserved
+to admin-only departures. Message bodies and webhook/token credentials are not copied.
+
+`vice_audit_store.py` keeps a durable SQLite outbox, payload fingerprints, message IDs,
+send reservations and a transactionally advanced scan cursor. Gateway delivery and
+polling share audit-entry keys. A one-hour overlapping scan every minute refreshes
+merged entries whose counts change without a Gateway notification; a daily full scan
+reconciles retained history. A single publisher edits existing merged records rather
+than posting duplicates. Stable enforced nonces and exact footer-marker recovery cover
+send-before-ack interruptions. Each Discord write uses a small durable ChangeLog snapshot.
+Publication fails closed if registro-staff loses its private staff-only overwrite scope.
+
+To stop this feature, remove its StoreBot event callbacks and ViceDistrict lifecycle
+integration together; preserve the vice_audit_outbox/state tables, posted history and
+journal. Never delete records as part of disabling the listener. Historical ordinary
+voice sessions and voluntary departures cannot be reconstructed from Discord audit logs.
+
 The second expression pack adds six original coquí meme faces (built-in imagegen)
 and six vector/canvas GIF loops (VI neon, WEPA, alert, loading palm, hype and RIP).
 All assets are 128×128 with transparency, under 256 KiB. GIFs have 20 frames and

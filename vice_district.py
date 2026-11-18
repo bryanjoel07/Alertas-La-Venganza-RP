@@ -20,6 +20,8 @@ from vice_welcome import ViceWelcome, render_card, render_cover
 from vice_voice import TempVoice
 from vice_community import CommunityExtras, EventModal
 from vice_readonly import ReadOnlyChannels, lock_overwrites
+from vice_audit import ViceAudit
+from vice_activity import ViceActivity
 from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
@@ -120,6 +122,8 @@ class ViceDistrict:
         self.voice = TempVoice(self)
         self.community = CommunityExtras(self)
         self.readonly = ReadOnlyChannels(self)
+        self.audit = ViceAudit(self)
+        self.activity = ViceActivity(self.audit)
         self.ready_lock = asyncio.Lock()
         self.roles_lock = asyncio.Lock()
         self.ticket_lock = asyncio.Lock()
@@ -178,6 +182,7 @@ class ViceDistrict:
         await self.welcome.start()
         await self.voice.start()
         await self.community.start()
+        await self.audit.start()
         for view in [WelcomePanel(self, links=False), RolesPanel(self), SupportPanel(self), CloseTicketPanel(self)]:
             self.bot.add_view(view)
 
@@ -217,6 +222,7 @@ class ViceDistrict:
                 await self.voice.ready()
                 await self.readonly.ready()
                 await self.community.ready()
+                await self.audit.ready()
                 return
             guild = self.bot.get_guild(GUILD_ID)
             self.validate_guild(guild)
@@ -241,6 +247,7 @@ class ViceDistrict:
             await self.voice.ready()
             await self.readonly.ready()
             await self.community.ready()
+            await self.audit.ready()
 
     async def decorate(self, guild):
         """Rename existing objects only; preserve parents, IDs and permissions."""
@@ -714,6 +721,7 @@ class ViceDistrict:
             return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
+        await self.audit.close()
         await self.voice.close()
         await self.welcome.close()
 

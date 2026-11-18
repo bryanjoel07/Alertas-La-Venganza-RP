@@ -329,7 +329,8 @@ class RawDepartureRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_uncached_payload_is_forwarded_with_its_authorized_guild(self):
         user = NS(id=77, bot=False)
         guild = NS(id=GUILD_ID, owner_id=OWNER_ID)
-        bot = NS(vice=NS(member_remove=AsyncMock()), get_guild=MagicMock(return_value=guild))
+        bot = NS(vice=NS(member_remove=AsyncMock(), activity=NS(member_remove=AsyncMock())),
+                 get_guild=MagicMock(return_value=guild))
         await StoreBot.on_raw_member_remove(bot, NS(guild_id=GUILD_ID, user=user))
         bot.vice.member_remove.assert_awaited_once()
         args, kwargs = bot.vice.member_remove.await_args
@@ -339,4 +340,3 @@ class RawDepartureRoutingTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

@@ -85,7 +85,7 @@ CHANNELS = [
     ('voice2','voice','╰・🌇│Crew 02',None,'chat',True,6),
     ('support','help','╰・🎫│abrir-ticket','Abre un ticket privado para ayuda del servidor o reportes al equipo.','read',False,0),
     ('staff','team','╭・👥│chat-staff','Coordinación privada de Fundador, Administrador, Moderación y Soporte.','staff',False,0),
-    ('log','team','├・📋│registro-staff','Resumen privado de la instalación y actividad de soporte.','staffread',False,0),
+    ('log','team','├・📋│registro-staff','Auditoría y actividad del distrito: miembros, voz y cambios administrativos. Registro privado del equipo.','staffread',False,0),
     ('goodbye','team','├・🚪│despedidas','Registro privado de salidas, expulsiones y baneos. Acceso exclusivo de Fundador y Administrador.','adminread',False,0),
     ('staffvoice','team','╰・🛠│Sala del equipo',None,'staff',True,0),
 ]
