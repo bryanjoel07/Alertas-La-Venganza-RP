@@ -49,11 +49,11 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
-### Separadores y nombres hacia la derecha — v2
+### Separadores y nombres hacia la derecha — v3
 
-La revisión `vice-channel-style-v2` aplica `၊၊||၊` a las categorías y coloca los nombres de categorías y canales a la derecha de sus iconos. Un relleno limitado con espacios Unicode aproxima esa posición; su aspecto depende del ancho de la barra lateral y de la fuente del dispositivo. Se conservan las palabras completas, versalitas y emojis. El manifiesto `channel-style-v2.json` fija los 38 objetos observados, incluido Pendientes. Solo cambia el nombre y conserva los recibos previos de v1, permisos, IDs e historial. Los tickets y salas futuros usan el mismo formato.
+La revisión `vice-channel-style-v3` aplica `၊၊||၊` a las categorías y coloca los nombres de categorías y canales a la derecha de sus iconos, con líneas decorativas de longitud limitada. Discord eliminó el relleno invisible de v2 al guardar; v3 parte de los nombres reales posteriores y usa caracteres visibles. La posición se aproxima según la longitud del nombre y puede variar con el ancho de la barra lateral y la fuente. Se conservan las palabras completas, versalitas y emojis. El manifiesto `channel-style-v3.json` fija los 38 objetos observados, incluido Pendientes. Solo cambia el nombre y conserva los recibos previos, permisos, IDs e historial. Los tickets y salas futuros usan el mismo formato.
 
-Para revertir, conservar la base actual y restaurar individualmente los nombres originales del manifiesto v2 solo cuando aún coincidan con el nombre aplicado, mediante operaciones registradas. El canal de mejoras `1572704521371652166` debe recuperar su nombre v1 antes de desplegar `f984035a488f798195226e4df00334645c14def4`, o se debe conservar la validación compatible con v2 en el código anterior. Respetar cambios manuales; no recrear ni eliminar canales ni restaurar una base antigua. El panel de pendientes y sus recordatorios conservan sus mensajes y datos.
+Para revertir al formato v1 estable, conservar la base actual y restaurar individualmente los nombres originales del manifiesto v2 solo cuando aún coincidan con el nombre aplicado de v3, mediante operaciones registradas. El canal de mejoras `1572704521371652166` debe recuperar su nombre v1 antes de desplegar `f984035a488f798195226e4df00334645c14def4`, o se debe conservar la validación compatible con los nombres reales en el código anterior. No volver al despliegue intermedio de v2. Respetar cambios manuales; no recrear ni eliminar canales ni restaurar una base antigua. El panel de pendientes y sus recordatorios conservan sus mensajes y datos.
 
 ### Panel privado de pendientes y nombres en versalitas
 

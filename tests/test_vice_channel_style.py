@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-from vice_channel_style import (ALIGN_BLANK, ALIGN_MAX_CATEGORY, ALIGN_MAX_CHANNEL,
+from vice_channel_style import (ALIGN_BLANK, ALIGN_LINE, ALIGN_MAX_CATEGORY, ALIGN_MAX_CHANNEL,
                                 CATEGORY_SEPARATOR, TEAM_CATEGORY_ID, BOT_ID, GUILD_ID,
                                 OWNER_ID, VERSION, ChannelStyle, _text_width,
                                 channel_state, format_name, load_manifest, stylize)
@@ -46,25 +46,27 @@ class TypographyTests(unittest.TestCase):
         self.assertTrue(team['target_name'].startswith(CATEGORY_SEPARATOR + ' 🛡️'))
         self.assertTrue(team['target_name'].endswith('ꜱᴛᴀꜰꜰ'))
 
-    def test_formatter_parses_raw_v1_and_v2_without_moving_words_or_icons(self):
-        sources = ('╭・👋│bienvenida', '👋│ʙɪᴇɴᴠᴇɴɪᴅᴀ', 'ʙɪᴇɴᴠᴇɴɪᴅᴀ│👋')
+    def test_formatter_parses_raw_v1_v2_and_v3_without_moving_words_or_icons(self):
+        sources = ('╭・👋│bienvenida', '👋│ʙɪᴇɴᴠᴇɴɪᴅᴀ', 'ʙɪᴇɴᴠᴇɴɪᴅᴀ│👋',
+                   '👋│' + ALIGN_BLANK * 8 + 'ʙɪᴇɴᴠᴇɴɪᴅᴀ')
         expected = format_name(sources[0])
-        self.assertTrue(expected.startswith('👋│' + ALIGN_BLANK))
+        self.assertTrue(expected.startswith('👋│' + ALIGN_LINE))
         self.assertTrue(expected.endswith('ʙɪᴇɴᴠᴇɴɪᴅᴀ'))
         for source in (*sources, expected):
             self.assertEqual(format_name(source), expected)
-        for source in ('━━ 🌴 EMPIEZA AQUÍ ━━', '━━ 🌴 ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́ ━━'):
+        for source in ('━━ 🌴 EMPIEZA AQUÍ ━━', '━━ 🌴 ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́ ━━',
+                       CATEGORY_SEPARATOR + ' 🌴ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́'):
             result = format_name(source, category=True)
-            self.assertTrue(result.startswith(CATEGORY_SEPARATOR + ' 🌴' + ALIGN_BLANK))
+            self.assertTrue(result.startswith(CATEGORY_SEPARATOR + ' 🌴 ' + ALIGN_LINE))
             self.assertTrue(result.endswith('ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́'))
             self.assertEqual(format_name(result, category=True), result)
 
     def test_padding_is_bounded_and_long_names_remain_whole(self):
         for category, limit in ((False, ALIGN_MAX_CHANNEL), (True, ALIGN_MAX_CATEGORY)):
             short = format_name('🎙️ A', category=category)
-            self.assertEqual(short.count(ALIGN_BLANK), limit)
+            self.assertEqual(short.count(ALIGN_LINE), limit)
             long = format_name('🎙️ ' + 'bienvenida-' * 7, category=category)
-            self.assertNotIn(ALIGN_BLANK, long)
+            self.assertNotIn(ALIGN_LINE, long)
             self.assertTrue(long.endswith(stylize('bienvenida-' * 7)))
         self.assertEqual(_text_width('ɪ́'), _text_width('ɪ'))
         self.assertEqual(_text_width('🛡️'), _text_width('🛡'))
@@ -75,8 +77,17 @@ class TypographyTests(unittest.TestCase):
             self.assertTrue(result.startswith(icon + '│'))
             self.assertTrue(result.endswith('ᴊᴏꜱᴇ́ 01'))
             self.assertEqual(format_name(result), result)
-            self.assertFalse(any(c in result for c in ('\u202e', '\u202d', '\u200b', '\u2067')))
+            self.assertFalse(any(c in result for c in ('\u202e', '\u202d', '\u200b', '\u2067', ALIGN_BLANK)))
         self.assertEqual(format_name(format_name('sin-icono')), format_name('sin-icono'))
+
+    def test_visible_rules_do_not_remove_real_hyphens_or_internal_lines(self):
+        for source in ('🎙️ caso-con-guiones', '🎙️ caso─especial', 'sin─icono', 'canal-'):
+            result = format_name(source)
+            self.assertEqual(format_name(result), result)
+            self.assertTrue(result.endswith(stylize(source.replace('🎙️ ', ''))))
+        category = format_name('━━ 🎫 CASOS-PENDIENTES ━━', category=True)
+        self.assertIn('ᴄᴀꜱᴏꜱ-ᴘᴇɴᴅɪᴇɴᴛᴇꜱ', category)
+        self.assertEqual(format_name(category, category=True), category)
 
     def test_manifest_rejects_foreign_identity_duplicates_and_arbitrary_renames(self):
         base = dict(version=VERSION, guild_id=str(GUILD_ID), bot_id=str(BOT_ID), owner_id=str(OWNER_ID),

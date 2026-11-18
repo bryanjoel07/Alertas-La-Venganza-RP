@@ -724,6 +724,7 @@ class ViceDistrict:
                 guild = interaction.guild
                 category = guild.get_channel(self.store.get('category:closed'))
                 category = category or discord.utils.get(guild.categories, name=stylize(CLOSED_CATEGORY))
+                category = category or discord.utils.get(guild.categories, name='၊၊||၊ 🔒ᴀʀᴄʜɪᴠᴏ')
                 category = category or discord.utils.get(guild.categories, name=format_name(CLOSED_CATEGORY, category=True))
                 category = category or discord.utils.get(guild.categories, name=CLOSED_CATEGORY)
                 category = category or discord.utils.get(guild.categories, name='🔒 TICKETS ARCHIVADOS')

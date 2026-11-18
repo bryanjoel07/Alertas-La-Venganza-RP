@@ -13,11 +13,12 @@ import discord
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-channel-style-v2'
-MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v2.json'
+VERSION = 'vice-channel-style-v3'
+MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v3.json'
 TEAM_CATEGORY_ID = 1572467006999896074
 CATEGORY_SEPARATOR = '၊၊||၊'
 ALIGN_BLANK = '\u2800'
+ALIGN_LINE = '\u2500'
 ALIGN_TARGET_PX = 190
 ALIGN_MAX_CHANNEL = 8
 ALIGN_MAX_CATEGORY = 12
@@ -63,7 +64,7 @@ def _icon_only(text):
     if not text:
         return False
     for index, character in enumerate(text):
-        if character == ALIGN_BLANK:
+        if character in (ALIGN_BLANK, ALIGN_LINE):
             return False
         if character.isspace() or character in ('\ufe0f', '\ufe0e', '\u200d', '\u20e3'):
             continue
@@ -101,38 +102,50 @@ def _text_width(text):
 
 def _rightward(icon, words, *, category):
     words = stylize(words)
-    # Icons stay on the left. A short cap limits blank space on narrower mobile
-    # sidebars; long labels remain whole and receive no extra blank padding.
+    # Discord strips braille blanks from channel names. Visible rules provide
+    # bounded spacing without invisible or directional-control characters.
     if category:
-        prefix = CATEGORY_SEPARATOR + ' ' + icon
-        available = ALIGN_TARGET_PX - 26 - (12 if icon else 0) - _text_width(words) * .75
+        prefix = CATEGORY_SEPARATOR + (' ' + icon if icon else '') + ' '
+        available = ALIGN_TARGET_PX - 34 - (12 if icon else 0) - _text_width(words) * .75
         count = min(ALIGN_MAX_CATEGORY, max(0, int(available / 8)))
     else:
         prefix = icon + '│' if icon else ''
         available = ALIGN_TARGET_PX - (20 if icon else 0) - _text_width(words)
-        count = min(ALIGN_MAX_CHANNEL, max(0, int(available / 10)))
+        count = min(ALIGN_MAX_CHANNEL, max(0, int(available / 10))) if icon else 0
     # Discord names have a 100-character limit. Never truncate an actual name.
-    count = min(count, max(0, 100 - len(prefix) - len(words)))
-    return prefix + ALIGN_BLANK * count + words
+    count = min(count, max(0, 100 - len(prefix) - len(words) - (1 if category else 0)))
+    rule = ALIGN_LINE * count + (' ' if category and count else '')
+    return prefix + rule + words
+
+
+def _without_rule(words):
+    # Called only after recognizing our icon/divider or category prefix.
+    # ASCII hyphens and any horizontal lines inside real names are untouched.
+    return words.lstrip(ALIGN_LINE).lstrip(' ') if words.startswith(ALIGN_LINE) else words
 
 
 def format_name(name, *, category=False):
-    """Place icons left and smallcap words right with bounded blank spacing.
+    """Place icons left and smallcap words right with bounded visible rules.
 
-    U+2800 is visible-width whitespace, not a bidi control. Width is an
-    approximation; native Discord sidebars cannot enforce flush-right text.
-    Generated padding is stripped before parsing, so repeated calls are stable.
+    Width is approximate; native Discord sidebars cannot enforce flush-right
+    text. Generated rules are stripped only at recognized prefix boundaries.
     """
     trim = ' \t\r\n' + ALIGN_BLANK
     text = str(name).strip(trim)
     if not text:
         return ''
     if category:
+        generated = text.startswith(CATEGORY_SEPARATOR)
         if text.startswith(CATEGORY_SEPARATOR):
             text = text[len(CATEGORY_SEPARATOR):].strip(trim)
         # The previous layout framed categories with heavy horizontal bars.
-        text = text.strip('━─').strip(trim)
+        for frame in ('━━', '──'):
+            if text.startswith(frame) and text.endswith(frame):
+                text = text[len(frame):-len(frame)].strip(trim)
+                break
         icon, words = _leading_icon(text)
+        if generated:
+            words = _without_rule(words)
         return _rightward(icon, words, category=True)
     for branch in ('╭・', '├・', '╰・', '┊・'):
         if text.startswith(branch):
@@ -144,7 +157,7 @@ def format_name(name, *, category=False):
             return _rightward(tail.strip(trim), head.strip(trim), category=False)
         head, tail = text.split('│', 1)
         if tail.strip(trim) and _icon_only(head):
-            return _rightward(head.strip(trim), tail.strip(trim), category=False)
+            return _rightward(head.strip(trim), _without_rule(tail.strip(trim)), category=False)
     icon, words = _leading_icon(text)
     return _rightward(icon, words, category=False)
 

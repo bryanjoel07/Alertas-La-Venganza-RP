@@ -252,6 +252,7 @@ class TempVoice:
         category = discord.utils.get(channels, id=self.system.store.get('category:tempvoice'))
         category = category or discord.utils.get(channels, name=CATEGORY_NAME)
         category = category or discord.utils.get(channels, name=stylize(CATEGORY_NAME))
+        category = category or discord.utils.get(channels, name='၊၊||၊ 🎙️ꜱᴀʟᴀꜱ ᴅᴇʟ ᴄᴏʀɪʟʟᴏ')
         category = category or discord.utils.get(channels, name=format_name(CATEGORY_NAME, category=True))
         if category is not None and (not isinstance(category, discord.CategoryChannel) or category.guild.id != GUILD_ID):
             raise ValueError('La categoría de salas necesita revisión; no se modificó el canal existente.')
@@ -262,6 +263,7 @@ class TempVoice:
         panel = discord.utils.get(channels, id=self.system.channel_id('voicepanel'))
         panel = panel or discord.utils.get(channels, name=PANEL_NAME)
         panel = panel or discord.utils.get(channels, name=stylize(PANEL_NAME))
+        panel = panel or discord.utils.get(channels, name='🎛️│ᴄʀᴇᴀʀ-ᴍɪ-ꜱᴀʟᴀ')
         panel = panel or discord.utils.get(channels, name=format_name(PANEL_NAME))
         if panel is not None and (not isinstance(panel, discord.TextChannel) or panel.guild.id != GUILD_ID):
             raise ValueError('El panel de salas necesita revisión; no se modificó el canal existente.')
