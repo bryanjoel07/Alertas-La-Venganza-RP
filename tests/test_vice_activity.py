@@ -32,7 +32,7 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
     def published(self):
         call = self.audit.publish.await_args
         return call.args[1], call.kwargs, '\n'.join(
-            [call.args[1].title, call.args[1].description] + [f.value for f in call.args[1].fields])
+            [call.args[1].title or '', call.args[1].description] + [f.value for f in call.args[1].fields])
 
     async def test_other_guilds_and_foreign_voice_channels_never_publish(self):
         original = self.member.guild
@@ -66,19 +66,22 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('`100`', text)
         self.assertEqual(embed.author.name, 'El Corillo')
         self.assertEqual(embed.author.icon_url, self.member.display_avatar.url)
-        self.assertEqual(embed.thumbnail.url, self.member.display_avatar.url)
+        self.assertFalse(embed.thumbnail.url)
+        self.assertEqual([f.name for f in embed.fields], ['IDs'])
         self.assertEqual(embed.timestamp, kwargs['event_time'])
         self.assertEqual(embed.timestamp.tzinfo, timezone.utc)
-        self.assertIn('AST · Puerto Rico', embed.footer.text)
+        self.assertTrue(embed.footer.text.endswith('AST'))
+        self.assertLessEqual(len(embed), 450)
 
     async def test_voice_leave_does_not_claim_voluntary_exit_or_moderator(self):
         await self.activity.voice_state_update(self.member, self.state(self.lobby, self_mute=True), self.state(None))
         embed, kwargs, text = self.published()
         self.assertEqual(kwargs['event_type'], 'voice_leave')
         self.assertEqual(embed.color.value, RED)
-        self.assertIn('no identifica al responsable', text)
         self.assertNotIn('voluntariamente', text)
-        self.assertNotIn('Cambios de voz', [f.name for f in embed.fields])
+        self.assertNotIn('expulsado', text)
+        self.assertNotIn('por un moderador', text)
+        self.assertEqual([f.name for f in embed.fields], ['IDs'])
 
     async def test_voice_move_shows_both_channels_without_inventing_mover(self):
         await self.activity.voice_state_update(self.member, self.state(self.lobby), self.state(self.crew))
@@ -88,10 +91,12 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('cambió de canal', text)
         self.assertIn('<#100>', text)
         self.assertIn('<#101>', text)
-        self.assertIn('Canal de origen: `100`', text)
-        self.assertIn('Canal de destino: `101`', text)
-        self.assertIn('no identifica al responsable', text)
+        self.assertIn('Origen: `100`', text)
+        self.assertIn('Destino: `101`', text)
         self.assertNotIn('movido por', text)
+        self.assertEqual([f.name for f in embed.fields], ['Canal', 'IDs'])
+        self.assertEqual(embed.fields[0].value, '<#100> ➜ <#101>')
+        self.assertLessEqual(len(embed), 450)
 
     async def test_voice_flags_are_observations_and_server_actor_is_not_inferred(self):
         after = self.state(self.lobby, self_mute=True, self_deaf=True, mute=True,
@@ -102,8 +107,9 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
         for name in ('Micrófono propio', 'Audio propio', 'Silencio del servidor',
                      'Ensordecimiento del servidor', 'Transmisión', 'Cámara'):
             self.assertIn(name, text)
-        self.assertIn('no identifica al responsable', text)
-        self.assertEqual(len([f for f in embed.fields if f.name == 'Cambios de voz']), 1)
+        self.assertNotIn('por un moderador', text)
+        self.assertEqual([f.name for f in embed.fields], ['Estado', 'IDs'])
+        self.assertLessEqual(len(embed), 450)
 
     async def test_same_channel_id_and_unchanged_state_or_disconnected_noise_is_ignored(self):
         same_channel = NS(id=self.lobby.id, name='Lobby', guild=self.guild)
@@ -117,6 +123,10 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(embed.color.value, GREEN)
         self.assertEqual(kwargs['event_type'], 'member_join')
         self.assertIn(f'<t:{int(self.member.created_at.timestamp())}:F>', text)
+        self.assertEqual([f.name for f in embed.fields], ['Cuenta creada', 'IDs'])
+        self.assertEqual(embed.fields[-1].value, '`333`')
+        self.assertEqual(embed.thumbnail.url, self.member.display_avatar.url)
+        self.assertLessEqual(len(embed), 450)
         await self.activity.member_join(self.member)
         first, second = self.audit.publish.await_args_list
         self.assertNotEqual(first.args[0], second.args[0])
@@ -129,10 +139,12 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
         embed, kwargs, text = self.published()
         self.assertEqual(kwargs['event_type'], 'member_leave')
         self.assertEqual(embed.color.value, RED)
-        self.assertIn('no indica por sí solo', text)
-        self.assertIn('exclusivo de Administración', text)
+        self.assertEqual(embed.description, '📤 <@333> dejó el servidor.')
+        self.assertEqual([f.name for f in embed.fields], ['IDs'])
+        self.assertEqual(embed.fields[0].value, '`333`')
         self.assertNotIn(self.member.reason, text)
         self.assertNotIn('919', text)
+        self.assertLessEqual(len(embed), 450)
 
     async def test_timestamp_is_captured_before_queue_wait_and_footer_is_pr_time(self):
         moment = datetime(2026, 11, 18, 14, 30, 12, tzinfo=timezone.utc)
@@ -151,14 +163,48 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
         self.lobby.name = self.member.name
         await self.activity.voice_state_update(self.member, self.state(None), self.state(self.lobby))
         embed, _, text = self.published()
-        self.assertLessEqual(len(embed), 6000)
-        self.assertLessEqual(len(embed.author.name), 256)
-        self.assertLessEqual(len(embed.title), 256)
+        self.assertLessEqual(len(embed), 800)
+        self.assertLessEqual(len(embed.author.name), 80)
+        self.assertFalse(embed.title)
         self.assertLessEqual(len(embed.description), 4096)
         self.assertTrue(all(len(f.value) <= 1024 for f in embed.fields))
         self.assertNotIn('@everyone', text)
         self.assertFalse(embed.thumbnail.url)
         self.assertFalse(embed.author.icon_url)
+
+    async def test_simultaneous_move_and_all_voice_flags_stay_compact_without_third_field(self):
+        self.member.id = 99999999999999999999
+        self.member.display_name = '@everyone ' + 'a' * 400
+        self.lobby.id = 99999999999999999998
+        self.crew.id = 99999999999999999997
+        after = self.state(self.crew, self_mute=True, self_deaf=True, mute=True,
+                           deaf=True, self_stream=True, self_video=True)
+        await self.activity.voice_state_update(self.member, self.state(self.lobby), after)
+        embed, kwargs, text = self.published()
+        self.assertEqual(kwargs['event_type'], 'voice_move')
+        self.assertEqual([f.name for f in embed.fields], ['Canal', 'IDs'])
+        self.assertNotIn('\n', embed.fields[0].value)
+        self.assertIn('micrófono propio: silenciado', text)
+        self.assertIn('silencio del servidor: aplicado', text)
+        self.assertNotIn('movido por', text)
+        self.assertLessEqual(len(embed), 800)
+
+    async def test_typical_activity_records_have_no_repeated_identity_or_long_disclaimers(self):
+        await self.activity.voice_state_update(self.member, self.state(None), self.state(self.lobby))
+        await self.activity.voice_state_update(self.member, self.state(self.lobby), self.state(None))
+        await self.activity.voice_state_update(self.member, self.state(self.lobby), self.state(self.crew))
+        await self.activity.voice_state_update(self.member, self.state(self.lobby), self.state(self.lobby, mute=True))
+        await self.activity.member_join(self.member)
+        await self.activity.member_remove(self.member, self.guild)
+        for call in self.audit.publish.await_args_list:
+            embed = call.args[1]
+            with self.subTest(event=call.kwargs['event_type']):
+                self.assertLessEqual(len(embed), 450)
+                self.assertLessEqual(len(embed.fields), 2)
+                self.assertFalse(embed.title)
+                self.assertNotIn('Usuario', [f.name for f in embed.fields])
+                self.assertNotIn('Autoría', [f.name for f in embed.fields])
+                self.assertNotIn('Información de salida', [f.name for f in embed.fields])
 
 
 if __name__ == '__main__':

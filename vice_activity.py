@@ -43,26 +43,17 @@ def _channel_id(channel):
     return getattr(channel, 'id', None) if channel is not None else None
 
 
-def _channel(channel):
-    return f'<#{channel.id}> · {_name(getattr(channel, "name", "Canal"), 120)}'
-
-
-def _user_id(user):
-    return f'<@{user.id}> · `{_name(getattr(user, "name", user.id), 120)}`'
-
-
-def _embed(user, title, description, color, occurred):
-    result = discord.Embed(title=title, description=description, color=color, timestamp=occurred)
+def _embed(user, description, color, occurred, *, thumbnail=False):
+    result = discord.Embed(description=description, color=color, timestamp=occurred)
     name = (getattr(user, 'display_name', None) or getattr(user, 'global_name', None)
             or getattr(user, 'name', None) or str(user.id))
     avatar = _avatar(user)
-    result.set_author(name=_name(name, 250) or str(user.id), icon_url=avatar)
-    if avatar:
+    result.set_author(name=_name(name, 80) or str(user.id), icon_url=avatar)
+    if avatar and thumbnail:
         result.set_thumbnail(url=avatar)
-    result.set_footer(text='VIce District • Actividad • '
+    result.set_footer(text='VIce District • '
         + occurred.astimezone(PR_TIME).strftime('%d/%m/%Y %H:%M:%S')
-        + ' AST · Puerto Rico')
-    result.add_field(name='Usuario', value=_user_id(user), inline=False)
+        + ' AST')
     return result
 
 
@@ -99,36 +90,37 @@ class ViceActivity:
 
         if origin_id != destination_id:
             if origin_id is None:
-                kind, title, color = 'voice_join', '📥 Entró al canal de voz', GREEN
-                description = f'<@{member.id}> se unió a {_channel(destination)}.'
+                kind, color = 'voice_join', GREEN
+                description = f'📥 <@{member.id}> entró a <#{destination_id}>.'
             elif destination_id is None:
-                kind, title, color = 'voice_leave', '📤 Salió del canal de voz', RED
-                description = f'<@{member.id}> dejó {_channel(origin)}.'
+                kind, color = 'voice_leave', RED
+                description = f'📤 <@{member.id}> dejó <#{origin_id}>.'
             else:
-                kind, title, color = 'voice_move', '🔀 Cambio de canal de voz', AMBER
-                description = f'<@{member.id}> cambió de canal de voz.'
+                kind, color = 'voice_move', AMBER
+                description = f'🔀 <@{member.id}> cambió de canal de voz.'
         elif changed_flags:
-            kind, title, color = 'voice_state', '🎙️ Estado de voz actualizado', AMBER
-            description = f'<@{member.id}> actualizó su estado de voz en {_channel(destination)}.'
+            kind, color = 'voice_state', AMBER
+            description = f'🎙️ <@{member.id}> actualizó su voz en <#{destination_id}>.'
         else:
             return
 
-        embed = _embed(member, title, description, color, occurred)
+        # Moves already use a Canal field, so combine any simultaneous state
+        # changes into that one sentence instead of adding a third field.
+        if kind == 'voice_move' and changed_flags:
+            description = description[:-1] + ' (' + '; '.join(
+                f'{label.lower()}: {status.lower()}' for _, label, status in changed_flags) + ').'
+        embed = _embed(member, description, color, occurred)
         ids = [f'Usuario: `{member.id}`']
         if origin_id and destination_id and origin_id != destination_id:
-            embed.add_field(name='Canal', value=f'{_channel(origin)}\n➡️ {_channel(destination)}', inline=False)
-            ids.extend((f'Canal de origen: `{origin_id}`', f'Canal de destino: `{destination_id}`'))
+            embed.add_field(name='Canal', value=f'<#{origin_id}> ➜ <#{destination_id}>', inline=False)
+            ids.extend((f'Origen: `{origin_id}`', f'Destino: `{destination_id}`'))
         else:
             current = destination or origin
-            embed.add_field(name='Canal', value=_channel(current), inline=False)
             ids.append(f'Canal: `{current.id}`')
         # Disconnect resets may reflect cached state rather than new user actions.
-        if destination_id and changed_flags:
-            embed.add_field(name='Cambios de voz', value='\n'.join(
-                f'**{label}:** {status}' for _, label, status in changed_flags), inline=False)
-        if kind in {'voice_move', 'voice_leave'} or any(flag in {'mute', 'deaf'} for flag, *_ in changed_flags):
-            embed.add_field(name='Autoría', value='Este evento de voz no identifica al responsable. '
-                'Las acciones de moderación se registran por separado cuando Discord aporta auditoría.', inline=False)
+        if destination_id and changed_flags and kind != 'voice_move':
+            embed.add_field(name='Estado', value='\n'.join(
+                f'{label}: {status.lower()}' for _, label, status in changed_flags), inline=False)
         embed.add_field(name='IDs', value='\n'.join(ids), inline=False)
         return await self.audit.publish('activity:' + kind + ':' + uuid.uuid4().hex, embed,
             event_type=kind, event_time=occurred)
@@ -137,12 +129,11 @@ class ViceActivity:
         occurred = datetime.now(timezone.utc)
         if not self._allowed(getattr(member, 'guild', None)):
             return
-        embed = _embed(member, '📥 Entró al servidor',
-            f'<@{member.id}> se unió a **GTA VI Latino | VIce District**.', GREEN, occurred)
+        embed = _embed(member, f'📥 <@{member.id}> entró al servidor.', GREEN, occurred, thumbnail=True)
         created = getattr(member, 'created_at', None)
         if isinstance(created, datetime) and created.tzinfo is not None:
             embed.add_field(name='Cuenta creada', value=f'<t:{int(created.timestamp())}:F>', inline=False)
-        embed.add_field(name='IDs', value=f'Usuario: `{member.id}`\nServidor: `{GUILD_ID}`', inline=False)
+        embed.add_field(name='IDs', value=f'`{member.id}`', inline=False)
         return await self.audit.publish('activity:member_join:' + uuid.uuid4().hex, embed,
             event_type='member_join', event_time=occurred)
 
@@ -150,11 +141,7 @@ class ViceActivity:
         occurred = datetime.now(timezone.utc)
         if not self._allowed(guild):
             return
-        embed = _embed(user, '📤 Salió del servidor',
-            f'<@{user.id}> salió de **GTA VI Latino | VIce District**.', RED, occurred)
-        embed.add_field(name='Información de salida', value='El evento de salida no indica por sí solo '
-            'si fue voluntaria o una acción de moderación. Los motivos de expulsión o veto '
-            'se conservan en despedidas, exclusivo de Administración.', inline=False)
-        embed.add_field(name='IDs', value=f'Usuario: `{user.id}`\nServidor: `{GUILD_ID}`', inline=False)
+        embed = _embed(user, f'📤 <@{user.id}> dejó el servidor.', RED, occurred, thumbnail=True)
+        embed.add_field(name='IDs', value=f'`{user.id}`', inline=False)
         return await self.audit.publish('activity:member_leave:' + uuid.uuid4().hex, embed,
             event_type='member_leave', event_time=occurred)

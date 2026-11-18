@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from vice_audit import ViceAudit, fit_batch, marker, semantic_embeds
+from vice_audit import ViceAudit, embed_marker, fit_batch, marker, semantic_embeds
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID
 
 
@@ -197,6 +197,43 @@ class AuditRuntimeTests(unittest.IsolatedAsyncioTestCase):
         msg.edit.assert_not_awaited()
         self.assertEqual(self.audit.store.stats()['pending'], 0)
 
+    async def test_discord_drops_embed_url_and_footer_fallback_is_verified_before_ack(self):
+        card = discord.Embed(description=f'<@{OWNER_ID}> actualizó un canal.', timestamp=self.when)
+        card.set_author(name='esschino')
+        card.set_footer(text='VIce District • 18/11/2026 08:00 AST')
+        await self.audit.publish('audit:stripped-url', card, event_type='audit', event_time=self.when)
+        def strip_urls(embeds):
+            values = []
+            for embed in embeds:
+                value = deepcopy(embed.to_dict())
+                value.pop('url', None)
+                values.append(discord.Embed.from_dict(value))
+            return values
+        async def send(**kwargs):
+            message = self.message(9103, strip_urls(kwargs['embeds']))
+            async def edit(**changes):
+                message.embeds = strip_urls(changes['embeds'])
+                return message
+            message.edit = AsyncMock(side_effect=edit)
+            self.messages.append(message)
+            return message
+        self.channel.send.side_effect = send
+        real_db = self.audit.db
+        acknowledged = []
+        async def db(method, *args, **kwargs):
+            if method == 'mark_sent':
+                acknowledged.append(args)
+                self.assertEqual(embed_marker(self.messages[0].embeds[0]), marker('audit:stripped-url'))
+            return await real_db(method, *args, **kwargs)
+        with patch.object(self.audit, 'db', side_effect=db):
+            await self.audit.flush_once()
+        self.channel.send.assert_awaited_once()
+        self.messages[0].edit.assert_awaited()
+        self.assertTrue(acknowledged)
+        self.assertIn(marker('audit:stripped-url'), self.messages[0].embeds[0].footer.text)
+        self.assertEqual(self.audit.store.stats()['pending'], 0)
+        self.assertEqual(self.audit.store.get('audit:stripped-url')['message_id'], '9103')
+
     async def test_recovery_requires_bot_author_and_all_exact_markers(self):
         await self.queue('audit:a')
         await self.queue('audit:b')
@@ -244,7 +281,7 @@ class AuditRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(e.title, f'Canal actualizado {i}')
             self.assertEqual(e.timestamp, self.when)
             self.assertIn('Detalles abreviados', e.description)
-            self.assertIn(marker(f'audit:{i}'), e.footer.text)
+            self.assertEqual(embed_marker(e), marker(f'audit:{i}'))
             fields = {field.name: field.value for field in e.fields}
             self.assertEqual(fields['Responsable'], f'<@{OWNER_ID}>')
             self.assertIn(str(OWNER_ID), fields['IDs'])

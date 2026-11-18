@@ -129,20 +129,12 @@ def _id(value):
         return None
 
 
-def _entity(value, kind=None, maximum=230):
-    identifier = _id(value)
-    name = _get(value, 'display_name') or _get(value, 'name')
-    display = _text(name, 100) if isinstance(name, str) and name else None
-    if identifier:
-        mention = {'user': f'<@{identifier}>', 'channel': f'<#{identifier}>',
-                   'role': f'<@&{identifier}>'}.get(kind)
-        label = (mention + (' · ' + display if display else '')) if mention else (display or 'Objeto')
-        return (label + f' (`{identifier}`)')[:maximum]
-    return display or 'No disponible en Discord'
-
-
 def _avatar(user):
     url = _get(_get(user, 'display_avatar'), 'url')
+    return _safe_avatar(url)
+
+
+def _safe_avatar(url):
     if isinstance(url, str) and url.startswith(('https://cdn.discordapp.com/', 'https://media.discordapp.net/')):
         return url
     return None
@@ -157,189 +149,401 @@ def _diff(value):
         return vars(value) if hasattr(value, '__dict__') else {}
 
 
-def _value(value, key='', depth=0):
-    if value is _MISSING:
-        return 'No informado'
-    if value is None:
-        return 'Sin valor'
-    if depth > 2:
-        return 'Datos adicionales'
+def _cut(value, maximum):
+    value = str(value)
+    return value if len(value) <= maximum else value[:maximum-1] + '…'
+
+
+def _rich(value, maximum=240):
+    """Keep our generated mentions while stripping legacy journal markers and secrets."""
+    text = str(value or '')
+    text = re.sub(r'\s*[•|]?\s*ref:[a-f0-9]{8,64}', '', text, flags=re.I)
+    text = ''.join(c for c in text if c in '\n\t' or ord(c) >= 32)
+    text = _WEBHOOK_URL.sub('[webhook oculto]', text)
+    text = _TOKEN.sub('[credencial oculta]', text)
+    text = _NAMED_SECRET.sub(lambda m: m.group(1) + '=[oculto]', text)
+    text = ''.join(part if re.fullmatch(r'<(?:@!?|@&|#)\d+>', part) else discord.utils.escape_mentions(part)
+                   for part in re.split(r'(<(?:@!?|@&|#)\d+>)', text))
+    return _cut(text.strip(), maximum)
+
+
+def _ref(value, kind=None, *, fallback='el objeto', deleted=False):
+    identifier = _id(value)
+    name = _get(value, 'display_name') or _get(value, 'name')
+    if deleted and isinstance(name, str):
+        return '«' + _text(name, 65) + '»'
+    if identifier and kind in ('user', 'channel', 'role'):
+        return {'user': f'<@{identifier}>', 'channel': f'<#{identifier}>',
+                'role': f'<@&{identifier}>'}[kind]
+    if isinstance(name, str) and name:
+        return '«' + _text(name, 65) + '»'
+    return fallback
+
+
+PERMISSION_NAMES.update({
+    'create_instant_invite': 'Crear invitaciones', 'priority_speaker': 'Prioridad de voz',
+    'stream': 'Transmitir', 'read_messages': 'Ver canal', 'send_tts_messages': 'Texto a voz',
+    'external_emojis': 'Emojis externos', 'view_guild_insights': 'Estadísticas del servidor',
+    'use_voice_activation': 'Actividad de voz', 'change_nickname': 'Cambiar apodo',
+    'manage_nicknames': 'Gestionar apodos', 'manage_expressions': 'Gestionar expresiones',
+    'use_application_commands': 'Usar comandos', 'request_to_speak': 'Solicitar palabra',
+    'manage_events': 'Gestionar eventos', 'manage_threads': 'Gestionar hilos',
+    'external_stickers': 'Stickers externos', 'use_embedded_activities': 'Iniciar actividades',
+    'view_creator_monetization_analytics': 'Estadísticas de monetización',
+    'use_soundboard': 'Panel de sonidos', 'create_expressions': 'Crear expresiones',
+    'create_events': 'Crear eventos', 'use_external_sounds': 'Sonidos externos',
+    'send_voice_messages': 'Mensajes de voz', 'set_voice_channel_status': 'Estado del canal de voz',
+    'send_polls': 'Enviar encuestas', 'use_external_apps': 'Aplicaciones externas',
+    'pin_messages': 'Fijar mensajes', 'bypass_slowmode': 'Omitir modo lento',
+})
+
+
+def _bits(value):
+    raw = _get(value, 'value', value)
+    try:
+        return int(raw) if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _permission_changes(before, after, *, overwrite=False):
+    """Only changed permission states; never full lists or raw bitmasks."""
+    if overwrite:
+        old_allow, old_deny = _bits(before.get('allow')), _bits(before.get('deny'))
+        new_allow, new_deny = _bits(after.get('allow')), _bits(after.get('deny'))
+    else:
+        old_allow, new_allow = _bits(before.get('permissions')), _bits(after.get('permissions'))
+        old_deny = new_deny = 0
+    changes = []
+    for name, _ in discord.Permissions.none():
+        bit = discord.Permissions.VALID_FLAGS[name]
+        old = 1 if old_allow & bit else (-1 if old_deny & bit else 0)
+        new = 1 if new_allow & bit else (-1 if new_deny & bit else 0)
+        if old == new:
+            continue
+        icon = '✅' if new == 1 else ('↩️' if overwrite and new == 0 else '❌')
+        changes.append(icon + ' ' + PERMISSION_NAMES.get(name, 'Permiso de Discord'))
+    return ' · '.join(changes[:5]) + (f' · +{len(changes)-5} más' if len(changes) > 5 else '')
+
+
+def _simple(value, key=''):
+    if value is None or value is _MISSING:
+        return '—'
     if isinstance(value, bool):
         return 'Sí' if value else 'No'
     if isinstance(value, datetime):
-        stamp = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-        return stamp.astimezone(PR_TIME).strftime('%d/%m/%Y %H:%M:%S AST')
+        value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+        return value.astimezone(PR_TIME).strftime('%d/%m %H:%M AST')
     if isinstance(value, discord.Colour):
         return f'#{value.value:06X}'
-    if isinstance(value, discord.Permissions):
-        flags = [PERMISSION_NAMES.get(k, k.replace('_', ' ')) for k, enabled in value if enabled]
-        shown = ', '.join(flags[:12]) or 'Ninguno'
-        if len(flags) > 12:
-            shown += f' (+{len(flags)-12})'
-        return _text(shown, 260) + f' · `{value.value}`'
-    if isinstance(value, discord.PermissionOverwrite):
-        allow, deny = value.pair()
-        return 'Permitir: ' + _value(allow) + '\nDenegar: ' + _value(deny)
     if isinstance(value, discord.Asset):
-        return 'Imagen configurada'
-    if isinstance(value, str):
-        return _text(value, 320) or '(vacío)'
-    if isinstance(value, (int, float)):
-        if key.endswith('_id') and value > 0:
-            return f'`{value}`'
-        return str(value)
-    if isinstance(value, (list, tuple, set)):
-        if not value:
-            return 'Ninguno'
-        rendered = []
-        for item in list(value)[:8]:
-            if key == 'overwrites' and isinstance(item, tuple) and len(item) == 2:
-                rendered.append(_entity(item[0]) + ': ' + _value(item[1], depth=depth+1))
-            elif key in ('roles', 'exempt_roles'):
-                rendered.append(_entity(item, 'role'))
-            elif key in ('channels', 'exempt_channels', 'default_channels'):
-                rendered.append(_entity(item, 'channel'))
-            else:
-                rendered.append(_value(item, key, depth+1))
-        if len(value) > 8:
-            rendered.append(f'… y {len(value)-8} más')
-        return '\n'.join(rendered)[:420]
-    if isinstance(value, dict):
-        pieces = [f'{_text(k, 35)}: {_value(v, str(k), depth+1)}'
-                  for k, v in value.items() if not _SENSITIVE_KEY.search(str(k))]
-        return '\n'.join(pieces[:6])[:420] or 'Datos no publicables'
+        return 'Imagen'
+    if isinstance(value, (str, int, float)):
+        return _text(value, 65) or '—'
     if _id(value):
-        kind = 'channel' if 'channel' in key or key == 'category' else ('user' if key in ('owner', 'inviter', 'user') else None)
-        return _entity(value, kind)
+        return _ref(value, 'channel' if 'channel' in key else None)
     name = _get(value, 'name')
-    if isinstance(name, str):
-        return _text(name, 180)
-    # Do not serialize object __dict__/repr: webhook and integration objects can carry credentials.
-    return 'Valor registrado por Discord'
+    return _text(name, 65) if isinstance(name, str) else 'Actualizado'
 
 
-def _field(embed, name, value, *, inline=False):
-    if len(embed.fields) >= 24:
-        return False
-    name = str(name)[:128]
-    available = min(1024, 5400-len(embed)-len(name))
-    if available < 24:
-        return False
-    value = str(value) or 'No disponible'
-    if len(value) > available:
-        value = value[:available-1] + '…'
-    embed.add_field(name=name, value=value, inline=inline)
-    return True
+def _roles(values, sign):
+    refs = [f'<@&{_id(v)}>' for v in (values or []) if _id(v)]
+    return sign + ' ' + ' '.join(refs[:4]) + (f' +{len(refs)-4}' if len(refs) > 4 else '') if refs else ''
+
+
+def _changes(code, category, before, after):
+    if code in (13, 14, 15):
+        return _permission_changes(before, after, overwrite=True)
+    if code == 25:
+        return ' · '.join(filter(None, (_roles(after.get('roles'), '+'), _roles(before.get('roles'), '−'))))
+    if category != 'update' and code not in (1, 24, 31, 192, 193):
+        return ''
+    if 'permissions' in before or 'permissions' in after:
+        return _permission_changes(before, after)
+    keys = ('name', 'nick', 'topic', 'channel', 'timed_out_until', 'mute', 'deaf', 'colour',
+            'user_limit', 'slowmode_delay', 'description', 'position', 'hoist', 'mentionable',
+            'nsfw', 'archived', 'locked', 'status', 'enabled', 'icon', 'avatar', 'banner')
+    lines = []
+    for key in keys:
+        if key not in before and key not in after:
+            continue
+        old, new = before.get(key, _MISSING), after.get(key, _MISSING)
+        if _simple(old, key) == _simple(new, key):
+            continue
+        lines.append(f'{LABELS[key]}: {_simple(old, key)} → {_simple(new, key)}')
+    return _cut(' · '.join(lines[:2]) + (f' · +{len(lines)-2} cambios' if len(lines) > 2 else ''), 180)
+
+
+def _quantity(value, word):
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return f'{value} {word}' + ('' if value == 1 else 's')
+    return word + 's'
+
+
+def _sentence(code, actor, target, channel, extra_ref, count):
+    target = target or 'el objeto'
+    place = ' en ' + channel if channel else ''
+    creates = {10: 'creó', 30: 'creó el rol', 40: 'creó una invitación',
+               50: 'creó el webhook', 60: 'creó el emoji', 80: 'añadió la integración',
+               83: 'inició el escenario', 90: 'creó el sticker', 100: 'programó el evento',
+               110: 'creó el hilo', 130: 'añadió el sonido', 140: 'creó la regla de AutoMod',
+               163: 'creó la pregunta', 166: 'configuró la incorporación', 190: 'creó la guía',
+               192: 'estableció el estado de voz'}
+    updates = {11: 'actualizó', 31: 'actualizó el rol', 41: 'actualizó una invitación',
+               51: 'actualizó el webhook', 61: 'actualizó el emoji', 81: 'actualizó la integración',
+               84: 'actualizó el escenario', 91: 'actualizó el sticker', 101: 'actualizó el evento',
+               111: 'actualizó el hilo', 131: 'actualizó el sonido', 141: 'actualizó la regla de AutoMod',
+               164: 'actualizó la pregunta', 167: 'actualizó la incorporación', 191: 'actualizó la guía'}
+    deletes = {12: 'eliminó', 32: 'eliminó el rol', 42: 'eliminó una invitación',
+               52: 'eliminó el webhook', 62: 'eliminó el emoji', 82: 'retiró la integración',
+               85: 'finalizó el escenario', 92: 'eliminó el sticker', 102: 'canceló el evento',
+               112: 'eliminó el hilo', 132: 'eliminó el sonido', 142: 'eliminó la regla de AutoMod',
+               165: 'eliminó la pregunta', 193: 'retiró el estado de voz'}
+    if code in (13, 14, 15):
+        verb = {13: 'añadió', 14: 'actualizó', 15: 'retiró'}[code]
+        return f'{actor} {verb} permisos{(" de " + extra_ref) if extra_ref else ""} en {target}.'
+    if code == 26:
+        return f'{actor} movió a {_quantity(count, "miembro")}{(" a " + channel) if channel else ""}.'
+    if code == 27:
+        return f'{actor} desconectó de voz a {_quantity(count, "miembro")}.'
+    if code in (72, 73):
+        author = ' de ' + target if code == 72 and target != 'el objeto' else ''
+        return f'{actor} eliminó {_quantity(count, "mensaje")}{author}{place}.'
+    special = {
+        1: f'{actor} actualizó el servidor.', 16: f'{actor} reordenó los canales.',
+        20: f'{actor} expulsó a {target}.', 21: f'{actor} retiró {_quantity(count, "miembro")} inactivos.',
+        22: f'{actor} baneó a {target}.', 23: f'{actor} retiró el baneo de {target}.',
+        24: f'{actor} actualizó a {target}.', 25: f'{actor} actualizó los roles de {target}.',
+        28: f'{actor} añadió al bot {target}.', 33: f'{actor} reordenó los roles.',
+        74: f'{actor} fijó un mensaje{place}.', 75: f'{actor} desfijó un mensaje{place}.',
+        121: f'{actor} actualizó los permisos de un comando.',
+        143: f'AutoMod bloqueó un mensaje de {target}{place}.',
+        144: f'AutoMod notificó un mensaje de {target}{place}.',
+        145: f'AutoMod aplicó un tiempo de espera a {target}.',
+        146: f'AutoMod restringió a {target}.',
+        150: f'{actor} creó una solicitud de monetización.',
+        151: f'{actor} aceptó los términos de monetización.',
+    }
+    if code in special:
+        return special[code]
+    for verbs in (creates, updates, deletes):
+        if code in verbs:
+            subject = '' if target == 'el objeto' else ' ' + target
+            return f'{actor} {verbs[code]}{subject}{place}.'
+    return f'{actor} registró {ACTION_NAMES.get(code, f"la acción {code}").lower()}.'
+
+
+def _ids(pairs):
+    seen, items = set(), []
+    for label, identifier in pairs:
+        identifier = _id(identifier)
+        if identifier and identifier not in seen:
+            seen.add(identifier)
+            items.append(f'{label} {chr(96)}{identifier}{chr(96)}')
+    chosen = []
+    for item in items:
+        if len(' · '.join(chosen + [item])) > 350:
+            break
+        chosen.append(item)
+    suffix = f' · +{len(items)-len(chosen)} IDs' if len(chosen) < len(items) else ''
+    return ' · '.join(chosen) + suffix
+
+
+def _card(description, color, created, *, author_name=None, avatar=None, thumbnail=None,
+          change='', reason='', identifiers=''):
+    result = discord.Embed(description=_rich(description, 240), color=color, timestamp=created)
+    if isinstance(author_name, str) and author_name.strip():
+        result.set_author(name=_text(author_name, 80), icon_url=_safe_avatar(avatar))
+    if _safe_avatar(thumbnail):
+        result.set_thumbnail(url=thumbnail)
+    stamp = ''
+    if isinstance(created, datetime):
+        created = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
+        stamp = ' • ' + created.astimezone(PR_TIME).strftime('%d/%m %H:%M AST')
+    result.set_footer(text='VIce District' + stamp)
+    for name, value, maximum in (('Cambio', change, 280), ('Razón', reason, 160), ('IDs', identifiers, 370)):
+        if value:
+            result.add_field(name=name, value=_cut(value, maximum), inline=False)
+    # Keep room for the durable marker added by the publisher.
+    while len(result) > 1050:
+        candidates = [(len(f.value), i) for i, f in enumerate(result.fields) if f.name != 'IDs']
+        if not candidates:
+            result.description = _cut(result.description, max(20, len(result.description)-(len(result)-1050)))
+            break
+        _, index = max(candidates)
+        current = result.fields[index]
+        length = max(20, len(current.value)-(len(result)-1050))
+        result.set_field_at(index, name=current.name, value=_cut(current.value, length), inline=False)
+    return result
 
 
 def format_audit_entry(entry, *, historical=False):
-    """Describe only fields evidenced by this entry; safe for a staff-only channel."""
+    """Small Koya-style cards. Actor and counts come only from this audit entry."""
     action = _get(entry, 'action')
-    raw_code = _get(action, 'value', action)
     try:
-        code = int(raw_code)
-    except (TypeError, ValueError):
+        code = int(_get(action, 'value', action))
+    except (ValueError, TypeError):
         code = -1
     category = _get(_get(action, 'category'), 'name', '')
-    colour = GREEN if category == 'create' or code in (23, 28, 150, 151, 192) else (
+    color = GREEN if category == 'create' or code in (23, 28, 150, 151, 192) else (
         RED if category == 'delete' or code in (20, 21, 22, 27, 143, 145, 146, 193) else AMBER)
-    symbol = '🟢' if colour == GREEN else ('🔴' if colour == RED else '🟠')
-    title = ACTION_NAMES.get(code, f'Acción de Discord ({code})')
     actor = _get(entry, 'user')
     actor_id = _id(actor) or _id(_get(entry, 'user_id'))
-    actor_ref = actor if _id(actor) else actor_id
     target = _get(entry, 'target')
     target_id = _id(target) or _id(_get(entry, '_target_id'))
-    target_ref = target if _id(target) else target_id
+    if code in (26, 27):
+        target = target_id = None
     kind = _get(action, 'target_type')
     if code == 72:
-        kind = 'user'  # Discord's message-delete target is the message author.
+        kind = 'user'
     elif kind == 'thread':
         kind = 'channel'
     extra = _get(entry, 'extra')
     channel = _get(extra, 'channel')
+    count = _get(extra, 'members_removed' if code == 21 else 'count')
+    extra_ref = None
+    if code in (13, 14, 15) and _id(extra):
+        extra_type = _get(extra, 'type')
+        kind_extra = 'role' if isinstance(extra, discord.Role) or extra_type is discord.Role else 'user'
+        extra_ref = _ref(extra, kind_extra)
+    target_ref = _ref(target if _id(target) else target_id, kind,
+                      deleted=category == 'delete' and kind != 'user')
+    actor_ref = _ref(actor_id, 'user', fallback='Se')
+    sentence = _sentence(code, actor_ref, target_ref, _ref(channel, 'channel') if channel else '',
+                         extra_ref, count)
+    pairs = [('Actor', actor_id), ('Canal' if kind == 'channel' else 'Afectado', target_id)]
+    if _id(extra) and code in (13, 14, 15):
+        pairs.append(('Permiso', _id(extra)))
+    pairs.extend((('Canal', _id(channel)), ('Mensaje', _id(_get(extra, 'message_id')))))
+    reason = _get(entry, 'reason')
+    reason = _text(reason.strip(), 160) if code not in (20, 22) and isinstance(reason, str) and reason.strip() else ''
     before, after = _diff(_get(entry, 'before')), _diff(_get(entry, 'after'))
     created = _get(entry, 'created_at')
     if not isinstance(created, datetime):
-        identifier = _id(entry)
-        created = discord.utils.snowflake_time(identifier) if identifier else None
-    if created is not None and created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-    embed = discord.Embed(title=f'{symbol} {title}', color=colour, timestamp=created)
-    display_name = _get(actor, 'display_name') or _get(actor, 'name')
-    embed.set_author(name=_text(display_name, 150) if isinstance(display_name, str) else 'Responsable no disponible',
-                     icon_url=_avatar(actor))
-    if kind == 'user' and code not in (26, 27) and _avatar(target):
-        embed.set_thumbnail(url=_avatar(target))
-    stamp = created.astimezone(PR_TIME).strftime('%d/%m/%Y %H:%M:%S AST') if created else 'Hora no disponible'
-    embed.set_footer(text=f'VIce District • {"Histórico de auditoría" if historical else "Auditoría"} • {stamp} · Puerto Rico')
-    _field(embed, 'Responsable', _entity(actor_ref, 'user') if actor_id else 'Discord no identifica al responsable.')
-    identifiers = []
-    if actor_id:
-        identifiers.append(f'Responsable: `{actor_id}`')
-    if code in (26, 27):
-        count = _get(extra, 'count')
-        quantity = str(count) if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else 'No informada'
-        embed.description = ('Movimiento administrativo de voz registrado por Discord.' if code == 26
-                             else 'Desconexión administrativa de voz registrada por Discord.')
-        _field(embed, 'Cantidad acumulada', quantity)
-        if channel is not None:
-            _field(embed, 'Canal de destino', _entity(channel, 'channel'))
-        _field(embed, 'Alcance del registro',
-               'Esta entrada puede agrupar varias acciones. Discord no identifica aquí a cada miembro afectado '
-               'ni el canal de origen; los cambios individuales de voz se registran por separado.')
-        # Never infer or expose a subject from a group-action target or a neighboring voice event.
-        target_id = None
-    else:
-        if target_id:
-            label = 'Autor de los mensajes' if code == 72 else 'Objeto afectado'
-            _field(embed, label, _entity(target_ref, kind))
-            identifiers.append(f'Afectado: `{target_id}`')
-        if channel is not None:
-            _field(embed, 'Canal', _entity(channel, 'channel'))
-        count = _get(extra, 'count')
-        if isinstance(count, int) and not isinstance(count, bool):
-            _field(embed, 'Cantidad acumulada', str(count))
-        if code == 21:
-            for key, label in (('members_removed', 'Miembros retirados'), ('delete_member_days', 'Días de inactividad')):
-                value = _get(extra, key)
-                if isinstance(value, int):
-                    _field(embed, label, str(value))
-        if code in (13, 14, 15) and _id(extra):
-            _field(embed, 'Permiso aplicado a', _entity(extra))
-            identifiers.append(f'Rol / miembro: `{_id(extra)}`')
-        rule_name = _get(extra, 'automod_rule_name')
-        if isinstance(rule_name, str):
-            _field(embed, 'Regla de AutoMod', _text(rule_name, 250))
-    if _id(channel):
-        identifiers.append(f'Canal: `{_id(channel)}`')
-    message_id = _id(_get(extra, 'message_id'))
-    if message_id:
-        identifiers.append(f'Mensaje: `{message_id}`')
-    if _id(entry):
-        identifiers.append(f'Auditoría: `{_id(entry)}`')
-    _field(embed, 'IDs', '\n'.join(identifiers) or 'No disponibles')
-    if code in (20, 22):
-        _field(embed, 'Motivo', 'Los detalles de la salida se conservan en despedidas, exclusivo de Administración.')
-    else:
-        reason = _get(entry, 'reason')
-        _field(embed, 'Motivo', _text(reason, 700) if isinstance(reason, str) and reason else 'No indicado en la auditoría de Discord.')
+        created = discord.utils.snowflake_time(_id(entry)) if _id(entry) else None
+    return _card(sentence, color, created,
+                 author_name=_get(actor, 'display_name') or _get(actor, 'name'), avatar=_avatar(actor),
+                 thumbnail=_avatar(target) if kind == 'user' and code not in (26, 27) else None,
+                 change=_changes(code, category, before, after), reason=reason, identifiers=_ids(pairs))
+
+
+def _stored_ref(value, kind=None):
+    matches = re.findall(r'<(?:@!?|@&|#)\d+>', str(value or ''))
+    if matches:
+        return matches[0]
+    without_ids = re.sub(r'\(?\x60\d+\x60\)?', '', str(value or '')).strip(' ·')
+    if without_ids and not re.search(r'no disponible|no identifica', without_ids, re.I):
+        return _rich(without_ids, 70)
+    return ''
+
+
+def _stored_count(value):
+    text = str(value or '').strip()
+    return int(text) if text.isdigit() else None
+
+
+def _stored_pair(value):
+    match = re.search(r'\*\*Antes:\*\*(.*?)\*\*Después:\*\*(.*)', str(value or ''), re.S)
+    return (match.group(1).strip(), match.group(2).strip()) if match else None
+
+
+def _stored_bits(value):
+    matches = re.findall(r'\x60(\d+)\x60', value)
+    if matches:
+        return int(matches[-1])
+    return int(value) if value.strip().isdigit() else None
+
+
+def _stored_changes(fields, code):
+    if code in (13, 14, 15, 31):
+        before, after = {}, {}
+        for label, key in (('Permitir', 'allow'), ('Denegar', 'deny'), ('Permisos', 'permissions')):
+            pair = _stored_pair(fields.get(label))
+            if pair:
+                old, new = map(_stored_bits, pair)
+                if old is not None and new is not None:
+                    before[key], after[key] = old, new
+        if before:
+            return _permission_changes(before, after, overwrite=code in (13, 14, 15))
     if code == 25:
-        for key, label, values in (('roles', 'Roles retirados', before.get('roles')),
-                                   ('roles', 'Roles añadidos', after.get('roles'))):
-            if values:
-                _field(embed, label, _value(values, key))
-    for key in dict.fromkeys((*before, *after)):
-        if _SENSITIVE_KEY.search(str(key)) or (code == 25 and key == 'roles'):
+        pieces = []
+        for label, sign in (('Roles añadidos', '+'), ('Roles retirados', '−')):
+            roles = re.findall(r'<@&\d+>', fields.get(label, ''))
+            if roles:
+                pieces.append(sign + ' ' + ' '.join(roles[:4]) + (f' +{len(roles)-4}' if len(roles) > 4 else ''))
+        return ' · '.join(pieces)
+    if code in (10, 12, 20, 22, 30, 32, 40, 42, 50, 52, 60, 62, 80, 82, 90, 92, 100, 102, 110, 112):
+        return ''
+    for label in ('Cambio', 'Cambios de voz', 'Nombre', 'Apodo', 'Tema', 'Canal', 'Color', 'Cupo'):
+        raw = fields.get(label, '')
+        if not raw:
             continue
-        label = LABELS.get(key, _text(str(key).replace('_', ' '), 70).capitalize())
-        old, new = before.get(key, _MISSING), after.get(key, _MISSING)
-        if old is _MISSING:
-            value = _value(new, key)
-        elif new is _MISSING:
-            value = _value(old, key)
-        else:
-            value = '**Antes:** ' + _value(old, key) + '\n**Después:** ' + _value(new, key)
-        if not _field(embed, label, value):
-            break
-    return embed
+        pair = _stored_pair(raw)
+        if pair:
+            return _rich(f'{label}: {_cut(pair[0], 70)} → {_cut(pair[1], 70)}', 180)
+        if label in ('Cambio', 'Cambios de voz'):
+            return _rich(raw, 180)
+    return ''
+
+
+def compact_stored_embed(embed, *, event_type='audit'):
+    """Compact our old persisted cards without guessing missing audit details."""
+    source = discord.Embed.from_dict(embed) if isinstance(embed, dict) else embed
+    fields = {str(f.name): str(f.value) for f in source.fields}
+    title = str(source.title or '')
+    code = next((code for code, label in ACTION_NAMES.items() if label in title), None)
+    actor = _stored_ref(fields.get('Responsable')) or 'Se'
+    target = _stored_ref(fields.get('Objeto afectado') or fields.get('Autor de los mensajes'))
+    channels = re.findall(r'<#\d+>', fields.get('Canal de destino') or fields.get('Canal', ''))
+    channel = channels[-1] if channels else ''
+    description = str(source.description or '')
+    if event_type == 'audit' and code is not None:
+        description = _sentence(code, actor, target, channel,
+                                _stored_ref(fields.get('Permiso aplicado a')),
+                                _stored_count(fields.get('Cantidad acumulada') or fields.get('Miembros retirados')))
+    elif event_type != 'audit':
+        member = _stored_ref(fields.get('Usuario'))
+        if not member:
+            found = re.search(r'<@!?\d+>', description)
+            member = found.group(0) if found else 'Un miembro'
+        if not channels:
+            channels = re.findall(r'<#\d+>', description)
+        if event_type == 'voice_join':
+            description = f'{member} se unió{(" a " + channels[-1]) if channels else " a voz"}.'
+        elif event_type == 'voice_leave':
+            description = f'{member} dejó{(" " + channels[0]) if channels else " el canal de voz"}.'
+        elif event_type == 'voice_move':
+            description = (f'{member} cambió de {channels[0]} a {channels[-1]}.' if len(channels) >= 2
+                           else f'{member} cambió de canal de voz.')
+        elif event_type == 'voice_state':
+            description = f'{member} actualizó su estado de voz{(" en " + channels[-1]) if channels else ""}.'
+        elif event_type == 'member_join':
+            description = f'{member} entró al servidor.'
+        elif event_type == 'member_leave':
+            description = f'{member} salió del servidor.'
+    if not description:
+        description = _rich(title, 150) or 'Actividad registrada.'
+    pairs = []
+    for line in fields.get('IDs', '').replace(' · ', '\n').splitlines():
+        for identifier in re.findall(r'\x60(\d+)\x60', line):
+            label = line.split(':', 1)[0] if ':' in line else line.split(chr(96), 1)[0]
+            label = re.sub(r'[\s:]+$', '', label)
+            if code in (26, 27) and re.search(r'afectado|origen', label, re.I):
+                continue
+            pairs.append((_text(label, 18) or 'ID', identifier))
+    # Include evidenced mentions when the stored IDs block was absent or incomplete.
+    identity_keys = ('Responsable', 'Canal de destino') if code in (26, 27) else (
+        'Responsable', 'Objeto afectado', 'Autor de los mensajes', 'Usuario', 'Canal', 'Canal de destino')
+    identity_values = [description] + [fields.get(k, '') for k in identity_keys]
+    for text in identity_values:
+        for mention in re.findall(r'<(?:@!?|@&|#)(\d+)>', text):
+            pairs.append(('ID', mention))
+    reason = fields.get('Razón') or fields.get('Motivo', '')
+    if (code in (20, 22) or event_type == 'member_leave'
+            or re.search(r'no indicado|no disponible|no identifica|despedidas|exclusivo de Administración', reason, re.I)):
+        reason = ''
+    change = _stored_changes(fields, code)
+    return _card(description, source.color or AMBER, source.timestamp,
+                 author_name=source.author.name, avatar=source.author.icon_url,
+                 thumbnail=source.thumbnail.url,
+                 change=change, reason=_rich(reason, 160) if reason.strip() else '', identifiers=_ids(pairs))

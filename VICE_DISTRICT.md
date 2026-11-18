@@ -102,7 +102,7 @@ Markers and exact creator/name/start recovery prevent duplicate opening events o
 45-day retention) into the existing private registro-staff channel, preserving original
 timestamps and showing Puerto Rico AST in each footer. Initial historical records are
 published chronologically in bounded batches of up to five embeds. The pinned staff
-panel explains coverage and import status. No roles or access permissions are changed.
+panel provides a short color legend and Puerto Rico time reference. No roles or access permissions are changed.
 
 `vice_activity.py` records member arrivals/departures and observed voice connections,
 disconnections, channel transitions, mute/deaf, camera and streaming changes from
@@ -117,9 +117,28 @@ send reservations and a transactionally advanced scan cursor. Gateway delivery a
 polling share audit-entry keys. A one-hour overlapping scan every minute refreshes
 merged entries whose counts change without a Gateway notification; a daily full scan
 reconciles retained history. A single publisher edits existing merged records rather
-than posting duplicates. Stable enforced nonces and exact footer-marker recovery cover
+than posting duplicates. Stable versioned nonces and exact embed URL-marker recovery cover
 send-before-ack interruptions. Each Discord write uses a small durable ChangeLog snapshot.
 Publication fails closed if registro-staff loses its private staff-only overwrite scope.
+
+`vice-audit-compact-v2` replaces the previously published long cards at the owner's
+explicit request. Cards use one action sentence, relevant changes, an optional reason,
+and concise IDs. Permission updates show only changed permissions, without bitmasks;
+member/voice cards have at most two fields, and administrative cards at most three.
+The marker is stored as embed URL metadata so the visible footer remains short.
+
+The one-time replacement freezes full original outbox rows in
+`vice_audit_replacements`, including message IDs and payloads. It checks every live
+message's author and exact markers before tracked deletion; unrelated content,
+attachments and components fail closed. The configured old log panel is likewise
+validated, snapshotted and recreated. No broad purge is used. Missing old messages
+are acknowledged, source entries are refreshed, and the compact queue resets once.
+Concurrent new entries and merged updates are preserved. Restart stages prevent
+deleting recreated cards or resetting delivered rows again. Original payloads and
+the journal remain available for review; deleted Discord message IDs cannot be
+restored. To undo presentation, deploy a revised formatter that edits the current
+outbox messages. Never clear the migration state or restore an old database, which
+would risk replaying cleanup or losing subsequent activity.
 
 To stop this feature, remove its StoreBot event callbacks and ViceDistrict lifecycle
 integration together; preserve the vice_audit_outbox/state tables, posted history and
