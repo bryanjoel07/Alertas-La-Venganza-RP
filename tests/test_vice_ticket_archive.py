@@ -151,6 +151,17 @@ class TicketArchiveTests(unittest.IsolatedAsyncioTestCase):
         self.channel.history.assert_not_called()
         self.destination.send.assert_not_awaited()
 
+    async def test_panel_identifies_uncached_owner_and_assigned_staff_without_ping(self):
+        self.guild.get_member.side_effect = lambda member_id: None
+        self.store.put('ticket_assignment:55', dict(staff_id=77))
+        await self.archive.backup(self.channel, self.row, 77)
+        fields = {field.name: field.value for field in self.uploads[0].embeds[0].fields}
+        self.assertEqual(fields['Autor'], '<@999>')
+        self.assertEqual(fields['Responsable'], '<@77>')
+        self.assertEqual(fields['Categoría'], 'Reportar a un jugador')
+        mentions = self.destination.send.await_args.kwargs['allowed_mentions'].to_dict()
+        self.assertEqual(mentions['parse'], [])
+
     async def test_crash_after_send_recovers_exact_marker_without_second_upload(self):
         original = self.destination.send.side_effect
         async def crashing(**kwargs):
@@ -256,6 +267,61 @@ class TicketArchiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.states)
         await self.archive.ready()
         self.guild.create_text_channel.assert_awaited_once()
+
+    async def test_owner_overwrite_works_with_disabled_member_cache(self):
+        self.store.put(DESTINATION_KEY, {})
+        self.guild.get_member.side_effect = lambda member_id: None
+        self.guild.get_member.reset_mock()
+        self.guild.create_text_channel = AsyncMock(return_value=self.destination)
+        await self.archive.ready()
+        overwrites = self.guild.create_text_channel.await_args.kwargs['overwrites']
+        owner = next(target for target in overwrites if target.id == OWNER_ID)
+        self.assertIsInstance(owner, discord.Object)
+        self.assertIs(owner.type, discord.Member)
+        self.assertIs(overwrites[owner].view_channel, True)
+        self.guild.get_member.assert_not_called()
+
+    async def test_preparation_failure_never_records_a_dispatched_attempt(self):
+        self.store.put(DESTINATION_KEY, {})
+        self.roles.pop(13)
+        self.guild.create_text_channel = AsyncMock(return_value=self.destination)
+        with self.assertRaisesRegex(ValueError, 'Faltan roles'):
+            await self.archive.ready()
+        self.assertNotIn('attempted_at', self.store.get(DESTINATION_KEY))
+        self.guild.create_text_channel.assert_not_awaited()
+
+    async def test_exact_logged_pre_dispatch_failure_is_recovered_once_with_before_state(self):
+        original = dict(guild=GUILD_ID, nonce='confirmed-owner-cache-failure',
+            started_at='2026-11-18T18:04:52.900000+00:00', attempted_at='2026-11-18T18:04:53.100000+00:00')
+        self.store.put(DESTINATION_KEY, original)
+        self.guild.fetch_channels.return_value = [self.category, self.channel]
+        self.guild.create_text_channel = AsyncMock(return_value=self.destination)
+        await self.archive.ready()
+        record = self.store.get(DESTINATION_KEY)
+        self.assertEqual(record['recovered_pre_dispatch_bug_v1']['original'], original)
+        self.assertEqual(record['channel'], 70)
+        self.assertEqual(self.states[0]['destination'], original)
+        self.assertEqual(self.system.track.await_args_list[0].args[0], 'TICKET_ARCHIVE_RECOVERY')
+        await self.archive.ready()
+        self.guild.create_text_channel.assert_awaited_once()
+
+    async def test_pre_dispatch_exception_never_retries_unknown_or_ambiguous_attempts(self):
+        self.guild.create_text_channel = AsyncMock(return_value=self.destination)
+        records = [
+            dict(guild=GUILD_ID, nonce='outside-window', started_at='2026-11-18T18:04:53+00:00',
+                 attempted_at='2026-11-18T18:04:55+00:00'),
+            dict(guild=GUILD_ID, nonce='possible-channel', started_at='2026-11-18T18:04:53+00:00',
+                 attempted_at='2026-11-18T18:04:53+00:00'),
+            dict(guild=GUILD_ID, nonce='already-recovered', started_at='2026-11-18T18:04:53+00:00',
+                 attempted_at='2026-11-18T18:04:53+00:00', recovered_pre_dispatch_bug_v1={}),
+        ]
+        for record in records:
+            with self.subTest(nonce=record['nonce']):
+                self.store.put(DESTINATION_KEY, record)
+                with self.assertRaises(ValueError):
+                    await self.archive.ready()
+                self.assertEqual(self.store.get(DESTINATION_KEY), record)
+        self.guild.create_text_channel.assert_not_awaited()
 
     async def test_streamed_download_rejects_truncated_data(self):
         original = TicketArchive.download.__get__(self.archive)

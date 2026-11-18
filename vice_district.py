@@ -234,13 +234,7 @@ class ViceDistrict:
                 await self.voice.ready()
                 await self.readonly.ready()
                 await self.community.ready()
-                await self.tickets.ready()
-                await self.ticket_archive.ready()
-                await self.refresh_ticket_panel()
-                await self.ticket_deletion.ready()
-                await self.audit.ready()
-                await self.antispam.ready()
-                self.start_ticket_backfill()
+                await self.ready_community_services()
                 return
             guild = self.bot.get_guild(GUILD_ID)
             self.validate_guild(guild)
@@ -265,12 +259,20 @@ class ViceDistrict:
             await self.voice.ready()
             await self.readonly.ready()
             await self.community.ready()
-            await self.tickets.ready()
-            await self.ticket_archive.ready()
-            await self.refresh_ticket_panel()
-            await self.ticket_deletion.ready()
-            await self.audit.ready()
-            await self.antispam.ready()
+            await self.ready_community_services()
+
+    async def ready_community_services(self):
+        failed = set()
+        for name, operation in (
+                ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
+                ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),
+                ('audit', self.audit.ready), ('antispam', self.antispam.ready)):
+            try:
+                await operation()
+            except Exception:
+                failed.add(name)
+                log.exception('VICE_SERVICE_READY_FAILED service=%s', name)
+        if not {'ticket_archive', 'ticket_deletion'} & failed:
             self.start_ticket_backfill()
 
     def start_ticket_backfill(self):

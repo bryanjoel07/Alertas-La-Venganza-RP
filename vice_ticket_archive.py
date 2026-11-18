@@ -18,6 +18,7 @@ import aiohttp
 import discord
 
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID
+from vice_tickets import KINDS
 
 log = logging.getLogger('ViceDistrict.ticket_archive')
 DESTINATION_KEY = 'ticket_archive:destination'
@@ -125,8 +126,11 @@ class TicketArchive:
         readonly = dict(view_channel=True, read_message_history=True, send_messages=False,
             send_messages_in_threads=False, add_reactions=False, create_public_threads=False,
             create_private_threads=False, send_voice_messages=False, send_polls=False)
-        owner = guild.get_member(OWNER_ID)
-        if owner is None or guild.me is None or guild.me.id != BOT_ID:
+        # Member caching is intentionally disabled by this bot. The guild's
+        # owner ID was validated above; an overwrite needs only its typed ID.
+        self.system.validate_guild(guild)
+        owner = discord.Object(id=OWNER_ID, type=discord.Member)
+        if guild.me is None or guild.me.id != BOT_ID:
             raise ValueError('No se pudo verificar el equipo del archivo privado.')
         result = {guild.default_role: discord.PermissionOverwrite(**dict(readonly, view_channel=False,
                                                                         read_message_history=False))}
@@ -161,6 +165,19 @@ class TicketArchive:
         channel = await self.guild().fetch_channel(int(record['channel']))
         return self.validate_destination(channel, record)
 
+    @staticmethod
+    def known_pre_dispatch_failure(record):
+        """Only the logged owner-cache failure, never an unknown API attempt."""
+        if set(record) != {'guild', 'nonce', 'started_at', 'attempted_at'}:
+            return False
+        start = datetime(2026, 11, 18, 18, 4, 52, tzinfo=timezone.utc)
+        end = datetime(2026, 11, 18, 18, 4, 54, tzinfo=timezone.utc)
+        try:
+            timestamps = [datetime.fromisoformat(record[key]) for key in ('started_at', 'attempted_at')]
+            return all(stamp.tzinfo is not None and start <= stamp <= end for stamp in timestamps)
+        except (TypeError, ValueError):
+            return False
+
     async def ready(self):
         async with self.lock:
             guild = self.guild()
@@ -189,22 +206,44 @@ class TicketArchive:
             if len(matches) > 1:
                 raise ValueError('Hay más de un archivo registrado; se requiere revisión del equipo.')
             if not matches and record.get('attempted_at'):
-                raise ValueError('La creación anterior del archivo aún no se pudo verificar. No se creará otro.')
+                if not self.known_pre_dispatch_failure(record):
+                    raise ValueError('La creación anterior del archivo aún no se pudo verificar. No se creará otro.')
+                existing = await guild.fetch_channels()
+                if any(getattr(item, 'topic', None) == TOPIC and item.category_id == category.id
+                       for item in existing):
+                    raise ValueError('Existe un posible archivo previo; no se creará otro.')
+                # Live traceback proved this exact attempt raised while
+                # evaluating overwrites, before create_text_channel dispatch.
+                # Audit and channel checks above independently rule out a copy.
+                original = dict(record)
+                async def recovery_snapshot():
+                    return dict(destination=await self.system.call('get', DESTINATION_KEY),
+                                original=original)
+                async def recover_pre_dispatch():
+                    if await self.system.call('get', DESTINATION_KEY) != original:
+                        raise ValueError('El registro del archivo cambió; se conserva para revisión.')
+                    record.pop('attempted_at')
+                    record['recovered_pre_dispatch_bug_v1'] = dict(
+                        at=datetime.now(timezone.utc).isoformat(), original=original)
+                    await self.system.call('put', DESTINATION_KEY, record)
+                await self.system.track('TICKET_ARCHIVE_RECOVERY', 'Recuperar preparación del archivo privado',
+                    recover_pre_dispatch, record['nonce'] + ':owner-cache-fix-v1', snapshot=recovery_snapshot)
             async def snapshot():
                 return dict(destination=await self.system.call('get', DESTINATION_KEY))
             async def create():
                 if matches:
                     channel = matches[0]
                 else:
-                    record['attempted_at'] = datetime.now(timezone.utc).isoformat()
-                    await self.system.call('put', DESTINATION_KEY, record)
                     channels = await guild.fetch_channels()
                     voices = [item for item in channels if isinstance(item, discord.VoiceChannel)
                               and item.category_id == category.id]
                     position = min((item.position for item in voices), default=category.position + 1)
+                    expected_overwrites = self.overwrites(guild)
+                    record['attempted_at'] = datetime.now(timezone.utc).isoformat()
+                    await self.system.call('put', DESTINATION_KEY, record)
                     channel = await guild.create_text_channel('├・📁│archivo-tickets',
                         category=category, position=position, topic=TOPIC,
-                        overwrites=self.overwrites(guild), reason=reason)
+                        overwrites=expected_overwrites, reason=reason)
                 record['channel'] = channel.id
                 self.validate_destination(channel, record)
                 await self.system.call('put', DESTINATION_KEY, record)
@@ -399,16 +438,13 @@ class TicketArchive:
                         description=f'Ticket **{channel.name}** · {len(snapshot["messages"])} mensajes.\n'
                                     'Incluye transcripción HTML/JSON y los adjuntos originales.', color=0x00D9E8,
                         url=self.marker(channel.id, fingerprint))
-                    categories = {'general': 'Consulta general', 'comunidad': 'Consulta general',
-                        'report': 'Reporte', 'appeal': 'Apelación', 'technical': 'Soporte técnico'}
-                    owner = self.guild().get_member(int(row['owner']))
-                    owner_name = owner.display_name if owner else next((m['author']['display_name']
-                        for m in snapshot['messages'] if m['author']['id'] == str(row['owner'])), 'Titular del ticket')
                     assignment = snapshot.get('assignment') or {}
-                    embed.add_field(name='Categoría', value=categories.get(row['kind'], 'Consulta general'))
-                    embed.add_field(name='Autor', value=discord.utils.escape_markdown(owner_name)[:1024])
-                    embed.add_field(name='Responsable', value=discord.utils.escape_markdown(
-                        assignment.get('staff_name') or 'Sin asignar')[:1024])
+                    staff_name = assignment.get('staff_name')
+                    responsible = (discord.utils.escape_markdown(staff_name) if staff_name else
+                        f'<@{int(assignment["staff_id"])}>' if assignment.get('staff_id') else 'Sin asignar')
+                    embed.add_field(name='Categoría', value=KINDS.get(row['kind'], KINDS['general']))
+                    embed.add_field(name='Autor', value=f'<@{int(row["owner"])}>')
+                    embed.add_field(name='Responsable', value=responsible[:1024])
                     embed.set_footer(text='VIce District • Archivo privado')
                     with closing(discord.File(path, filename=filename)) as upload:
                         message = await destination.send(embed=embed, file=upload,

@@ -243,6 +243,21 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.system.store.ticket(55)['state'],'closed')
         channel.delete.assert_not_awaited()
 
+    async def test_archive_start_failure_does_not_block_antispam_audit_or_ticket_panel(self):
+        for service in (self.system.tickets, self.system.ticket_archive,
+                        self.system.ticket_deletion, self.system.audit, self.system.antispam):
+            service.ready = AsyncMock()
+        self.system.ticket_archive.ready.side_effect=ValueError('Archive not available')
+        self.system.refresh_ticket_panel=AsyncMock()
+        self.system.start_ticket_backfill=MagicMock()
+        with self.assertLogs('ViceDistrict',level='ERROR'):
+            await self.system.ready_community_services()
+        for service in (self.system.tickets, self.system.ticket_deletion,
+                        self.system.audit, self.system.antispam):
+            service.ready.assert_awaited_once()
+        self.system.refresh_ticket_panel.assert_awaited_once()
+        self.system.start_ticket_backfill.assert_not_called()
+
     async def test_non_owner_cannot_close_another_members_ticket(self):
         self.system.store.add_ticket(55,999,'comunidad')
         with self.assertRaises(ValueError):
