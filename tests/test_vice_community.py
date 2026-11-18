@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from vice_community import ART_VERSION, EVENT_VERSION, OPENING, PR_TIME, opening_plan, parse_event_time
+from vice_community import ART_VERSION, COMMUNITY_TOOLS_VERSION, EVENT_VERSION, OPENING, PR_TIME, opening_plan, parse_event_time
 from vice_design import BOT_ID, GUILD_ID, OWNER_ID
 from vice_district import ViceDistrict
 
@@ -309,12 +309,13 @@ class CommunityEventTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ready_does_not_repeat_completed_releases(self):
         for key, version in [('community_commands_release', EVENT_VERSION), ('events_release', EVENT_VERSION),
-                             ('art_release', ART_VERSION), ('community_tools_release', ART_VERSION)]:
+                             ('art_release', ART_VERSION), ('community_tools_release', COMMUNITY_TOOLS_VERSION)]:
             self.system.store.put(key, version)
         self.community.install_art = AsyncMock()
         self.community.install_events = AsyncMock()
-        await self.community.ready()
-        await self.community.ready()
+        with patch('vice_community.install_expansion', new_callable=AsyncMock):
+            await self.community.ready()
+            await self.community.ready()
         self.community.install_art.assert_not_awaited()
         self.community.install_events.assert_not_awaited()
         self.system.panel.assert_not_awaited()

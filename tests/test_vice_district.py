@@ -193,7 +193,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(rules[self.guild.default_role].send_messages, False)
         self.assertIs(rules[self.guild.default_role].send_messages_in_threads, False)
         self.assertIs(rules[self.rolemap['support']].send_messages, False)
-        self.assertIs(rules[self.rolemap['mod']].send_messages, True)
+        self.assertIs(rules[self.rolemap['mod']].send_messages, False)
 
     async def test_existing_open_ticket_is_reused(self):
         self.system.store.add_ticket(99,77,'comunidad')

@@ -6,9 +6,11 @@ import logging
 import discord
 
 from vice_design import ASSETS, GUILD_ID, BOT_ID, OWNER_ID, CYAN, PINK
+from vice_expressions import install_expansion, STATIC_EMOJIS, ANIMATED_EMOJIS
 
 log = logging.getLogger('ViceDistrict.community')
 ART_VERSION = 'vice-expressions-v1'
+COMMUNITY_TOOLS_VERSION = 'vice-tools-expanded-v2'
 EVENT_VERSION = 'vice-opening-events-v1'
 PR_TIME = timezone(timedelta(hours=-4), 'Puerto Rico AST')
 OPENING_WEEKDAY = 4  # Friday, selected as the initial planning default.
@@ -259,17 +261,22 @@ class CommunityExtras:
                 lambda:self.install_art(guild), ART_VERSION, snapshot=lambda:self.art_snapshot(guild))
         if self.system.store.get('events_release') != EVENT_VERSION:
             await self.install_events(guild)
-        if self.system.store.get('community_tools_release') != ART_VERSION:
+        await install_expansion(self.system)
+        if self.system.store.get('community_tools_release') != COMMUNITY_TOOLS_VERSION:
             if not self.system.channel_id('voicepanel'):
                 raise ValueError('Falta el panel de salas del corillo.')
             emojis = '  '.join(f'<:{name}:{self.system.store.get("emoji:"+name)}>' for name in EMOJIS)
+            memes = '  '.join(f'<:{name}:{self.system.store.get("emoji:"+name)}>' for name in STATIC_EMOJIS)
+            animated = '  '.join(f'<a:{name}:{self.system.store.get("emoji:"+name)}>' for name in ANIMATED_EMOJIS)
             async def publish():
                 await self.system.panel(guild, 'announcements', ('🌴 NOVEDADES DEL CORILLO',
                     '**Tu comunidad, con identidad propia.**\n\n'
                     f'🎙️ **Salas para tu crew:** crea y administra tu sala en <#{self.system.channel_id("voicepanel")}>.\n\n'
                     f'🎉 **Eventos:** revisa las próximas convocatorias en <#{self.system.channel_id("events")}> y pulsa «Me interesa».\n\n'
-                    '**Emojis exclusivos:**\n' + emojis + '\n\n'
+                    '**18 emojis exclusivos:**\nDistrito: ' + emojis + '\n\n'
+                    '**Memes de nuestro coquí:**\n' + memes + '\n\n'
+                    '**Animados:**\n' + animated + '\n\n'
                     '**Stickers:** ¡WEPA!, ¡DURO! y PA’L CORILLO. Búscalos en el selector de stickers del servidor.\n\n'
                     'Las salas temporales se eliminan al quedar vacías. El creador gestiona entradas y cupo desde el panel.', CYAN), None)
-                await self.system.call('put', 'community_tools_release', ART_VERSION)
-            await self.system.track('COMMUNITY_TOOLS', 'Presentar herramientas del corillo', publish, ART_VERSION)
+                await self.system.call('put', 'community_tools_release', COMMUNITY_TOOLS_VERSION)
+            await self.system.track('COMMUNITY_TOOLS', 'Presentar herramientas del corillo', publish, COMMUNITY_TOOLS_VERSION)

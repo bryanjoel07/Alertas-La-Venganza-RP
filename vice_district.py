@@ -19,6 +19,7 @@ from vice_design import (GUILD_ID, BOT_ID, OWNER_ID, VERSION, STAFF_VERSION, PIN
 from vice_welcome import ViceWelcome, render_card, render_cover
 from vice_voice import TempVoice
 from vice_community import CommunityExtras, EventModal
+from vice_readonly import ReadOnlyChannels, lock_overwrites
 from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
@@ -118,6 +119,7 @@ class ViceDistrict:
         self.welcome = ViceWelcome(self, self.path)
         self.voice = TempVoice(self)
         self.community = CommunityExtras(self)
+        self.readonly = ReadOnlyChannels(self)
         self.ready_lock = asyncio.Lock()
         self.roles_lock = asyncio.Lock()
         self.ticket_lock = asyncio.Lock()
@@ -207,12 +209,13 @@ class ViceDistrict:
             rules[owner] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
                 send_messages=policy != 'closed', attach_files=True, embed_links=True,
                 send_messages_in_threads=False, create_public_threads=False, create_private_threads=False)
-        return rules
+        return lock_overwrites(guild, rules) if readonly else rules
 
     async def ready(self):
         async with self.ready_lock:
             if self.configured:
                 await self.voice.ready()
+                await self.readonly.ready()
                 await self.community.ready()
                 return
             guild = self.bot.get_guild(GUILD_ID)
@@ -236,6 +239,7 @@ class ViceDistrict:
                 self.welcome.task = asyncio.create_task(self.welcome.recover(), name='vice-welcome-recovery')
             log.info('VICE_READY guild=%s roles=%s channels=%s release=%s staff=%s', GUILD_ID, len(ROLES) + 1, len(CHANNELS), VERSION, STAFF_VERSION)
             await self.voice.ready()
+            await self.readonly.ready()
             await self.community.ready()
 
     async def decorate(self, guild):

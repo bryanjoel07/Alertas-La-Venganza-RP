@@ -164,6 +164,14 @@ class StoreBot(discord.Client):
         except Exception:
             log.exception('VICE_VOICE_STATE failed member=%s', member.id)
 
+    async def on_raw_reaction_add(self, payload):
+        if payload.guild_id != VICE_GUILD_ID:
+            return
+        try:
+            await self.vice.readonly.reaction_add(payload)
+        except Exception:
+            log.exception('VICE_READONLY_REACTION failed channel=%s message=%s', payload.channel_id, payload.message_id)
+
     async def close(self):
         await self.vice.close()
         if self.welcome.task:

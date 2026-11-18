@@ -1,0 +1,35 @@
+{
+  "repository": "bryanjoel07/Alertas-La-Venganza-RP",
+  "assets": [
+    {
+      "name": "vd_vi_neon",
+      "path": "assets/vice-district/emojis-v2/animated/vd_vi_neon.gif",
+      "sha": "1bf45774b316640ccc0a24c09a092bc182779c56"
+    },
+    {
+      "name": "vd_wepa",
+      "path": "assets/vice-district/emojis-v2/animated/vd_wepa.gif",
+      "sha": "d5899750d01ef2f4ed7d72ac64b1aecb30a3ba97"
+    },
+    {
+      "name": "vd_alerta",
+      "path": "assets/vice-district/emojis-v2/animated/vd_alerta.gif",
+      "sha": "fe934dae061e1e76d725e055656661318f91912e"
+    },
+    {
+      "name": "vd_cargando",
+      "path": "assets/vice-district/emojis-v2/animated/vd_cargando.gif",
+      "sha": "4782253213c8e76c6d2cd10cbdd1e7658d98961c"
+    },
+    {
+      "name": "vd_hype",
+      "path": "assets/vice-district/emojis-v2/animated/vd_hype.gif",
+      "sha": "7dd7ea83a2d4c86e75205a06ea001c7f6f310995"
+    },
+    {
+      "name": "vd_rip",
+      "path": "assets/vice-district/emojis-v2/animated/vd_rip.gif",
+      "sha": "102ed02dbf7fefc1b0188fea80459ff6a8ad7626"
+    }
+  ]
+}

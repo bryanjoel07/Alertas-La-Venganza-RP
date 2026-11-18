@@ -1,0 +1,35 @@
+{
+  "repository": "bryanjoel07/Alertas-La-Venganza-RP",
+  "assets": [
+    {
+      "name": "vd_coqui_risa",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_risa.png",
+      "sha": "4101c85f8e1399fa77ed1728e96d6f00800a0273"
+    },
+    {
+      "name": "vd_coqui_llora",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_llora.png",
+      "sha": "f50e4d3c3f89314580d54d22a91a7545f3ec9968"
+    },
+    {
+      "name": "vd_coqui_sus",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_sus.png",
+      "sha": "21e48097e931605f450d74c39dafb28bdb2ccc4d"
+    },
+    {
+      "name": "vd_coqui_shock",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_shock.png",
+      "sha": "76ef3aff59964883b47bc4c1538820fc0746c254"
+    },
+    {
+      "name": "vd_coqui_facepalm",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_facepalm.png",
+      "sha": "aacc7f68583fec61277b1f7f6d88d73a21df8b48"
+    },
+    {
+      "name": "vd_coqui_chill",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_chill.png",
+      "sha": "c857db09a57d21ab5766f2ea34972786b96816c8"
+    }
+  ]
+}

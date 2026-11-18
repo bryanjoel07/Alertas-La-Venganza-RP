@@ -96,6 +96,31 @@ Markers and exact creator/name/start recovery prevent duplicate opening events o
 
 ## Validation
 
+The second expression pack adds six original coquí meme faces (built-in imagegen)
+and six vector/canvas GIF loops (VI neon, WEPA, alert, loading palm, hype and RIP).
+All assets are 128×128 with transparency, under 256 KiB. GIFs have 20 frames and
+2.4-second infinite loops. Source renderers and final prompts are in the static/animated
+manifests under assets/vice-district/emojis-v2. The server now has 12 static and
+6 animated emojis, plus the existing three stickers. `vice_expressions.py` checks
+format-specific capacity and preserves unrelated expressions, with tracked writes and
+durable ID/release markers. The announcements panel displays all 18 expressions.
+
+View-only panels (`vice_readonly.py`, vice-view-only-v1) deny member publication,
+attachments, emoji/sticker posts, new reactions, polls, voice messages and threads.
+They also deny slash/external app commands in those channels; staff can run commands
+from chat-staff, while all existing bot buttons and selectors remain available.
+The migration covers the 8 public information/control panels, staff log, admin-only
+departures and closed tickets. It preserves every existing visibility/history/voice
+permission and leaves chat channels and open tickets alone. All existing role/member
+overrides receive the publication denies, with the exact bot member retained as publisher.
+Server owners and Administrator naturally bypass Discord channel overwrites.
+Existing reaction seeds are cleared with durable count snapshots, including threads;
+a guild-scoped raw reaction handler clears any new seeds so members cannot reuse them.
+No messages or histories are deleted. New installations and ticket closures use the
+same overwrite policy. Revert the readonly integration to stop the guard, then restore
+only publication permission bits from the journal if requested; reaction choices cannot
+be recreated on behalf of other users.
+
 Run the focused Studio regression modules and `tests.test_vice_district` with unittest.
 The latter covers exact guild scope, role escalation prevention, private tickets,
 preserved histories, persistent controls, duplicate welcomes and the avatar renderer.

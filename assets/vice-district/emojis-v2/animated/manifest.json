@@ -1,0 +1,93 @@
+{
+  "mode": "original vector animation",
+  "renderer": "render.py (Pillow high-resolution vector/canvas geometry)",
+  "frame_count": 20,
+  "frame_duration_ms": 120,
+  "loop": "infinite",
+  "assets": [
+    {
+      "name": "vd_vi_neon",
+      "path": "assets/vice-district/emojis-v2/animated/vd_vi_neon.gif",
+      "description": "Insignia VI de neón con palmera y brillo suave",
+      "bytes": 117236,
+      "width": 128,
+      "height": 128,
+      "frames": 20,
+      "distinct_frames": 11,
+      "duration_ms": 2400,
+      "transparent": true,
+      "prompt": "Original vector design: Insignia VI de neón con palmera y brillo suave. Neon plum/coral/pink/cyan; no official game logo. Smooth 2.4-second loop.",
+      "sha": "1bf45774b316640ccc0a24c09a092bc182779c56"
+    },
+    {
+      "name": "vd_wepa",
+      "path": "assets/vice-district/emojis-v2/animated/vd_wepa.gif",
+      "description": "WEPA boricua rebotando con estrella y acentos tropicales",
+      "bytes": 121253,
+      "width": 128,
+      "height": 128,
+      "frames": 20,
+      "distinct_frames": 11,
+      "duration_ms": 2400,
+      "transparent": true,
+      "prompt": "Original vector design: WEPA boricua rebotando con estrella y acentos tropicales. Neon plum/coral/pink/cyan; no official game logo. Smooth 2.4-second loop.",
+      "sha": "d5899750d01ef2f4ed7d72ac64b1aecb30a3ba97"
+    },
+    {
+      "name": "vd_alerta",
+      "path": "assets/vice-district/emojis-v2/animated/vd_alerta.gif",
+      "description": "Sirena del distrito con reflejo móvil suave",
+      "bytes": 58725,
+      "width": 128,
+      "height": 128,
+      "frames": 20,
+      "distinct_frames": 11,
+      "duration_ms": 2400,
+      "transparent": true,
+      "prompt": "Original vector design: Sirena del distrito con reflejo móvil suave. Neon plum/coral/pink/cyan; no official game logo. Smooth 2.4-second loop.",
+      "sha": "fe934dae061e1e76d725e055656661318f91912e"
+    },
+    {
+      "name": "vd_cargando",
+      "path": "assets/vice-district/emojis-v2/animated/vd_cargando.gif",
+      "description": "Palmera dentro de un aro de carga neón giratorio",
+      "bytes": 113012,
+      "width": 128,
+      "height": 128,
+      "frames": 20,
+      "distinct_frames": 20,
+      "duration_ms": 2400,
+      "transparent": true,
+      "prompt": "Original vector design: Palmera dentro de un aro de carga neón giratorio. Neon plum/coral/pink/cyan; no official game logo. Smooth 2.4-second loop.",
+      "sha": "4782253213c8e76c6d2cd10cbdd1e7658d98961c"
+    },
+    {
+      "name": "vd_hype",
+      "path": "assets/vice-district/emojis-v2/animated/vd_hype.gif",
+      "description": "Fuego del corillo con expresión emocionada",
+      "bytes": 86986,
+      "width": 128,
+      "height": 128,
+      "frames": 20,
+      "distinct_frames": 20,
+      "duration_ms": 2400,
+      "transparent": true,
+      "prompt": "Original vector design: Fuego del corillo con expresión emocionada. Neon plum/coral/pink/cyan; no official game logo. Smooth 2.4-second loop.",
+      "sha": "7dd7ea83a2d4c86e75205a06ea001c7f6f310995"
+    },
+    {
+      "name": "vd_rip",
+      "path": "assets/vice-district/emojis-v2/animated/vd_rip.gif",
+      "description": "Lápida RIP con fantasmita flotante para los fails",
+      "bytes": 92985,
+      "width": 128,
+      "height": 128,
+      "frames": 20,
+      "distinct_frames": 11,
+      "duration_ms": 2400,
+      "transparent": true,
+      "prompt": "Original vector design: Lápida RIP con fantasmita flotante para los fails. Neon plum/coral/pink/cyan; no official game logo. Smooth 2.4-second loop.",
+      "sha": "102ed02dbf7fefc1b0188fea80459ff6a8ad7626"
+    }
+  ]
+}

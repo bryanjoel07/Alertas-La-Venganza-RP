@@ -1,0 +1,83 @@
+{
+  "mode": "built-in imagegen",
+  "assets": [
+    {
+      "name": "vd_coqui_risa",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_risa.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1ef01-c534-74a1-965c-907ed167c08f\\exec-1af866fa-24be-4d07-b390-20f5a33504e1.png",
+      "prompt": "Use case: stylized-concept. Asset type: original Discord reaction emoji for GTA VI Latino | VIce District, a Puerto Rican-led Latin American fan community. Create one isolated original cute Puerto Rican coquí tree-frog mascot HEAD emoji, front-facing head with large protruding eyes, tiny oval nostrils, rounded cheeks, soft lime-mint/cyan skin, coral-pink cheek accents, thick clean dark-plum outlines. Polished bold cartoon sticker art, flat smooth cel shading, subtle coral rim light. Palette must coordinate neon cyan, hot pink, coral, plum, warm cream; green/mint body allowed. Expressive friendly meme energy. Strong simple silhouette and oversized facial features so it remains unmistakable at 32 px. Centered compact face occupying 85% of square canvas, no background, genuinely transparent alpha. No text, no logos, no clothing, no tiny details, no separate panels, no watermark. Emotion: uncontrollable joyful laughter, eyes squeezed into smiling crescents, enormous laughing open mouth, two large cyan tears of joy projecting diagonally from eyes, tongue coral. Must read as laughing, not sadness.",
+      "width": 128,
+      "height": 128,
+      "bytes": 25318,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_coqui_llora",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_llora.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1ef01-c534-74a1-965c-907ed167c08f\\exec-f20a2246-6c36-478e-bd0d-e5f38a2f25ab.png",
+      "prompt": "Use case: stylized-concept. Asset type: original Discord reaction emoji for GTA VI Latino | VIce District, a Puerto Rican-led Latin American fan community. Create one isolated original cute Puerto Rican coquí tree-frog mascot HEAD emoji, front-facing head with large protruding eyes, tiny oval nostrils, rounded cheeks, soft lime-mint/cyan skin, coral-pink cheek accents, thick clean dark-plum outlines. Polished bold cartoon sticker art, flat smooth cel shading, subtle coral rim light. Palette must coordinate neon cyan, hot pink, coral, plum, warm cream; green/mint body allowed. Expressive friendly meme energy. Strong simple silhouette and oversized facial features so it remains unmistakable at 32 px. Centered compact face occupying 85% of square canvas, no background, genuinely transparent alpha. No text, no logos, no clothing, no tiny details, no separate panels, no watermark. Emotion: comically dramatic sobbing, eyebrows arched upward, two enormous clear cyan tear streams down cheeks, quivering open frown and watery large eyes, bittersweet meme crying. Must read as sadness rather than laughter.",
+      "width": 128,
+      "height": 128,
+      "bytes": 27479,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_coqui_sus",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_sus.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1ef01-c534-74a1-965c-907ed167c08f\\exec-ddf29827-17e9-411b-baf9-2347e936a47a.png",
+      "prompt": "Use case: stylized-concept. Asset type: original Discord reaction emoji for GTA VI Latino | VIce District, a Puerto Rican-led Latin American fan community. Create one isolated original cute Puerto Rican coquí tree-frog mascot HEAD emoji, front-facing head with large protruding eyes, tiny oval nostrils, rounded cheeks, soft lime-mint/cyan skin, coral-pink cheek accents, thick clean dark-plum outlines. Polished bold cartoon sticker art, flat smooth cel shading, subtle coral rim light. Palette must coordinate neon cyan, hot pink, coral, plum, warm cream; green/mint body allowed. Expressive friendly meme energy. Strong simple silhouette and oversized facial features so it remains unmistakable at 32 px. Centered compact face occupying 85% of square canvas, no background, genuinely transparent alpha. No text, no logos, no clothing, no tiny details, no separate panels, no watermark. Emotion: skeptical suspicious side-eye, eyes looking strongly to the right, one raised eyebrow, asymmetrical half-lidded eyes, tiny sideways smirk. No tears. Clean humorous dubious meme face.",
+      "width": 128,
+      "height": 128,
+      "bytes": 22819,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_coqui_shock",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_shock.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1ef01-c534-74a1-965c-907ed167c08f\\exec-dc01f774-9826-4124-aef3-2f1b782ce1c0.png",
+      "prompt": "Use case: stylized-concept. Asset type: original Discord reaction emoji for GTA VI Latino | VIce District, a Puerto Rican-led Latin American fan community. Create one isolated original cute Puerto Rican coquí tree-frog mascot HEAD emoji, front-facing head with large protruding eyes, tiny oval nostrils, rounded cheeks, soft lime-mint/cyan skin, coral-pink cheek accents, thick clean dark-plum outlines. Polished bold cartoon sticker art, flat smooth cel shading, subtle coral rim light. Palette must coordinate neon cyan, hot pink, coral, plum, warm cream; green/mint body allowed. Expressive friendly meme energy. Strong simple silhouette and oversized facial features so it remains unmistakable at 32 px. Centered compact face occupying 85% of square canvas, no background, genuinely transparent alpha. No text, no logos, no clothing, no tiny details, no separate panels, no watermark. Emotion: huge shocked amazed eyes with tiny round pupils, high eyebrows, large round open O-shaped mouth, two small coral alarm accent wedges above the head. Must be funny surprise, simple bold and immediately readable.",
+      "width": 128,
+      "height": 128,
+      "bytes": 27289,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_coqui_facepalm",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_facepalm.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1ef01-c534-74a1-965c-907ed167c08f\\exec-64b5ef66-aed5-400a-b508-96facc377fee.png",
+      "prompt": "Use case: stylized-concept. Asset type: original Discord reaction emoji for GTA VI Latino | VIce District, a Puerto Rican-led Latin American fan community. Create one isolated original cute Puerto Rican coquí tree-frog mascot HEAD emoji, front-facing head with large protruding eyes, tiny oval nostrils, rounded cheeks, soft lime-mint/cyan skin, coral-pink cheek accents, thick clean dark-plum outlines. Polished bold cartoon sticker art, flat smooth cel shading, subtle coral rim light. Palette must coordinate neon cyan, hot pink, coral, plum, warm cream; green/mint body allowed. Expressive friendly meme energy. Strong simple silhouette and oversized facial features so it remains unmistakable at 32 px. Centered compact face occupying 85% of square canvas, no background, genuinely transparent alpha. No text, no logos, no clothing, no tiny details, no separate panels, no watermark. Emotion: embarrassed exasperation facepalm. One mint frog hand with three rounded fingertips presses against center of forehead, one half-lidded eye peeks beside it, little flat disappointed mouth. The hand must be cleanly readable and anatomically coherent for a stylized three-finger cartoon frog. No tears, no extra hands.",
+      "width": 128,
+      "height": 128,
+      "bytes": 26277,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_coqui_chill",
+      "path": "assets/vice-district/emojis-v2/static/vd_coqui_chill.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1ef01-c534-74a1-965c-907ed167c08f\\exec-4361ba25-c4b9-43f1-a0e3-d2c71e87dd76.png",
+      "prompt": "Use case: stylized-concept. Asset type: original Discord reaction emoji for GTA VI Latino | VIce District, a Puerto Rican-led Latin American fan community. Create one isolated original cute Puerto Rican coquí tree-frog mascot HEAD emoji, front-facing head with large protruding eyes, tiny oval nostrils, rounded cheeks, soft lime-mint/cyan skin, coral-pink cheek accents, thick clean dark-plum outlines. Polished bold cartoon sticker art, flat smooth cel shading, subtle coral rim light. Palette must coordinate neon cyan, hot pink, coral, plum, warm cream; green/mint body allowed. Expressive friendly meme energy. Strong simple silhouette and oversized facial features so it remains unmistakable at 32 px. Centered compact face occupying 85% of square canvas, no background, genuinely transparent alpha. No text, no logos, no clothing, no tiny details, no separate panels, no watermark. Emotion: confident relaxed cool grin. Large dark-plum sunglasses with bright cyan and coral diagonal highlights covering both eyes; one raised eyebrow visible above glasses, wide closed friendly mischievous smile. Simple bold sunglasses and face, playful cool gamer energy.",
+      "width": 128,
+      "height": 128,
+      "bytes": 24848,
+      "alpha_range": [
+        0,
+        255
+      ]
+    }
+  ]
+}
