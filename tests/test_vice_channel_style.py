@@ -9,10 +9,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-from vice_channel_style import (ALIGN_BLANK, ALIGN_LINE, ALIGN_MAX_CATEGORY, ALIGN_MAX_CHANNEL,
-                                CATEGORY_SEPARATOR, TEAM_CATEGORY_ID, BOT_ID, GUILD_ID,
-                                OWNER_ID, VERSION, ChannelStyle, _text_width,
-                                channel_state, format_name, load_manifest, stylize)
+from vice_channel_style import (TEAM_CATEGORY_ID, BOT_ID, GUILD_ID, OWNER_ID, VERSION,
+                                ChannelStyle, channel_state, format_name,
+                                load_manifest, restore_reference, stylize)
 
 
 class TypographyTests(unittest.TestCase):
@@ -33,71 +32,35 @@ class TypographyTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(stylize(value), value)
 
-    def test_live_manifest_freezes_exact_ids_and_only_name_layout_changes(self):
+    def test_live_manifest_restores_exact_original_38_names(self):
         rows, fingerprint = load_manifest()
+        reference = restore_reference()
         self.assertEqual(len(rows), 38)
-        self.assertEqual(len({r['id'] for r in rows}), 38)
+        self.assertEqual({r['id'] for r in rows}, set(reference))
         self.assertEqual(len(fingerprint), 64)
         for row in rows:
-            category = row['type'] == 4
-            self.assertEqual(row['target_name'], format_name(row['name'], category=category))
-            self.assertEqual(row['target_name'], format_name(row['target_name'], category=category))
-        team = next(row for row in rows if row['id'] == str(TEAM_CATEGORY_ID))
-        self.assertTrue(team['target_name'].startswith(CATEGORY_SEPARATOR + ' 🛡️'))
-        self.assertTrue(team['target_name'].endswith('ꜱᴛᴀꜰꜰ'))
+            self.assertEqual(row['target_name'], reference[row['id']]['name'])
+            self.assertEqual(row['type'], reference[row['id']]['type'])
+            self.assertEqual(stylize(row['target_name']), row['target_name'])
 
-    def test_formatter_parses_raw_v1_v2_and_v3_without_moving_words_or_icons(self):
-        sources = ('╭・👋│bienvenida', '👋│ʙɪᴇɴᴠᴇɴɪᴅᴀ', 'ʙɪᴇɴᴠᴇɴɪᴅᴀ│👋',
-                   '👋│' + ALIGN_BLANK * 8 + 'ʙɪᴇɴᴠᴇɴɪᴅᴀ')
-        expected = format_name(sources[0])
-        self.assertTrue(expected.startswith('👋│' + ALIGN_LINE))
-        self.assertTrue(expected.endswith('ʙɪᴇɴᴠᴇɴɪᴅᴀ'))
-        for source in (*sources, expected):
-            self.assertEqual(format_name(source), expected)
-        for source in ('━━ 🌴 EMPIEZA AQUÍ ━━', '━━ 🌴 ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́ ━━',
-                       CATEGORY_SEPARATOR + ' 🌴ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́'):
-            result = format_name(source, category=True)
-            self.assertTrue(result.startswith(CATEGORY_SEPARATOR + ' 🌴 ' + ALIGN_LINE))
-            self.assertTrue(result.endswith('ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́'))
-            self.assertEqual(format_name(result, category=True), result)
-
-    def test_padding_is_bounded_and_long_names_remain_whole(self):
-        for category, limit in ((False, ALIGN_MAX_CHANNEL), (True, ALIGN_MAX_CATEGORY)):
-            short = format_name('🎙️ A', category=category)
-            self.assertEqual(short.count(ALIGN_LINE), limit)
-            long = format_name('🎙️ ' + 'bienvenida-' * 7, category=category)
-            self.assertNotIn(ALIGN_LINE, long)
-            self.assertTrue(long.endswith(stylize('bienvenida-' * 7)))
-        self.assertEqual(_text_width('ɪ́'), _text_width('ɪ'))
-        self.assertEqual(_text_width('🛡️'), _text_width('🛡'))
-
-    def test_dynamic_names_flags_and_keycaps_are_preserved_and_idempotent(self):
-        for icon in ('🎙️', '🇵🇷', '👨‍👩‍👧‍👦', '1️⃣', '#️⃣', '*️⃣'):
-            result = format_name(icon + ' José 01')
-            self.assertTrue(result.startswith(icon + '│'))
-            self.assertTrue(result.endswith('ᴊᴏꜱᴇ́ 01'))
-            self.assertEqual(format_name(result), result)
-            self.assertFalse(any(c in result for c in ('\u202e', '\u202d', '\u200b', '\u2067', ALIGN_BLANK)))
-        self.assertEqual(format_name(format_name('sin-icono')), format_name('sin-icono'))
-
-    def test_visible_rules_do_not_remove_real_hyphens_or_internal_lines(self):
-        for source in ('🎙️ caso-con-guiones', '🎙️ caso─especial', 'sin─icono', 'canal-'):
-            result = format_name(source)
-            self.assertEqual(format_name(result), result)
-            self.assertTrue(result.endswith(stylize(source.replace('🎙️ ', ''))))
-        category = format_name('━━ 🎫 CASOS-PENDIENTES ━━', category=True)
-        self.assertIn('ᴄᴀꜱᴏꜱ-ᴘᴇɴᴅɪᴇɴᴛᴇꜱ', category)
-        self.assertEqual(format_name(category, category=True), category)
+    def test_future_creation_keeps_original_layout(self):
+        reference = restore_reference()
+        for row in reference.values():
+            self.assertEqual(format_name(row['name'], category=row['type'] == 4), row['name'])
+        for name in ('General', 'Mi canal 01', 'ticket-123', 'reglas-y-guias'):
+            self.assertEqual(format_name(name), stylize(name))
+            self.assertEqual(format_name(name, category=True), stylize(name))
 
     def test_manifest_rejects_foreign_identity_duplicates_and_arbitrary_renames(self):
+        reference = restore_reference()
         base = dict(version=VERSION, guild_id=str(GUILD_ID), bot_id=str(BOT_ID), owner_id=str(OWNER_ID),
-            team_category_id=str(TEAM_CATEGORY_ID), channels=[dict(id=str(TEAM_CATEGORY_ID), type=4,
-                name='━━ 🛡️ ꜱᴛᴀꜰꜰ ━━', target_name=format_name('━━ 🛡️ ꜱᴛᴀꜰꜰ ━━', category=True))])
+            team_category_id=str(TEAM_CATEGORY_ID), channels=[dict(id=key, type=row['type'],
+                name='current-' + key, target_name=row['name']) for key, row in reference.items()])
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'manifest.json'
             path.write_text(json.dumps(base), encoding='utf-8')
-            self.assertEqual(len(load_manifest(path)[0]), 1)
-            for change in ('foreign', 'duplicate', 'rename', 'unsupported', 'team_missing'):
+            self.assertEqual(len(load_manifest(path)[0]), 38)
+            for change in ('foreign', 'duplicate', 'rename', 'unsupported', 'team_missing', 'missing', 'foreign_channel'):
                 value = deepcopy(base)
                 if change == 'foreign':
                     value['guild_id'] = '999'
@@ -107,8 +70,12 @@ class TypographyTests(unittest.TestCase):
                     value['channels'][0]['target_name'] = stylize('General')
                 elif change == 'unsupported':
                     value['channels'][0]['type'] = 1
-                else:
+                elif change == 'team_missing':
                     value['team_category_id'] = '102'
+                elif change == 'missing':
+                    value['channels'].pop()
+                else:
+                    value['channels'][0]['id'] = '999'
                 path.write_text(json.dumps(value), encoding='utf-8')
                 with self.subTest(change=change), self.assertRaises(ValueError):
                     load_manifest(path)
@@ -123,9 +90,9 @@ class ChannelStyleTests(unittest.IsolatedAsyncioTestCase):
         self.guild = NS(id=GUILD_ID, owner_id=OWNER_ID)
         self.channels = {}
         self.before = []
-        self.rows = [dict(id='101', type=4, name='━━ 🛡️ ꜱᴛᴀꜰꜰ ━━',
+        self.rows = [dict(id='101', type=4, name='temporary staff layout',
                          target_name=format_name('━━ 🛡️ ꜱᴛᴀꜰꜰ ━━', category=True)),
-                     dict(id='102', type=0, name='├・📋│registro-staff',
+                     dict(id='102', type=0, name='temporary log layout',
                           target_name=format_name('├・📋│registro-staff'))]
         for row in self.rows:
             item = NS(id=int(row['id']), type=discord.ChannelType(row['type']), name=row['name'], guild=self.guild,
@@ -242,6 +209,14 @@ class ChannelStyleTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs('ViceDistrict.channel_style', level='WARNING'), self.assertRaises(ValueError):
             await self.manager.ready()
         self.channels[102].edit.assert_awaited_once()
+
+    async def test_restoration_keeps_previous_pending_receipts_unchanged(self):
+        old = {'vice-channel-style-v2:102': {'state': 'pending', 'source_name': 'old v2'},
+               'vice-channel-style-v3:102': {'state': 'pending', 'source_name': 'old v3'}}
+        self.values.update(deepcopy(old))
+        await self.manager.ready()
+        self.assertEqual({key: self.values[key] for key in old}, old)
+        self.assertEqual(self.values[self.manager.key(102)]['state'], 'completed')
 
 
 if __name__ == '__main__':

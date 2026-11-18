@@ -49,6 +49,10 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
+### Diseño anterior restaurado por solicitud del propietario — v4
+
+El propietario canceló el experimento de separadores y alineación. `vice-channel-style-v4` restaura exclusivamente los nombres de las 38 categorías y canales a sus valores originales en versalitas, guardados como `name` en `channel-style-v2.json`. Conserva Staff, Pendientes, los emojis y las ramas originales, además de IDs, permisos, posiciones, temas e historial. El manifiesto v4 parte de un nuevo estado real y cada restauración deja copia y recibo; cambios manuales posteriores se respetan. Los nombres futuros vuelven al formato original. No se repiten las migraciones anteriores ni se restablece una base antigua.
+
 ### Separadores y nombres hacia la derecha — v3
 
 La revisión `vice-channel-style-v3` aplica `၊၊||၊` a las categorías y coloca los nombres de categorías y canales a la derecha de sus iconos, con líneas decorativas de longitud limitada. Discord eliminó el relleno invisible de v2 al guardar; v3 parte de los nombres reales posteriores y usa caracteres visibles. La posición se aproxima según la longitud del nombre y puede variar con el ancho de la barra lateral y la fuente. Se conservan las palabras completas, versalitas y emojis. El manifiesto `channel-style-v3.json` fija los 38 objetos observados, incluido Pendientes. Solo cambia el nombre y conserva los recibos previos, permisos, IDs e historial. Los tickets y salas futuros usan el mismo formato.

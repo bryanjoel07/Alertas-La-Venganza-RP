@@ -13,15 +13,10 @@ import discord
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-channel-style-v3'
-MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v3.json'
+VERSION = 'vice-channel-style-v4'
+MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v4.json'
+RESTORE_REFERENCE = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v2.json'
 TEAM_CATEGORY_ID = 1572467006999896074
-CATEGORY_SEPARATOR = '၊၊||၊'
-ALIGN_BLANK = '\u2800'
-ALIGN_LINE = '\u2500'
-ALIGN_TARGET_PX = 190
-ALIGN_MAX_CHANNEL = 8
-ALIGN_MAX_CATEGORY = 12
 SUPPORTED_TYPES = frozenset((0, 2, 4, 5, 13, 15, 16))
 SMALL_CAPS = dict(zip('abcdefghijklmnopqrstuvwxyz', 'ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡXʏᴢ'))
 FROM_SMALL_CAPS = {value: key for key, value in SMALL_CAPS.items()}
@@ -58,108 +53,10 @@ def stylize(name):
     return ''.join(result)
 
 
-def _icon_only(text):
-    """Recognize existing icon clusters without guessing from channel names."""
-    text = text.strip(' \t\r\n' + ALIGN_BLANK)
-    if not text:
-        return False
-    for index, character in enumerate(text):
-        if character in (ALIGN_BLANK, ALIGN_LINE):
-            return False
-        if character.isspace() or character in ('\ufe0f', '\ufe0e', '\u200d', '\u20e3'):
-            continue
-        if character in '0123456789#*' and (text[index + 1:index + 3] == '\ufe0f\u20e3'
-                                            or text[index + 1:index + 2] == '\u20e3'):
-            continue
-        if unicodedata.category(character) not in ('So', 'Sk'):
-            return False
-    return True
-
-
-def _leading_icon(text):
-    # Prefixes use symbols, flag pairs, variation selectors and ZWJ clusters.
-    # Try boundaries from longest to shortest so a full emoji is never split.
-    for index in range(len(text), 0, -1):
-        prefix = text[:index].strip(' \t\r\n' + ALIGN_BLANK)
-        tail = text[index:].strip(' \t\r\n' + ALIGN_BLANK)
-        if tail and _icon_only(prefix):
-            return prefix, tail
-    return '', text
-
-
-def _text_width(text):
-    """Conservative fixed 16 px font estimate, never a device-width promise."""
-    total = 0.0
-    narrow = {'i': 3.5, 'l': 4.5, 'j': 4.5, 'f': 6, 'r': 6, 't': 6,
-              'm': 10, 'w': 11, ' ': 4, '-': 5, '|': 4, '│': 4}
-    for character in text:
-        if unicodedata.combining(character) or character in ('\ufe0f', '\ufe0e', '\u200d'):
-            continue
-        base = FROM_SMALL_CAPS.get(character, character).lower()
-        total += narrow.get(base, 16 if unicodedata.category(character) in ('So', 'Sk') else 8)
-    return total
-
-
-def _rightward(icon, words, *, category):
-    words = stylize(words)
-    # Discord strips braille blanks from channel names. Visible rules provide
-    # bounded spacing without invisible or directional-control characters.
-    if category:
-        prefix = CATEGORY_SEPARATOR + (' ' + icon if icon else '') + ' '
-        available = ALIGN_TARGET_PX - 34 - (12 if icon else 0) - _text_width(words) * .75
-        count = min(ALIGN_MAX_CATEGORY, max(0, int(available / 8)))
-    else:
-        prefix = icon + '│' if icon else ''
-        available = ALIGN_TARGET_PX - (20 if icon else 0) - _text_width(words)
-        count = min(ALIGN_MAX_CHANNEL, max(0, int(available / 10))) if icon else 0
-    # Discord names have a 100-character limit. Never truncate an actual name.
-    count = min(count, max(0, 100 - len(prefix) - len(words) - (1 if category else 0)))
-    rule = ALIGN_LINE * count + (' ' if category and count else '')
-    return prefix + rule + words
-
-
-def _without_rule(words):
-    # Called only after recognizing our icon/divider or category prefix.
-    # ASCII hyphens and any horizontal lines inside real names are untouched.
-    return words.lstrip(ALIGN_LINE).lstrip(' ') if words.startswith(ALIGN_LINE) else words
-
-
 def format_name(name, *, category=False):
-    """Place icons left and smallcap words right with bounded visible rules.
+    """Keep the original layout and apply only the requested smallcap letters."""
+    return stylize(name)
 
-    Width is approximate; native Discord sidebars cannot enforce flush-right
-    text. Generated rules are stripped only at recognized prefix boundaries.
-    """
-    trim = ' \t\r\n' + ALIGN_BLANK
-    text = str(name).strip(trim)
-    if not text:
-        return ''
-    if category:
-        generated = text.startswith(CATEGORY_SEPARATOR)
-        if text.startswith(CATEGORY_SEPARATOR):
-            text = text[len(CATEGORY_SEPARATOR):].strip(trim)
-        # The previous layout framed categories with heavy horizontal bars.
-        for frame in ('━━', '──'):
-            if text.startswith(frame) and text.endswith(frame):
-                text = text[len(frame):-len(frame)].strip(trim)
-                break
-        icon, words = _leading_icon(text)
-        if generated:
-            words = _without_rule(words)
-        return _rightward(icon, words, category=True)
-    for branch in ('╭・', '├・', '╰・', '┊・'):
-        if text.startswith(branch):
-            text = text[len(branch):].strip(trim)
-            break
-    if '│' in text:
-        head, tail = text.rsplit('│', 1)
-        if head.strip(trim) and _icon_only(tail):
-            return _rightward(tail.strip(trim), head.strip(trim), category=False)
-        head, tail = text.split('│', 1)
-        if tail.strip(trim) and _icon_only(head):
-            return _rightward(head.strip(trim), _without_rule(tail.strip(trim)), category=False)
-    icon, words = _leading_icon(text)
-    return _rightward(icon, words, category=False)
 
 
 def type_number(channel):
@@ -175,11 +72,34 @@ def channel_state(channel):
                     for item in getattr(channel, '_overwrites', ())])
 
 
+def restore_reference():
+    """Use only the frozen original v1 names, not a newly inferred layout."""
+    value = json.loads(RESTORE_REFERENCE.read_text(encoding='utf-8'))
+    if (value.get('version') != 'vice-channel-style-v2'
+            or str(value.get('guild_id')) != str(GUILD_ID)
+            or str(value.get('bot_id')) != str(BOT_ID)
+            or str(value.get('owner_id')) != str(OWNER_ID)
+            or str(value.get('team_category_id')) != str(TEAM_CATEGORY_ID)):
+        raise ValueError('La referencia original no pertenece al distrito autorizado.')
+    rows = {}
+    for row in value.get('channels', ()):
+        channel_id = str(row.get('id'))
+        if (not channel_id.isdigit() or int(channel_id) <= 0 or channel_id in rows
+                or row.get('type') not in SUPPORTED_TYPES
+                or not isinstance(row.get('name'), str) or not 1 <= len(row['name']) <= 100):
+            raise ValueError('La referencia de nombres originales necesita revisión.')
+        rows[channel_id] = row
+    if len(rows) != 38 or str(TEAM_CATEGORY_ID) not in rows or rows[str(TEAM_CATEGORY_ID)]['type'] != 4:
+        raise ValueError('La referencia no contiene los 38 canales originales.')
+    return rows
+
+
 def load_manifest(path=MANIFEST):
     value = json.loads(Path(path).read_text(encoding='utf-8'))
     if (value.get('version') != VERSION or str(value.get('guild_id')) != str(GUILD_ID)
             or str(value.get('bot_id')) != str(BOT_ID) or str(value.get('owner_id')) != str(OWNER_ID)):
         raise ValueError('La tipografía no pertenece al distrito autorizado.')
+    reference = restore_reference()
     rows, seen = [], set()
     team_id = str(value.get('team_category_id'))
     if team_id != str(TEAM_CATEGORY_ID):
@@ -192,17 +112,20 @@ def load_manifest(path=MANIFEST):
                 or not row['name'] or not isinstance(row.get('target_name'), str)
                 or not 1 <= len(row['target_name']) <= 100):
             raise ValueError('La lista congelada de nombres necesita revisión.')
-        expected = format_name(row['name'], category=row['type'] == 4)
+        original = reference.get(channel_id)
+        if original is None or original['type'] != row['type']:
+            raise ValueError('El canal no pertenece a la restauración original autorizada.')
+        expected = original['name']
         if channel_id == team_id:
             if row['type'] != 4:
                 raise ValueError('Staff ya no es una categoría.')
         if row['target_name'] != expected:
-            raise ValueError('El cambio excede la tipografía y la categoría Staff autorizadas.')
+            raise ValueError('El destino no coincide con el nombre original autorizado.')
         row['id'] = channel_id
         seen.add(channel_id)
         rows.append(row)
-    if not rows or team_id not in seen:
-        raise ValueError('Falta la categoría del equipo en la lista comprobada.')
+    if seen != set(reference):
+        raise ValueError('La restauración no coincide con los 38 canales originales.')
     fingerprint = hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return rows, fingerprint
 
@@ -278,7 +201,7 @@ class ChannelStyle:
                 return 'manual_change'
             current_before = channel_state(fresh)
             await self.system.call('put', key, dict(binding, state='pending', before=current_before))
-            await fresh.edit(name=row['target_name'], reason='Tipografía y Staff solicitados por el propietario • ' + VERSION)
+            await fresh.edit(name=row['target_name'], reason='Restaurar nombres anteriores a petición del propietario • ' + VERSION)
             verified = await current_guild.fetch_channel(int(row['id']))
             self.system.validate_guild(verified.guild)
             if (verified.id != int(row['id']) or type_number(verified) != row['type']
