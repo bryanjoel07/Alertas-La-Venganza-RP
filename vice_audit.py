@@ -15,6 +15,7 @@ from vice_audit_format import format_audit_entry, compact_stored_embed
 
 log = logging.getLogger('ViceDistrict.audit')
 AUDIT_VERSION = 'vice-audit-compact-v2'
+FORMAT_VERSION = 'vice-audit-compact-details-v3'
 POLL_SECONDS = 60
 TOPIC = 'Auditoría y actividad del distrito: miembros, voz y cambios administrativos. Registro privado del equipo.'
 
@@ -195,6 +196,8 @@ class ViceAudit:
         await self.db('set_state', 'last_scan', utcnow().isoformat())
         if full:
             await self.db('set_state', 'last_full_scan', utcnow().isoformat())
+            await self.db('set_state', 'format_version', FORMAT_VERSION)
+            log.info('VICE_AUDIT_FORMAT_REFRESH version=%s entries=%s', FORMAT_VERSION, count)
         return count
 
     async def install_panel(self, *, finished=False):
@@ -405,7 +408,8 @@ class ViceAudit:
                 now = asyncio.get_running_loop().time()
                 if now >= next_poll:
                     full_at = await self.db('state', 'last_full_scan')
-                    full = not full_at or utcnow() - datetime.fromisoformat(full_at) > timedelta(days=1)
+                    full = (await self.db('state', 'format_version') != FORMAT_VERSION or not full_at
+                            or utcnow() - datetime.fromisoformat(full_at) > timedelta(days=1))
                     await self.scan(full=full)
                     next_poll = now + POLL_SECONDS
                 for _ in range(20):

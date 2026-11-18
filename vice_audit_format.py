@@ -251,6 +251,14 @@ def _roles(values, sign):
     return sign + ' ' + ' '.join(refs[:4]) + (f' +{len(refs)-4}' if len(refs) > 4 else '') if refs else ''
 
 
+def _role_summary(added, removed, actor, target):
+    if added and not removed:
+        return GREEN, f'{actor} añadió roles a {target}.'
+    if removed and not added:
+        return RED, f'{actor} retiró roles de {target}.'
+    return AMBER, f'{actor} actualizó los roles de {target}.'
+
+
 def _changes(code, category, before, after):
     if code in (13, 14, 15):
         return _permission_changes(before, after, overwrite=True)
@@ -385,6 +393,7 @@ def format_audit_entry(entry, *, historical=False):
     except (ValueError, TypeError):
         code = -1
     category = _get(_get(action, 'category'), 'name', '')
+    before, after = _diff(_get(entry, 'before')), _diff(_get(entry, 'after'))
     color = GREEN if category == 'create' or code in (23, 28, 150, 151, 192) else (
         RED if category == 'delete' or code in (20, 21, 22, 27, 143, 145, 146, 193) else AMBER)
     actor = _get(entry, 'user')
@@ -408,16 +417,23 @@ def format_audit_entry(entry, *, historical=False):
         extra_ref = _ref(extra, kind_extra)
     target_ref = _ref(target if _id(target) else target_id, kind,
                       deleted=category == 'delete' and kind != 'user')
+    # Deleted entities often resolve only to an ID. Their original name is
+    # evidence in before.name; never substitute an unrelated/current name.
+    prior_name = before.get('name')
+    if (category == 'delete' and kind != 'user' and not _get(target, 'name')
+            and isinstance(prior_name, str) and prior_name.strip()):
+        target_ref = '«' + _text(prior_name, 65) + '»'
     actor_ref = _ref(actor_id, 'user', fallback='Se')
     sentence = _sentence(code, actor_ref, target_ref, _ref(channel, 'channel') if channel else '',
                          extra_ref, count)
+    if code == 25:
+        color, sentence = _role_summary(after.get('roles'), before.get('roles'), actor_ref, target_ref)
     pairs = [('Actor', actor_id), ('Canal' if kind == 'channel' else 'Afectado', target_id)]
     if _id(extra) and code in (13, 14, 15):
         pairs.append(('Permiso', _id(extra)))
     pairs.extend((('Canal', _id(channel)), ('Mensaje', _id(_get(extra, 'message_id')))))
     reason = _get(entry, 'reason')
     reason = _text(reason.strip(), 160) if code not in (20, 22) and isinstance(reason, str) and reason.strip() else ''
-    before, after = _diff(_get(entry, 'before')), _diff(_get(entry, 'after'))
     created = _get(entry, 'created_at')
     if not isinstance(created, datetime):
         created = discord.utils.snowflake_time(_id(entry)) if _id(entry) else None
@@ -497,10 +513,15 @@ def compact_stored_embed(embed, *, event_type='audit'):
     channels = re.findall(r'<#\d+>', fields.get('Canal de destino') or fields.get('Canal', ''))
     channel = channels[-1] if channels else ''
     description = str(source.description or '')
+    color = source.color or AMBER
     if event_type == 'audit' and code is not None:
         description = _sentence(code, actor, target, channel,
                                 _stored_ref(fields.get('Permiso aplicado a')),
                                 _stored_count(fields.get('Cantidad acumulada') or fields.get('Miembros retirados')))
+        if code == 25:
+            color, description = _role_summary(re.findall(r'<@&\d+>', fields.get('Roles añadidos', '')),
+                                               re.findall(r'<@&\d+>', fields.get('Roles retirados', '')),
+                                               actor, target or 'el miembro')
     elif event_type != 'audit':
         member = _stored_ref(fields.get('Usuario'))
         if not member:
@@ -543,7 +564,7 @@ def compact_stored_embed(embed, *, event_type='audit'):
             or re.search(r'no indicado|no disponible|no identifica|despedidas|exclusivo de Administración', reason, re.I)):
         reason = ''
     change = _stored_changes(fields, code)
-    return _card(description, source.color or AMBER, source.timestamp,
+    return _card(description, color, source.timestamp,
                  author_name=source.author.name, avatar=source.author.icon_url,
                  thumbnail=source.thumbnail.url,
                  change=change, reason=_rich(reason, 160) if reason.strip() else '', identifiers=_ids(pairs))

@@ -127,6 +127,39 @@ class AuditFormatTests(unittest.TestCase):
             self.assertNotIn('Alcance', contents(result))
             self.assertLess(len(result), 500)
 
+    def test_deleted_entities_use_only_evidenced_before_name_when_target_is_unresolved(self):
+        for action in (discord.AuditLogAction.channel_delete, discord.AuditLogAction.role_delete,
+                       discord.AuditLogAction.scheduled_event_delete):
+            with self.subTest(action=action):
+                result = format_audit_entry(entry(action, target=discord.Object(id=TARGET),
+                    before={'name': 'Noche del corillo'}, after={'name': 'UNRELATED_NAME'}))
+                self.assertIn('«Noche del corillo»', result.description)
+                self.assertNotIn('UNRELATED_NAME', result.description)
+                self.assertIn(str(TARGET), field(result, 'IDs'))
+                self.assertFalse(any(f.name == 'Cambio' for f in result.fields))
+                unknown = format_audit_entry(entry(action, target=discord.Object(id=TARGET),
+                    after={'name': 'UNRELATED_NAME'}))
+                self.assertNotIn('UNRELATED_NAME', unknown.description)
+
+    def test_role_addition_removal_and_mixed_actions_have_matching_color_and_sentence(self):
+        role = NS(id=444444444444444444)
+        for added, removed, color, phrase in (([role], [], GREEN, 'añadió roles a'),
+                                              ([], [role], RED, 'retiró roles de'),
+                                              ([role], [role], AMBER, 'actualizó los roles de')):
+            with self.subTest(added=bool(added), removed=bool(removed)):
+                result = format_audit_entry(entry(discord.AuditLogAction.member_role_update,
+                    target=user(TARGET), before={'roles': removed}, after={'roles': added}))
+                self.assertEqual(result.color.value, color)
+                self.assertEqual(result.description, f'<@{ACTOR}> {phrase} <@{TARGET}>.')
+                self.assertLess(len(result), 650)
+                source = legacy('Roles de miembro actualizados', fields={
+                    'Responsable': f'<@{ACTOR}>', 'Objeto afectado': f'<@{TARGET}>',
+                    'Roles añadidos': '<@&444444444444444444>' if added else '',
+                    'Roles retirados': '<@&444444444444444444>' if removed else ''})
+                restored = compact_stored_embed(source)
+                self.assertEqual(restored.color.value, color)
+                self.assertEqual(restored.description, result.description)
+
     def test_roles_are_added_removed_mentions_and_no_full_membership_snapshot(self):
         result = format_audit_entry(entry(discord.AuditLogAction.member_role_update,
             target=user(TARGET), before={'roles': [NS(id=444444444444444444)]},
