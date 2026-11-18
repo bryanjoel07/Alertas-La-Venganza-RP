@@ -106,6 +106,9 @@ def panel_copy(key, c):
             '🤝 **Crew:** encuentra gente con quien jugar.\n\n'
             'Todo es opcional. Elige un país y tantas regiones o plataformas como quieras. Cada lista es independiente. '
             'Deja un menú vacío para retirar los roles de ese grupo.\n\n'
+            '✦ **Lleva la etiqueta VICE:** en PC, abre **Ajustes de usuario → Perfiles → Etiqueta del servidor → Seleccionar** '
+            'y elige **GTA VI Latino | VIce District**. En móvil: **tu avatar → Editar perfil → Etiquetas del servidor**. '
+            'Es opcional y la activas tú.\n\n'
             '⌛ **PC** está incluida por petición de la comunidad, marcada **Esperando GTA VI**. Una versión de PC no figura como confirmada por Rockstar. '
             '[Plataformas oficiales](https://support.rockstargames.com/articles/4QfG4FmZCf5W1gS8jy4UVT/grand-theft-auto-vi-platform-editions-and-versions).\n\n'
             '**Equipo:** Fundador, Administrador, Moderación y Soporte.\n'
@@ -114,7 +117,11 @@ def panel_copy(key, c):
             'Veterano, Leyenda, Creadores y los roles del equipo los asigna la administración.', CYAN),
         'announcements': ('📢 LA VOZ DEL DISTRITO',
             'Aquí encontrarás los comunicados de **GTA VI Latino | VIce District**: cambios, novedades y avisos importantes.\n\n'
-            f'Consulta aquí las novedades del equipo. Comparte tus ideas en {ref("suggestions")}.', PINK),
+            f'Consulta aquí las novedades del equipo. Comparte tus ideas en {ref("suggestions")}.\n\n'
+            '✦ **Representa al corillo con VICE**\n'
+            'En PC: **Ajustes de usuario → Perfiles → Etiqueta del servidor → Seleccionar**. '
+            'En móvil: **tu avatar → Editar perfil → Etiquetas del servidor**. '
+            'Elige **GTA VI Latino | VIce District**; llevarla es opcional.', PINK),
         'introductions': ('🙌 PRESENTA TU ESTILO',
             '**Rompe el hielo con esta pequeña ficha:**\n\n'
             '🌴 **Apodo:**\n🌎 **Región / zona horaria:** (opcional)\n🎮 **Plataformas:**\n'

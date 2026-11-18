@@ -1,12 +1,12 @@
-"""Refresh only existing identity guidance after the owner's role removals."""
+"""Refresh existing identity guidance once, preserving native panel controls."""
 import logging
 
 import discord
 
 from vice_design import BOT_ID, GUILD_ID, panel_copy
 
-VERSION = 'vice-identity-guidance-v4-owner-curated'
-KEYS = ('welcome', 'announcements', 'events')
+VERSION = 'vice-identity-guidance-v5-server-tag'
+KEYS = ('welcome', 'roles', 'announcements', 'events')
 log = logging.getLogger('ViceDistrict.identity_panels')
 
 

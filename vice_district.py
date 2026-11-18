@@ -29,6 +29,9 @@ from vice_ticket_feedback import TicketFeedback
 from vice_optional_roles import OptionalRoles
 from vice_identity_panels import refresh_identity_panels
 from vice_role_icons import RoleIcons
+from vice_bot_separator import BotSeparator
+from vice_booster_club import BoosterClub
+from vice_boost_notices import BoostNotices
 from vice_antispam import AntiSpam
 from vice_role_catalog import GROUP_SCOPES
 from welcome_cards import WelcomeCards, clean_name
@@ -138,6 +141,9 @@ class ViceDistrict:
         self.ticket_feedback = TicketFeedback(self)
         self.optional_roles = OptionalRoles(self)
         self.role_icons = RoleIcons(self)
+        self.bot_separator = BotSeparator(self)
+        self.booster_club = BoosterClub(self)
+        self.boost_notices = BoostNotices(self)
         self.antispam = AntiSpam(self)
         self.ticket_backfill_task = None
         self.ready_lock = asyncio.Lock()
@@ -278,6 +284,9 @@ class ViceDistrict:
                     guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))),
                 ('identity_guidance', lambda: refresh_identity_panels(self)),
                 ('role_icons', self.role_icons.ready),
+                ('bot_separator', self.bot_separator.ready),
+                ('booster_club', self.booster_club.ready),
+                ('boost_notices', self.boost_notices.ready),
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
                 ('ticket_feedback', self.ticket_feedback.ready),
                 ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),

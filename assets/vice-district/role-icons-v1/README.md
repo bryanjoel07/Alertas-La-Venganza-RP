@@ -1,7 +1,7 @@
 # Iconos de roles — VIce District
 
 46 insignias originales para los roles actuales de GTA VI Latino | VIce District,
-incluido el rol Server Booster creado después de las cinco mejoras del propietario.
+incluido el rol Server Booster.
 Todas comparten el emblema VI, palmera, puesta de sol y la paleta ciruela, rosa,
 cian y marfil del servidor. El símbolo central corresponde al rol existente.
 Las banderas permanecen en los nombres de los roles; los emblemas de las imágenes
@@ -21,19 +21,20 @@ No hay imagen para @everyone, que es el rol predeterminado de Discord.
 
 ## Estado de instalación
 
-**Preparados, todavía no instalados.** Comprobación del 18 de noviembre de 2026:
-Discord informa 5 mejoras, nivel 1, y no ofrece la característica ROLE_ICONS.
-Los iconos se desbloquean con nivel 2; el beneficio de estilos mejorados por tres
-mejoras es independiente. No se han comprado ni reasignado mejoras mediante el bot.
+**46 iconos instalados y verificados el 18 de noviembre de 2026.** Se aplicaron
+**43 mediante el bot** y **3 mediante la interfaz de Discord en la sesión del
+propietario**: Fundador, el propio bot y Server Booster. La comprobación final
+confirmó los iconos de ambos grupos en los roles exactos del manifiesto.
 
-Cuando la función esté disponible, se puede cargar cada imagen desde Ajustes del
-servidor → Roles → Visualización → Icono del rol. Debe utilizarse el ID guardado
-en manifest.json para comprobar el destino y conservar nombre, color, permisos,
-miembros y posición. No se deben recrear roles eliminados.
+`vice_role_icons.py` aplica el grupo permitido al bot usando los IDs exactos y
+las imágenes del manifiesto, con registro de cambios. Los otros tres se gestionan
+desde Ajustes del servidor → Roles → Visualización → Icono del rol. Se conservan
+nombre, color, permisos, miembros y posición. No se recrean roles eliminados.
 
-El bot no debe cambiar roles iguales o superiores a su propio rol. Fundador,
-el propio bot y los roles administrados por Discord necesitan comprobación desde
-la sesión del propietario. No hay instalador automático ni cambios programados.
+El instalador de iconos no cambia roles iguales o superiores al del bot ni los
+administrados por Discord. El manifiesto y los registros conservan la
+correspondencia entre cada archivo, rol y vía de instalación. La imagen del rol
+Booster se conserva durante su personalización posterior como VIP del Distrito.
 
 Fuentes oficiales:
 - https://support.discord.com/hc/en-us/articles/4409571023639-Custom-Role-Icons-FAQ

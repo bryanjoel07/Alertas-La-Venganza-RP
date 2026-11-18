@@ -1,7 +1,7 @@
 {
   "version": "vice-role-icons-v1",
   "guild_id": "1572462544302383164",
-  "status": "installation_requested",
+  "status": "installed_verified",
   "capability": "ROLE_ICONS",
   "checked_boost_level": 2,
   "design": "Original code-native VI sunset badges; plum, magenta, cyan, ivory; existing role symbols.",
@@ -605,5 +605,8 @@
       "application": "bot_when_unlocked"
     }
   ],
-  "checked_boost_count": 10
+  "checked_boost_count": 10,
+  "verified_role_icons": 46,
+  "verified_at": "2026-11-18T19:57:30Z",
+  "verified_method": "Discord REST roles plus owner UI re-open verification"
 }

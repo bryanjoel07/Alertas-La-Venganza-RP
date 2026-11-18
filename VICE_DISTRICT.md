@@ -303,6 +303,28 @@ page on November 18, 2026. The owner explicitly requested keeping PC in Platform
 its existing ID and assignments are preserved, and its label says Esperando GTA VI.
 No PC version is represented as confirmed.
 
+### Native VICE server tag guidance
+
+The native four-character `VICE` tag was saved in Discord on November 18, 2026,
+using the Compass/four-point-star badge with magenta `#FF258D` and cyan `#33E5E9`.
+Native configuration is handled separately in Discord's Server Tag settings;
+deploying this guidance does not configure a tag or apply it to any user's profile.
+The guide publication follows the native configuration and has its own receipts.
+
+`vice-identity-guidance-v5-server-tag` refreshes only the existing bot-owned welcome,
+roles, announcements and events panels once per version. It verifies their exact
+footer markers and journals the original embeds, components and attachments.
+Only embed title, description and color are patched; images, buttons, selectors
+and files remain intact. Missing panels are never recreated by this migration.
+Durable per-panel receipts prevent repeated edits, including overwriting later
+manual copy changes on restart. Preserve those receipts when disabling the hook.
+
+Roles and announcements give voluntary activation instructions: desktop users open
+User Settings → Profiles → Server Tag → Select and choose this server; mobile users
+open their avatar → Edit Profile → Server Tags. Each member chooses whether to wear
+the tag; no bot action or automatic profile change is performed. Instructions were
+checked against [Discord's Server Tags guide](https://support.discord.com/hc/en-us/articles/31444248479639-Server-Tags).
+
 ### Closed ticket deletion controls
 
 `vice_ticket_delete.py` adds the persistent red **Eliminar** button to registered
