@@ -16,6 +16,8 @@ from esschino import EssChino, ASSETS, PROTECTED_CHANNEL, CHANNELS, valid_shop_u
 from store_community import StoreCommunity, IdeaModal, ReviewModal
 from studio_journal import ChangeLog
 from welcome_cards import WelcomeCards
+from vice_district import ViceDistrict
+from vice_design import GUILD_ID as VICE_GUILD_ID
 
 log = logging.getLogger('EssChinoStudio')
 GUILD_ID = 1514871828189941881
@@ -42,6 +44,7 @@ class StoreBot(discord.Client):
         self.configured = False
         self.http_runner = None
         self.register_commands()
+        self.vice = ViceDistrict(self, Path(self.path).with_name('vice-district.sqlite3'))
 
     def authorize(self, i, admin=False):
         if i.guild_id != GUILD_ID or not isinstance(i.user, discord.Member) or i.user.bot:
@@ -60,6 +63,7 @@ class StoreBot(discord.Client):
         await self.esschino.start()
         await self.community.start()
         await self.welcome.start()
+        await self.vice.start()
         app = await self.application_info()
         # Use message-content access only when Discord already grants it. The
         # setup, forms, purchases, voting and commands work without privileged intents.
@@ -73,13 +77,18 @@ class StoreBot(discord.Client):
         log.info('STUDIO intents message_content=%s members=%s', bool(content), bool(members))
         application = web.Application()
         async def health(request):
-            return web.json_response(dict(service='EssChino Studio Bot', connected=self.is_ready(), configured=self.configured))
+            return web.json_response(dict(service='EssChino Studio Bot', connected=self.is_ready(),
+                configured=self.configured, vice_configured=self.vice.configured))
         application.router.add_get('/health', health)
         self.http_runner = web.AppRunner(application)
         await self.http_runner.setup()
         await web.TCPSite(self.http_runner, '0.0.0.0', int(os.getenv('PORT', '8080'))).start()
 
     async def on_ready(self):
+        try:
+            await self.vice.ready()
+        except Exception:
+            log.exception('VICE_SETUP failed')
         async with self.ready_lock:
             if self.configured:
                 return
@@ -118,6 +127,14 @@ class StoreBot(discord.Client):
                 log.exception('STUDIO ticket_archive_failed channel=%s', message.channel.id)
 
     async def on_member_join(self, member):
+        if member.guild.id == VICE_GUILD_ID:
+            try:
+                await self.vice.member_join(member)
+            except discord.NotFound:
+                pass
+            except Exception:
+                log.exception('VICE_WELCOME failed member=%s', member.id)
+            return
         if member.guild.id != GUILD_ID or member.bot:
             return
         await self.configured_event.wait()
@@ -132,6 +149,7 @@ class StoreBot(discord.Client):
             log.exception('WELCOME_CARD member_join_failed member=%s', member.id)
 
     async def close(self):
+        await self.vice.close()
         if self.welcome.task:
             self.welcome.task.cancel()
             await asyncio.gather(self.welcome.task, return_exceptions=True)
