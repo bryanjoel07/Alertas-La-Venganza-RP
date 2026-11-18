@@ -38,8 +38,8 @@ The existing Studio guild retains its handlers, store layout and `/data/esschino
 VIce District uses a separate `/data/vice-district.sqlite3`, exact guild and owner checks,
 its own command group `/vice`, persistent component IDs prefixed `vice:v1:` and welcome receipts.
 
-The layout contains six categories and 22 permanent channels: arrival, community,
-GTA discussion, voice, support and private staff. There are 22 human roles (including
+The layout contains seven main categories and 23 permanent channels: arrival, community,
+GTA discussion, voice, temporary rooms, support and private staff, plus the private ticket archive. There are 22 human roles (including
 the existing Founder), four visual separator roles, plus the bot's managed role. The
 lowest role, Miembro, is assigned automatically on joining. Accepting the rules through
 the welcome button promotes Miembro to Ciudadano. Veterano and Leyenda de Vice are
@@ -60,10 +60,39 @@ the bot can access it. Closing moves the same channel into a private archive and
 preserves its history and the requester's read access; no ticket deletion is implemented.
 
 Initial provisioning runs once per release and reuses the existing roles/channels.
-It never deletes roles, channels or messages. Every configuration operation, role change,
+It never deletes roles, permanent channels or messages. Only registered empty temporary voice rooms
+are cleaned up under the explicitly requested lifecycle below. Every configuration operation, role change,
 ticket operation and automatic welcome goes through ChangeLog.tracked with durable
 before/after state. Informational panels are pinned and recovered by their bot-authored
 footer markers if a deployment is interrupted.
+
+## Corillo tools — 2026-11-18
+
+`vice_voice.py` adds a decorated category and persistent Crear mi sala / Administrar mi sala
+panel. Each person can own one temporary voice room, with 6 seats by default and a 1–20
+range. Controls for access, invitations, rename and capacity are private to the creator;
+they do not grant server permissions. Founder, Administrator, Moderation and the bot
+retain access. No automatic voice move is performed. Text chat is disabled in temporary
+rooms to avoid deleting conversation history. Empty unused rooms expire after 120 seconds;
+previously occupied rooms after 30 seconds. Cleanup checks live voice_states and only
+deletes the exact registered VoiceChannel in the dedicated guild/category. The database
+stores a nonce before creation; interrupted creation is recovered only from the exact
+bot-authored audit entry, never from a channel name. All changes are journaled.
+
+`vice_community.py` installs six original transparent emojis (VI, Puerto Rico, palm, fire,
+heart, GG) and three stickers (¡WEPA!, ¡DURO!, PA’L CORILLO). The manifests under
+assets/vice-district/emojis and stickers preserve final prompts and built-in imagegen
+provenance. Existing unrelated expressions are preserved; capacity is checked first.
+
+The opening calendar contains native Discord voice events in the public Lobby, with
+Me interesa registration: GTA night on November 20, clip contest on November 27, and
+GTA trivia on December 4, 2026, all at 20:00 Puerto Rico (AST, UTC−4). Each description
+states rules, meeting place and the reference timezone. Staff hosts and starts each event.
+The public agenda has a persistent button for upcoming events. `/vice evento` opens a
+date/duration/description form for Founder, Administrator or Moderation; Support cannot
+publish events. Dates are parsed as Puerto Rico time, with future/date-range validation.
+Guild-scoped command synchronization, event creation and public panels are journaled.
+Markers and exact creator/name/start recovery prevent duplicate opening events on restart.
 
 ## Validation
 

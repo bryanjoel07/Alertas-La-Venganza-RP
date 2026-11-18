@@ -1,0 +1,35 @@
+{
+  "repository": "bryanjoel07/Alertas-La-Venganza-RP",
+  "assets": [
+    {
+      "name": "vd_logo",
+      "path": "assets/vice-district/emojis/vd_logo.png",
+      "sha": "5e9483e4a1d629aaf923e749617c50c1d6ad9114"
+    },
+    {
+      "name": "vd_boricua",
+      "path": "assets/vice-district/emojis/vd_boricua.png",
+      "sha": "eeed3246c93252ca967b0b82d5ced13e2f85b8a7"
+    },
+    {
+      "name": "vd_palmera",
+      "path": "assets/vice-district/emojis/vd_palmera.png",
+      "sha": "fb4d2512b2449d221bfea56101e0133e77b1c48a"
+    },
+    {
+      "name": "vd_fuego",
+      "path": "assets/vice-district/emojis/vd_fuego.png",
+      "sha": "e32cf3ff0cfa16901d7751ba242ae42100e5efc5"
+    },
+    {
+      "name": "vd_corazon",
+      "path": "assets/vice-district/emojis/vd_corazon.png",
+      "sha": "1c9dc6e6304d709dee5e95ac19623d7a86e4e2cb"
+    },
+    {
+      "name": "vd_gg",
+      "path": "assets/vice-district/emojis/vd_gg.png",
+      "sha": "00ec91ab7863a0118b49ac8624b63475239041bb"
+    }
+  ]
+}

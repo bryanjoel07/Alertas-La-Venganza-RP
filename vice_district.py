@@ -17,6 +17,8 @@ from vice_design import (GUILD_ID, BOT_ID, OWNER_ID, VERSION, STAFF_VERSION, PIN
                          ROLES, GROUPS, SELF_ROLES, CATEGORIES, CHANNELS, panel_copy,
                          DECORATION_VERSION, CLOSED_CATEGORY, TICKET_OPEN_PREFIX, TICKET_CLOSED_PREFIX)
 from vice_welcome import ViceWelcome, render_card, render_cover
+from vice_voice import TempVoice
+from vice_community import CommunityExtras, EventModal
 from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
@@ -114,6 +116,8 @@ class ViceDistrict:
         self.store = StudioStore(self.path)
         self.changes = ChangeLog(bot, self.path, GUILD_ID)
         self.welcome = ViceWelcome(self, self.path)
+        self.voice = TempVoice(self)
+        self.community = CommunityExtras(self)
         self.ready_lock = asyncio.Lock()
         self.roles_lock = asyncio.Lock()
         self.ticket_lock = asyncio.Lock()
@@ -170,6 +174,8 @@ class ViceDistrict:
         await self.call('initialize')
         await asyncio.to_thread(self.changes.journal.initialize)
         await self.welcome.start()
+        await self.voice.start()
+        await self.community.start()
         for view in [WelcomePanel(self, links=False), RolesPanel(self), SupportPanel(self), CloseTicketPanel(self)]:
             self.bot.add_view(view)
 
@@ -206,6 +212,8 @@ class ViceDistrict:
     async def ready(self):
         async with self.ready_lock:
             if self.configured:
+                await self.voice.ready()
+                await self.community.ready()
                 return
             guild = self.bot.get_guild(GUILD_ID)
             self.validate_guild(guild)
@@ -227,6 +235,8 @@ class ViceDistrict:
             if self.welcome.task is None or self.welcome.task.done():
                 self.welcome.task = asyncio.create_task(self.welcome.recover(), name='vice-welcome-recovery')
             log.info('VICE_READY guild=%s roles=%s channels=%s release=%s staff=%s', GUILD_ID, len(ROLES) + 1, len(CHANNELS), VERSION, STAFF_VERSION)
+            await self.voice.ready()
+            await self.community.ready()
 
     async def decorate(self, guild):
         """Rename existing objects only; preserve parents, IDs and permissions."""
@@ -700,10 +710,16 @@ class ViceDistrict:
             return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
+        await self.voice.close()
         await self.welcome.close()
 
     def register_commands(self):
         group = app_commands.Group(name='vice', description='Tu comunidad GTA VI Latino')
+
+        @group.command(name='evento', description='Programar un evento del corillo en hora de Puerto Rico')
+        async def event(interaction: discord.Interaction):
+            self.community.authorize_event(interaction)
+            await interaction.response.send_modal(EventModal(self.community))
 
         @group.command(name='bienvenida', description='Ver tu tarjeta con nombre y avatar')
         async def welcome(interaction: discord.Interaction):

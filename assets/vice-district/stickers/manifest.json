@@ -1,0 +1,44 @@
+{
+  "mode": "built-in imagegen",
+  "assets": [
+    {
+      "name": "vd_wepa",
+      "description": "Celebración boricua con bandera y palmera",
+      "tags": "🎉",
+      "prompt": "Use case: stylized-concept. Asset type: original static Discord sticker for a Puerto Rican and Latin American GTA fan community called VIce District. One centered die-cut cartoon sticker, square composition, transparent background with real alpha. Bold, clean, polished illustration with thick dark-plum outlines and a narrow warm-white outer sticker outline. Color palette: hot pink, plum, electric cyan, coral, warm ivory. Tropical Miami neon mood, cheerful and energetic. Extremely readable at 320x320 pixels. Compact connected silhouette, generous transparent margins, no background scene, no tiny details, no official game logos, no watermark, no extra lettering. Subject: exuberant Puerto Rican celebration badge. Huge chunky lettering reading exactly \"¡WEPA!\" (inverted exclamation at start, normal exclamation at end), slightly tilted, ivory with hot pink and cyan extruded accents. A small clearly accurate Puerto Rican flag (red/white horizontal stripes, blue triangle and one white star) and one playful neon palm frond behind the lettering, a few large celebratory spark shapes. The lettering is the main subject and fills most of the sticker.",
+      "path": "assets/vice-district/stickers/vd_wepa.png",
+      "generated_file": "exec-32479275-4974-4416-a121-9d827e6ab57c.png",
+      "sha": "0c81c3ee8b918cacf9b84ab7bed6e97ba0003a6f",
+      "width": 320,
+      "height": 320,
+      "bytes": 145406,
+      "transparent": true
+    },
+    {
+      "name": "vd_duro",
+      "description": "Reacción de aprobación con fuego y pulgar arriba",
+      "tags": "🔥",
+      "prompt": "Use case: stylized-concept. Asset type: original static Discord sticker for a Puerto Rican and Latin American GTA fan community called VIce District. One centered die-cut cartoon sticker, square composition, transparent background with real alpha. Bold, clean, polished illustration with thick dark-plum outlines and a narrow warm-white outer sticker outline. Color palette: hot pink, plum, electric cyan, coral, warm ivory. Tropical Miami neon mood, cheerful and energetic. Extremely readable at 320x320 pixels. Compact connected silhouette, generous transparent margins, no background scene, no tiny details, no official game logos, no watermark, no extra lettering. Subject: enthusiastic approval reaction. Huge chunky lettering reading exactly \"¡DURO!\" (inverted exclamation at start, normal exclamation at end), warm ivory face with coral and hot pink depth. A friendly cartoon thumbs-up hand rising behind the word with an energetic pink/coral flame motif and a few cyan sparks. The word is the main subject, correctly spelled and legible, hand has clean believable thumb-up silhouette. No other text.",
+      "path": "assets/vice-district/stickers/vd_duro.png",
+      "generated_file": "exec-c043149c-4251-4674-bb7c-81baa87059ca.png",
+      "sha": "83012752023d23fa10f7abb29039ba1f511f8da5",
+      "width": 320,
+      "height": 320,
+      "bytes": 135059,
+      "transparent": true
+    },
+    {
+      "name": "vd_corillo",
+      "description": "Invitación al corillo con palmera neón",
+      "tags": "🌴",
+      "prompt": "Use case: stylized-concept. Asset type: original static Discord sticker for a Puerto Rican and Latin American GTA fan community called VIce District. One centered die-cut cartoon sticker, square composition, transparent background with real alpha. Bold, clean, polished illustration with thick dark-plum outlines and a narrow warm-white outer sticker outline. Color palette: hot pink, plum, electric cyan, coral, warm ivory. Tropical Miami neon mood, cheerful and energetic. Extremely readable at 320x320 pixels. Compact connected silhouette, generous transparent margins, no background scene, no tiny details, no official game logos, no watermark, no extra lettering. Subject: friendly tropical crew invitation badge. Huge chunky two-line lettering reading exactly \"PA’L\" on the first line and \"CORILLO\" on the second line. Use that exact apostrophe and spelling. Warm ivory letter faces, bold hot pink and cyan shadows, dark plum outline. A playful neon palm tree and small sunset arc integrated behind the lettering, compact badge silhouette suggesting friends gathering in Vice District. The lettering dominates, no faces, no extra text.",
+      "path": "assets/vice-district/stickers/vd_corillo.png",
+      "generated_file": "exec-7a366a7d-81f9-4de6-82cb-6200057ebded.png",
+      "sha": "a55f591dbb813d3aefa35e536f846a5cddce0a67",
+      "width": 320,
+      "height": 320,
+      "bytes": 134234,
+      "transparent": true
+    }
+  ]
+}

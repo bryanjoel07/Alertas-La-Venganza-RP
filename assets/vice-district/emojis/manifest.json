@@ -1,0 +1,77 @@
+{
+  "mode": "built-in imagegen",
+  "server": "GTA VI Latino | VIce District",
+  "size": [
+    128,
+    128
+  ],
+  "assets": [
+    {
+      "name": "vd_logo",
+      "prompt": "Use case: logo-brand. Asset type: a single exclusive Discord custom emoji for GTA VI Latino | VIce District, a Puerto Rican and Latin American community. Square canvas, transparent background with actual alpha. Bold clean silhouette, very thick dark-plum outer outline, simple large shapes readable at 32 pixels, glossy neon highlights without detached glow or tiny details. Palette: hot magenta #FF168A, coral #FF795D, cyan #00D9E8, ivory #FFFBEA and dark plum #170C25. Centered subject filling 88% of canvas, no scenery, no watermark. Create a simplified VI emblem inspired by the provided community icon: bold italic ivory letters VI edged in cyan, in front of a coral-magenta sunset disc, one small dark-plum palm silhouette. Keep VI immediately legible, simplify heavily for emoji use. Preserve the community color identity, not the full rectangular background.",
+      "ref": "C:/Users/bryan/Documents/Codex/2026-11-17/puedes-controlar-mi-pc-quiero-que/assets/vice-district-icon.png",
+      "path": "C:/Users/bryan/Documents/Codex/2026-11-17/puedes-controlar-mi-pc-quiero-que/bot-source/assets/vice-district/emojis/vd_logo.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1eee5-7a2d-71e1-a0eb-92fbf99bddd0\\exec-db61ea57-6fe7-4cd6-994e-855fcb2cff52.png",
+      "bytes": 19789,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_boricua",
+      "prompt": "Use case: logo-brand. Asset type: a single exclusive Discord custom emoji for GTA VI Latino | VIce District, a Puerto Rican and Latin American community. Square canvas, transparent background with actual alpha. Bold clean silhouette, very thick dark-plum outer outline, simple large shapes readable at 32 pixels, glossy neon highlights without detached glow or tiny details. Palette: hot magenta #FF168A, coral #FF795D, cyan #00D9E8, ivory #FFFBEA and dark plum #170C25. Centered subject filling 88% of canvas, no scenery, no watermark. Subject: compact rounded Puerto Rico flag badge, unmistakably correct design: blue triangle on left containing one white five-point star, and five horizontal red-white-red-white-red stripes. Glossy coral red, bright clean blue and ivory, thick plum outline with subtle cyan edge accent. No lettering, no pole.",
+      "path": "C:/Users/bryan/Documents/Codex/2026-11-17/puedes-controlar-mi-pc-quiero-que/bot-source/assets/vice-district/emojis/vd_boricua.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1eee5-7a2d-71e1-a0eb-92fbf99bddd0\\exec-51670b23-8de5-4cdf-b74b-8bd1a7fcd5ff.png",
+      "bytes": 18020,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_palmera",
+      "prompt": "Use case: logo-brand. Asset type: a single exclusive Discord custom emoji for GTA VI Latino | VIce District, a Puerto Rican and Latin American community. Square canvas, transparent background with actual alpha. Bold clean silhouette, very thick dark-plum outer outline, simple large shapes readable at 32 pixels, glossy neon highlights without detached glow or tiny details. Palette: hot magenta #FF168A, coral #FF795D, cyan #00D9E8, ivory #FFFBEA and dark plum #170C25. Centered subject filling 88% of canvas, no scenery, no watermark. Subject: one cheerful iconic tropical palm tree, gently curved dark-plum trunk with vivid cyan and magenta accents, five or six broad pointed fronds in bright turquoise with neon lime highlight. Simple compact silhouette, no beach or island, no text.",
+      "path": "C:/Users/bryan/Documents/Codex/2026-11-17/puedes-controlar-mi-pc-quiero-que/bot-source/assets/vice-district/emojis/vd_palmera.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1eee5-7a2d-71e1-a0eb-92fbf99bddd0\\exec-58ed58d1-de4d-4a9e-8352-9089280932c5.png",
+      "bytes": 21016,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_fuego",
+      "prompt": "Use case: logo-brand. Asset type: a single exclusive Discord custom emoji for GTA VI Latino | VIce District, a Puerto Rican and Latin American community. Square canvas, transparent background with actual alpha. Bold clean silhouette, very thick dark-plum outer outline, simple large shapes readable at 32 pixels, glossy neon highlights without detached glow or tiny details. Palette: hot magenta #FF168A, coral #FF795D, cyan #00D9E8, ivory #FFFBEA and dark plum #170C25. Centered subject filling 88% of canvas, no scenery, no watermark. Subject: a bold energetic flame reaction, coral outer flame with vivid hot-magenta central layer and ivory warm core, small cyan rim accent. Three sweeping flame tips, compact chunky silhouette. No face, no text.",
+      "path": "C:/Users/bryan/Documents/Codex/2026-11-17/puedes-controlar-mi-pc-quiero-que/bot-source/assets/vice-district/emojis/vd_fuego.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1eee5-7a2d-71e1-a0eb-92fbf99bddd0\\exec-2bb17be4-a2d9-44c9-afb8-bce4dabfba02.png",
+      "bytes": 19071,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_corazon",
+      "prompt": "Use case: logo-brand. Asset type: a single exclusive Discord custom emoji for GTA VI Latino | VIce District, a Puerto Rican and Latin American community. Square canvas, transparent background with actual alpha. Bold clean silhouette, very thick dark-plum outer outline, simple large shapes readable at 32 pixels, glossy neon highlights without detached glow or tiny details. Palette: hot magenta #FF168A, coral #FF795D, cyan #00D9E8, ivory #FFFBEA and dark plum #170C25. Centered subject filling 88% of canvas, no scenery, no watermark. Subject: one big glossy affectionate heart reaction, hot-magenta fill, coral upper highlights and cyan edge accent, thick dark-plum outline. Slight friendly tilt and one large ivory shine. No face, no letters or extra hearts.",
+      "path": "C:/Users/bryan/Documents/Codex/2026-11-17/puedes-controlar-mi-pc-quiero-que/bot-source/assets/vice-district/emojis/vd_corazon.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1eee5-7a2d-71e1-a0eb-92fbf99bddd0\\exec-be121ef5-c9f3-4bb8-b2c4-e0d5df44c934.png",
+      "bytes": 15993,
+      "alpha_range": [
+        0,
+        255
+      ]
+    },
+    {
+      "name": "vd_gg",
+      "prompt": "Use case: logo-brand. Asset type: a single exclusive Discord custom emoji for GTA VI Latino | VIce District, a Puerto Rican and Latin American community. Square canvas, transparent background with actual alpha. Bold clean silhouette, very thick dark-plum outer outline, simple large shapes readable at 32 pixels, glossy neon highlights without detached glow or tiny details. Palette: hot magenta #FF168A, coral #FF795D, cyan #00D9E8, ivory #FFFBEA and dark plum #170C25. Centered subject filling 88% of canvas, no scenery, no watermark. Subject: exactly the text GG in large bold italic chunky ivory letters, stacked slightly overlapping side-by-side, dark-plum thick stroke and cyan bottom extrusion, coral-magenta top accent. The two letters must be instantly readable at 32px. No other text or ornaments.",
+      "path": "C:/Users/bryan/Documents/Codex/2026-11-17/puedes-controlar-mi-pc-quiero-que/bot-source/assets/vice-district/emojis/vd_gg.png",
+      "source": "C:\\Users\\bryan\\.codex\\generated_images\\01a1eee5-7a2d-71e1-a0eb-92fbf99bddd0\\exec-7ad1855b-033f-4ecf-9732-61355c9031c8.png",
+      "bytes": 17516,
+      "alpha_range": [
+        0,
+        255
+      ]
+    }
+  ]
+}
