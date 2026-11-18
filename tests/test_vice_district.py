@@ -162,21 +162,21 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_role_selection_preserves_staff_and_other_groups(self):
         self.member.roles = [self.rolemap['mod'],self.rolemap['mexico'],self.rolemap['ps']]
-        await self.system.select_roles(self.interaction,'platform',['pc'])
+        await self.system.select_roles(self.interaction,'platform',['xbox'])
         self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['ps'],))
-        self.assertEqual(self.member.add_roles.await_args.args, (self.rolemap['pc'],))
+        self.assertEqual(self.member.add_roles.await_args.args, (self.rolemap['xbox'],))
         self.system.track.assert_awaited_once()
 
     async def test_empty_selection_removes_only_its_group(self):
-        self.member.roles = [self.rolemap['events'],self.rolemap['pc']]
+        self.member.roles = [self.rolemap['events'],self.rolemap['ps']]
         await self.system.select_roles(self.interaction,'interests',[])
         self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['events'],))
         self.member.add_roles.assert_not_awaited()
 
     async def test_role_accidentally_given_power_cannot_be_self_assigned(self):
-        self.rolemap['pc'].permissions = discord.Permissions(administrator=True)
+        self.rolemap['xbox'].permissions = discord.Permissions(administrator=True)
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction,'platform',['pc'])
+            await self.system.select_roles(self.interaction,'platform',['xbox'])
         self.member.add_roles.assert_not_awaited()
 
     async def test_staff_is_not_self_selectable_and_all_optional_roles_have_zero_permissions(self):
@@ -254,6 +254,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         for service in (self.system.tickets, self.system.ticket_archive,
                         self.system.ticket_feedback, self.system.ticket_deletion, self.system.audit, self.system.antispam):
             service.ready = AsyncMock()
+        self.system.optional_roles.ready=AsyncMock(side_effect=ValueError('Role catalog not available'))
         self.system.ticket_archive.ready.side_effect=ValueError('Archive not available')
         self.system.refresh_ticket_panel=AsyncMock()
         self.system.start_ticket_backfill=MagicMock()
@@ -263,6 +264,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
                         self.system.ticket_feedback, self.system.audit, self.system.antispam):
             service.ready.assert_awaited_once()
         self.system.refresh_ticket_panel.assert_awaited_once()
+        self.system.optional_roles.ready.assert_awaited_once()
         self.system.start_ticket_backfill.assert_not_called()
 
     async def test_non_owner_cannot_close_another_members_ticket(self):

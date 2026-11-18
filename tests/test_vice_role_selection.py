@@ -52,44 +52,44 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.member.remove_roles.assert_not_awaited()
         self.system.track.assert_not_awaited()
 
-    async def test_country_switch_across_pages_preserves_regions_platforms_and_staff(self):
-        self.member.roles = [self.rolemap[key] for key in ['pr', 'caribbean', 'pc', 'events', 'support']]
-        await self.system.select_roles(self.interaction, 'country_b', ['mexico'])
+    async def test_country_switch_preserves_regions_platforms_and_staff(self):
+        self.member.roles = [self.rolemap[key] for key in ['pr', 'caribbean', 'ps', 'pc', 'events', 'support']]
+        await self.system.select_roles(self.interaction, 'country', ['mexico'])
         self.member.remove_roles.assert_awaited_once_with(
             self.rolemap['pr'], reason='Roles opcionales elegidos por el miembro')
         self.member.add_roles.assert_awaited_once_with(
             self.rolemap['mexico'], reason='Roles opcionales elegidos por el miembro')
         self.system.role_snapshot.assert_awaited_once_with(self.guild, 77)
 
-    async def test_first_country_page_replaces_country_on_second_page(self):
+    async def test_selecting_country_replaces_previous_country(self):
         self.member.roles = [self.rolemap['mexico'], self.rolemap['xbox']]
-        await self.system.select_roles(self.interaction, 'country_a', ['pr'])
+        await self.system.select_roles(self.interaction, 'country', ['pr'])
         self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['mexico'],))
         self.assertEqual(self.member.add_roles.await_args.args, (self.rolemap['pr'],))
 
-    async def test_clearing_either_country_menu_clears_only_country(self):
+    async def test_clearing_country_menu_clears_only_country(self):
         self.member.roles = [self.rolemap['pr'], self.rolemap['caribbean'], self.rolemap['news']]
-        await self.system.select_roles(self.interaction, 'country_b', [])
+        await self.system.select_roles(self.interaction, 'country', [])
         self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['pr'],))
         self.member.add_roles.assert_not_awaited()
 
     async def test_regions_accept_overlapping_choices_without_changing_country(self):
-        self.member.roles = [self.rolemap['pr'], self.rolemap['central'], self.rolemap['ps']]
-        await self.system.select_roles(self.interaction, 'region', ['caribbean', 'greater_antilles'])
-        self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['central'],))
+        self.member.roles = [self.rolemap['pr'], self.rolemap['south'], self.rolemap['ps']]
+        await self.system.select_roles(self.interaction, 'region', ['caribbean', 'central'])
+        self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['south'],))
         self.assertEqual(set(self.member.add_roles.await_args.args),
-                         {self.rolemap['caribbean'], self.rolemap['greater_antilles']})
+                         {self.rolemap['caribbean'], self.rolemap['central']})
 
     async def test_current_selection_does_not_write_member_roles_again(self):
-        self.member.roles = [self.rolemap['pr'], self.rolemap['pc']]
-        await self.system.select_roles(self.interaction, 'country_a', ['pr'])
+        self.member.roles = [self.rolemap['pr'], self.rolemap['ps']]
+        await self.system.select_roles(self.interaction, 'country', ['pr'])
         self.member.add_roles.assert_not_awaited()
         self.member.remove_roles.assert_not_awaited()
 
-    async def test_staff_cross_page_duplicate_and_excess_country_inputs_are_rejected(self):
-        invalid = [('country_a', ['admin']), ('country_a', ['mexico']),
-                   ('country_a', ['pr', 'pr']), ('country_a', ['pr', 'argentina']),
-                   ('platform', ['mod']), ('platform', ['pc', 'pc'])]
+    async def test_staff_removed_country_duplicate_and_excess_country_inputs_are_rejected(self):
+        invalid = [('country', ['admin']), ('country', ['brazil']), ('country', ['jamaica']),
+                   ('country', ['pr', 'pr']), ('country', ['pr', 'argentina']),
+                   ('platform', ['mod']), ('platform', ['ps', 'ps'])]
         for group, selected in invalid:
             with self.subTest(group=group, selected=selected), self.assertRaises(ValueError):
                 await self.system.select_roles(self.interaction, group, selected)
@@ -101,86 +101,120 @@ class OptionalRoleSelectionTests(unittest.IsolatedAsyncioTestCase):
             await self.system.select_roles(self.interaction, 'region', ['pr'])
         self.assert_no_mutation()
 
+    async def test_retired_country_menus_cannot_assign_even_a_still_supported_country(self):
+        for obsolete in ['country_a', 'country_b']:
+            with self.subTest(group=obsolete), self.assertRaises(ValueError):
+                await self.system.select_roles(self.interaction, obsolete, ['pr'])
+        self.guild.fetch_roles.assert_not_awaited()
+        self.assert_no_mutation()
+
+    async def test_pc_and_retired_platform_values_require_current_menu(self):
+        for obsolete in ['pc', 'nintendo', 'steam_deck', 'android', 'ios', 'macos', 'linux', 'vr']:
+            with self.subTest(value=obsolete), self.assertRaisesRegex(ValueError, 'panel actualizado'):
+                await self.system.select_roles(self.interaction, 'platform', [obsolete])
+        self.guild.fetch_roles.assert_not_awaited()
+        self.assert_no_mutation()
+
+    async def test_pc_waiting_interest_can_be_chosen_without_changing_platform_or_country(self):
+        self.member.roles = [self.rolemap['ps'], self.rolemap['pr'], self.rolemap['caribbean']]
+        await self.system.select_roles(self.interaction, 'interests', ['pc'])
+        self.member.remove_roles.assert_not_awaited()
+        self.member.add_roles.assert_awaited_once_with(
+            self.rolemap['pc'], reason='Roles opcionales elegidos por el miembro')
+
+    async def test_platform_change_preserves_pc_waiting_interest(self):
+        self.member.roles = [self.rolemap['ps'], self.rolemap['pc'], self.rolemap['events']]
+        await self.system.select_roles(self.interaction, 'platform', ['xbox', 'xbox_one_cloud'])
+        self.assertEqual(self.member.remove_roles.await_args.args, (self.rolemap['ps'],))
+        self.assertEqual(set(self.member.add_roles.await_args.args),
+                         {self.rolemap['xbox'], self.rolemap['xbox_one_cloud']})
+
     async def test_permission_drift_is_rejected_using_fresh_role_definitions(self):
         changed = MagicMock(spec=discord.Role)
-        changed.id, changed.guild, changed.managed = self.rolemap['pc'].id, self.guild, False
+        changed.id, changed.guild, changed.managed = self.rolemap['ps'].id, self.guild, False
         changed.permissions = discord.Permissions(administrator=True)
         fresh = [changed if role.id == changed.id else role for role in self.rolemap.values()]
         self.guild.fetch_roles.side_effect = None
         self.guild.fetch_roles.return_value = fresh
-        self.assertEqual(self.rolemap['pc'].permissions.value, 0)
+        self.assertEqual(self.rolemap['ps'].permissions.value, 0)
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'platform', ['pc'])
+            await self.system.select_roles(self.interaction, 'platform', ['ps'])
         self.assert_no_mutation()
 
     async def test_managed_missing_or_foreign_role_is_rejected(self):
-        role = self.rolemap['pc']
+        role = self.rolemap['ps']
         role.managed = True
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'platform', ['pc'])
+            await self.system.select_roles(self.interaction, 'platform', ['ps'])
         role.managed = False
         role.guild = NS(id=123)
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'platform', ['pc'])
+            await self.system.select_roles(self.interaction, 'platform', ['ps'])
         role.guild = self.guild
-        self.values['role:pc'] = -1
+        self.values['role:ps'] = -1
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'platform', ['pc'])
+            await self.system.select_roles(self.interaction, 'platform', ['ps'])
         self.assert_no_mutation()
 
-    async def test_missing_role_on_other_country_page_cannot_leave_two_countries(self):
+    async def test_missing_country_role_cannot_leave_two_countries(self):
         self.values['role:venezuela'] = -1
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'country_a', ['pr'])
+            await self.system.select_roles(self.interaction, 'country', ['pr'])
         self.assert_no_mutation()
 
     async def test_aliased_optional_role_cannot_assign_protected_or_duplicate_role(self):
         self.rolemap['support'].permissions = discord.Permissions.none()
-        self.values['role:pc'] = self.rolemap['support'].id
+        self.values['role:ps'] = self.rolemap['support'].id
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'platform', ['pc'])
-        self.values['role:pc'] = self.rolemap['ps'].id
+            await self.system.select_roles(self.interaction, 'platform', ['ps'])
+        self.values['role:ps'] = self.rolemap['xbox'].id
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'platform', ['pc'])
+            await self.system.select_roles(self.interaction, 'platform', ['ps'])
         self.assert_no_mutation()
 
     async def test_corrupt_scope_cannot_remove_or_add_a_staff_role(self):
-        with patch.object(vice_district, 'GROUP_SCOPES', {'platform': ('pc', 'ps', 'xbox', 'admin')}):
+        with patch.object(vice_district, 'GROUP_SCOPES', {'platform': ('ps', 'xbox', 'xbox_one_cloud', 'admin')}):
             with self.assertRaises(ValueError):
-                await self.system.select_roles(self.interaction, 'platform', ['pc'])
+                await self.system.select_roles(self.interaction, 'platform', ['ps'])
         self.assert_no_mutation()
 
     async def test_wrong_guild_owner_or_bot_member_is_rejected_before_rest(self):
         self.guild.id = 123
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'country_a', ['pr'])
+            await self.system.select_roles(self.interaction, 'country', ['pr'])
         self.guild.id, self.guild.owner_id = GUILD_ID, 123
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'country_a', ['pr'])
+            await self.system.select_roles(self.interaction, 'country', ['pr'])
         self.guild.owner_id, self.member.bot = OWNER_ID, True
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'country_a', ['pr'])
+            await self.system.select_roles(self.interaction, 'country', ['pr'])
         self.guild.fetch_roles.assert_not_awaited()
         self.assert_no_mutation()
 
     async def test_wrong_fresh_member_is_rejected_before_mutation(self):
         self.guild.fetch_member.return_value = NS(id=999, guild=self.guild, bot=False)
         with self.assertRaises(ValueError):
-            await self.system.select_roles(self.interaction, 'country_a', ['pr'])
+            await self.system.select_roles(self.interaction, 'country', ['pr'])
         self.assert_no_mutation()
 
-    async def test_panel_fits_five_discord_rows_and_all_countries_are_available_once(self):
+    async def test_panel_has_four_rows_and_single_country_menu(self):
         view = RolesPanel(self.system)
         self.assertTrue(view.is_persistent())
-        self.assertEqual(len(view.children), 5)
-        self.assertEqual(len({item.custom_id for item in view.children}), 5)
+        self.assertEqual(len(view.children), 4)
+        self.assertEqual(len({item.custom_id for item in view.children}), 4)
         countries = []
         for item in view.children:
             self.assertLessEqual(len(item.options), 25)
             self.assertLessEqual(item.max_values, len(item.options))
-            if item.group.startswith('country_'):
+            if item.group == 'country':
                 self.assertEqual(item.max_values, 1)
                 countries.extend(option.value for option in item.options)
+            elif item.group == 'platform':
+                self.assertEqual({option.value for option in item.options},
+                                 {'ps', 'xbox', 'xbox_one_cloud'})
+            elif item.group == 'interests':
+                self.assertIn('pc', [option.value for option in item.options])
+        self.assertEqual(len(countries), 19)
         self.assertEqual(countries, list(COUNTRY_KEYS))
         self.assertEqual(len(countries), len(set(countries)))
 

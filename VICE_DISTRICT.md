@@ -262,10 +262,10 @@ delete feedback history or create demonstration ratings on the live server.
 
 ### Country, region and platform roles
 
-The optional role catalog includes 50 inhabited Latin America/Caribbean countries
-and territories, 11 overlapping regional identity tags, and 10 gaming platform
-families. Country coverage follows UN M49; Bouvet and South Georgia/South Sandwich
-are omitted because they have no permanent population. Puerto Rico comes first.
+The optional role catalog includes the 18 Spanish-speaking Latin American states
+plus Puerto Rico, eight overlapping regional identity tags, and three supported
+GTA VI platform choices. This replaces the wider Caribbean/device catalog following the
+owner's explicit correction. Puerto Rico comes first.
 The old Preferences divider retains its ID and becomes Platforms. Countries,
 Regions and Alerts each receive a separate divider. Existing roles and member
 assignments are preserved; all added roles are cosmetic with zero permissions.
@@ -273,16 +273,21 @@ assignments are preserved; all added roles are cosmetic with zero permissions.
 `vice_optional_roles.py` applies only its versioned catalog migration, using
 journaled before-states and durable creation nonces with exact audit recovery.
 It does not replay base/staff installation or modify welcome/ticket permissions.
-Both country selectors (25 options each) share one replacement scope. Regions,
+The country selector allows one choice among 19 options. Regions,
 platforms and alerts remain independent, multi-select groups. Every selection
 fetches current roles and member data; managed, protected or privileged roles
-are rejected. Staff/rank roles remain manually assigned. The five controls stay
+are rejected. Staff/rank roles remain manually assigned. The four controls stay
 in `elige-tus-roles`; none is added to the welcome panel.
 
 To disable, remove the optional migration hook and adapt the roles panel together.
 Keep the role registry, creation receipts and member assignments. Do not delete
-roles or replay a full installation as a rollback. Platform tags describe community
-members' devices and do not announce GTA VI availability.
+roles or replay a full installation as a rollback. The explicit Hispanic-scope
+correction retires only frozen registered unused cosmetic roles, retaining receipts
+and before-states. Grouped numeric positions handle Discord's role-position ties
+without moving the bot or staff hierarchy. The platform choices are PS5, Xbox
+Series X|S and Xbox One (Cloud Gaming), checked against Rockstar's current support
+page on November 18, 2026. The existing assigned PC role is preserved as a waiting
+interest outside Platforms; no PC version is represented as confirmed.
 
 ### Closed ticket deletion controls
 

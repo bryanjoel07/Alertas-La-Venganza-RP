@@ -7,13 +7,15 @@ import discord
 
 from studio_journal import server_snapshot
 from vice_design import BOT_ID, GUILD_ID
-from vice_role_catalog import CATALOG_VERSION, OPTIONAL_ROLES
+from vice_role_catalog import (CATALOG_VERSION, OPTIONAL_ROLES, COUNTRY_KEYS,
+                               REGION_KEYS, PLATFORM_KEYS, INTEREST_ROLES, RETIRED_KEYS)
 
 log = logging.getLogger('ViceDistrict.optional_roles')
 RELEASE_KEY = 'optional_roles_release'
 ROLES_TOPIC = ('Personaliza tu perfil: país o territorio, regiones, plataformas y avisos. '
                'Todo es opcional y puedes cambiarlo cuando quieras.')
 REASON = 'Países, regiones y plataformas solicitados por el propietario'
+RETIREMENT_KEY = 'optional_roles:retirement:' + CATALOG_VERSION
 
 
 class OptionalRoles:
@@ -35,6 +37,8 @@ class OptionalRoles:
         state = await server_snapshot(guild)
         state['catalog_release'] = self.system.store.get(RELEASE_KEY)
         state['role_registry'] = {key: self.system.store.get('role:' + key) for key, *_ in OPTIONAL_ROLES}
+        state['retired_role_registry'] = {key: self.system.store.get('role:' + key) for key in sorted(RETIRED_KEYS)}
+        state['retirement_plan'] = self.system.store.get(RETIREMENT_KEY)
         channel = await guild.fetch_channel(self.system.channel_id('roles'))
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
             raise ValueError('No se confirmó el canal de roles registrado.')
@@ -97,6 +101,84 @@ class OptionalRoles:
         self.system.role_cache[key] = role
         return role
 
+    async def retire_unused(self, guild, protected_ids):
+        """Retire only the frozen, registered out-of-scope roles, never members."""
+        active_keys = {spec[0] for spec in OPTIONAL_ROLES}
+        if active_keys & set(RETIRED_KEYS):
+            raise ValueError('El catálogo activo coincide con un rol marcado para retirar.')
+        active_ids = {int(value) for key in active_keys if (value := self.system.store.get('role:' + key))}
+        plan = self.system.store.get(RETIREMENT_KEY)
+        if plan is None:
+            plan = [dict(key=key, id=int(value), state='pending') for key in sorted(RETIRED_KEYS)
+                    if (value := self.system.store.get('role:' + key))]
+            await self.system.call('put', RETIREMENT_KEY, plan)
+        ids = [row['id'] for row in plan]
+        if len(ids) != len(set(ids)) or set(ids) & (active_ids | protected_ids):
+            raise ValueError('El plan de retirada contiene roles duplicados o protegidos.')
+        for row in plan:
+            if (row['key'] not in RETIRED_KEYS or
+                    self.system.store.get('role:' + row['key']) != row['id']):
+                raise ValueError('Un registro de retirada cambió; no se eliminará ese rol.')
+        pending = [row for row in plan if row['state'] == 'pending']
+        if not pending:
+            return
+        for row in pending:
+            self.validate(guild)
+            roles = {role.id: role for role in await guild.fetch_roles()}
+            role = roles.get(row['id'])
+            if role is None:
+                row['state'] = 'deleted_or_absent'
+                await self.system.call('put', RETIREMENT_KEY, plan)
+                continue
+            bot_ids = {role.id for role in guild.me.roles}
+            bot_role = max(role for role in roles.values() if role.id in bot_ids)
+            self.validate_role(guild, role, bot_role, protected_ids | active_ids)
+            if self.system.store.get('role:' + row['key']) != role.id:
+                raise ValueError('Cambió el rol registrado antes de retirarlo.')
+            # Refresh REST membership immediately before each individual delete.
+            # _roles is Discord's raw SnowflakeList; Member.roles can hide IDs
+            # missing from the gateway cache.
+            assigned = 0
+            async for member in guild.fetch_members(limit=None):
+                if member.guild.id != GUILD_ID:
+                    raise ValueError('La comprobación de miembros salió del servidor autorizado.')
+                assigned += role.id in member._roles
+            if assigned:
+                row.update(state='kept_assigned', member_count=assigned)
+                await self.system.call('put', RETIREMENT_KEY, plan)
+                log.warning('VICE_OPTIONAL_ROLE_RETAINED key=%s members=%s', row['key'], assigned)
+                continue
+            row['before'] = dict(name=role.name, position=role.position, color=role.colour.value,
+                                 permissions=role.permissions.value, members=0)
+            await self.system.call('put', RETIREMENT_KEY, plan)
+            try:
+                await role.delete(reason='Catálogo hispanoamericano solicitado por el propietario')
+            except discord.NotFound:
+                pass
+            row['state'] = 'deleted'
+            self.system.role_cache.pop(row['key'], None)
+            await self.system.call('put', RETIREMENT_KEY, plan)
+        log.info('VICE_OPTIONAL_ROLES_RETIRED deleted=%s retained=%s',
+                 sum(row['state'] in {'deleted', 'deleted_or_absent'} for row in plan),
+                 sum(row['state'] == 'kept_assigned' for row in plan))
+
+    def bucket_positions(self, roles, crew, entry):
+        """Bounded sections preserve old Mexico's ID and country alphabetization."""
+        country_keys = tuple(key for key in COUNTRY_KEYS if key != 'pr')
+        mexico_index = country_keys.index('mexico')
+        groups = [('country_separator',), ('pr',), country_keys[:mexico_index],
+                  ('mexico',), country_keys[mexico_index + 1:],
+                  ('region_separator',), REGION_KEYS, ('preferences_separator',), PLATFORM_KEYS,
+                  ('interests_separator',), tuple(role[0] for role in INTEREST_ROLES)]
+        top = crew.position - 1
+        if top - len(groups) + 1 <= entry.position:
+            raise ValueError('No hay espacio entre Comunidad y Recién llegados para ordenar las secciones.')
+        by_key = {key: roles[self.system.store.get('role:' + key)] for key, *_ in OPTIONAL_ROLES}
+        positions = {by_key[key]: top - index for index, keys in enumerate(groups) for key in keys}
+        if set(positions) != set(by_key.values()):
+            raise ValueError('Las secciones no cubren exactamente el catálogo activo.')
+        return positions
+
     async def migrate(self, guild, refresh_panel):
         self.validate(guild)
         roles = {role.id: role for role in await guild.fetch_roles()}
@@ -126,13 +208,16 @@ class OptionalRoles:
         channel = await guild.fetch_channel(self.system.channel_id('roles'))
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
             raise ValueError('No se confirmó el canal de roles registrado.')
+        await self.retire_unused(guild, protected_ids)
+        roles = {role.id: role for role in await guild.fetch_roles()}
+        bot_role = max(role for role in roles.values() if role.id in bot_ids)
         ordered_ids = []
         for spec in OPTIONAL_ROLES:
             role = await self.ensure_role(guild, spec, roles, bot_role, protected_ids)
             ordered_ids.append(role.id)
-        # Insert the cosmetic block immediately above the entry divider. Only
-        # optional roles are sent to Discord's position endpoint; all remaining
-        # roles keep their relative order and their permissions/assignments.
+        # Equal positions are supported by Discord, ordered by snowflake ID.
+        # Group the cosmetic sections into bounded slots below Crew. Menus stay
+        # alphabetical; section peers have Discord's deterministic ID order.
         fresh = sorted(await guild.fetch_roles())
         optional_ids = set(ordered_ids)
         current = {role.id: role for role in fresh}
@@ -144,15 +229,20 @@ class OptionalRoles:
                 raise ValueError('Un rol opcional desapareció durante la organización.')
             self.validate_role(guild, current[rid], fresh_bot, protected_ids)
         remaining = [role for role in fresh if role.id not in optional_ids]
-        base = next(index for index, role in enumerate(remaining) if role.id == entry.id) + 1
-        by_id = {role.id: role for role in fresh}
-        desired = remaining[:base] + [by_id[rid] for rid in reversed(ordered_ids)] + remaining[base:]
-        if [role.id for role in fresh] != [role.id for role in desired]:
-            await guild.edit_role_positions(positions={by_id[rid]: base + offset
-                for offset, rid in enumerate(reversed(ordered_ids))}, reason=REASON)
+        positions = self.bucket_positions(current, current[crew.id], current[entry.id])
+        if max(positions.values()) >= fresh_bot.position:
+            raise ValueError('La jerarquía del bot no permite ordenar las secciones opcionales.')
+        desired = sorted(fresh, key=lambda role: (positions.get(role, role.position), -role.id))
+        optional_indices = [index for index, role in enumerate(desired) if role.id in optional_ids]
+        if optional_indices[-1] - optional_indices[0] + 1 != len(optional_indices):
+            raise ValueError('Un rol ajeno ocupa el espacio reservado para las secciones opcionales.')
+        if any(role.position != position for role, position in positions.items()):
+            await guild.edit_role_positions(positions=positions, reason=REASON)
         final = sorted(await guild.fetch_roles())
         if [role.id for role in final] != [role.id for role in desired]:
             raise ValueError('Discord no confirmó el orden esperado de los roles.')
+        if [role.id for role in final if role.id not in optional_ids] != [role.id for role in remaining]:
+            raise ValueError('Cambió el orden relativo de un rol ajeno al catálogo.')
         for key, *_ in OPTIONAL_ROLES:
             rid = self.system.store.get('role:' + key)
             self.system.role_cache[key] = next(role for role in final if role.id == rid)

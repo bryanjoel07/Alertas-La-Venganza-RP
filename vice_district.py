@@ -237,9 +237,6 @@ class ViceDistrict:
     async def ready(self):
         async with self.ready_lock:
             if self.configured:
-                guild = self.bot.get_guild(GUILD_ID)
-                await self.optional_roles.ready(lambda: self.panel(
-                    guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))
                 await self.voice.ready()
                 await self.readonly.ready()
                 await self.community.ready()
@@ -260,8 +257,6 @@ class ViceDistrict:
             if self.store.get('decoration_release') != DECORATION_VERSION:
                 await self.track('DECORATION', 'Decorar categorías y canales del distrito',
                     lambda: self.decorate(guild), DECORATION_VERSION)
-            await self.optional_roles.ready(lambda: self.panel(
-                guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))
             self.configured = True
             self.ready_event.set()
             if self.welcome.task is None or self.welcome.task.done():
@@ -274,7 +269,10 @@ class ViceDistrict:
 
     async def ready_community_services(self):
         failed = set()
+        guild = self.bot.get_guild(GUILD_ID)
         for name, operation in (
+                ('optional_roles', lambda: self.optional_roles.ready(lambda: self.panel(
+                    guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))),
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
                 ('ticket_feedback', self.ticket_feedback.ready),
                 ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),
@@ -619,7 +617,7 @@ class ViceDistrict:
     async def select_roles(self, interaction, group, selected):
         self.authorize(interaction)
         if group not in GROUPS:
-            raise ValueError('Grupo de roles desconocido.')
+            raise ValueError('Este menú ya no está vigente. Usa el panel actualizado de elige-tus-roles.')
         _, keys, maximum = GROUPS[group]
         selected = list(selected)
         if (len(selected) != len(set(selected)) or len(selected) > maximum

@@ -7,8 +7,13 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 
 from vice_design import BOT_ID, GUILD_ID, OWNER_ID
-from vice_optional_roles import OptionalRoles, RELEASE_KEY, ROLES_TOPIC, REASON
-from vice_role_catalog import CATALOG_VERSION, OPTIONAL_ROLES
+from vice_optional_roles import OptionalRoles, RELEASE_KEY, ROLES_TOPIC, REASON, RETIREMENT_KEY
+from vice_role_catalog import CATALOG_VERSION, OPTIONAL_ROLES, RETIRED_KEYS
+
+V2_NEW_KEYS = frozenset({'xbox_one_cloud'})
+EXPECTED_RETIRED_COUNT = len(RETIRED_KEYS)
+EXPECTED_ACTIVE_COUNT = len(OPTIONAL_ROLES)
+EXPECTED_FINAL_TOTAL = 92 - EXPECTED_RETIRED_COUNT + len(V2_NEW_KEYS)
 
 
 class Role:
@@ -71,6 +76,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
             role = Role(self.guild, 1000 + position, name, position, managed=key == 'bot',
                         permissions=8 if key in {'bot', 'admin', 'founder'} else 0)
             self.roles.append(role)
+            role.delete = AsyncMock(side_effect=lambda role=role, **kwargs: self.roles.remove(role))
             self.by_key[key] = role
             self.store.put('role:' + key, role.id)
         self.guild.me = NS(id=BOT_ID, roles=[self.roles[0], self.by_key['bot']])
@@ -86,6 +92,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         self.guild.create_role = AsyncMock(side_effect=self.create_role)
         self.guild.edit_role_positions = AsyncMock(side_effect=self.reorder)
         self.guild.audit_logs = MagicMock(side_effect=lambda **kwargs: entries([]))
+        self.guild.fetch_members = MagicMock(side_effect=lambda **kwargs: entries([]))
         self.system = NS(store=self.store, role_cache={}, roles_lock=asyncio.Lock())
         self.system.bot = NS(user=NS(id=BOT_ID), get_guild=lambda _gid: self.guild)
         self.system.validate_guild = self.validate_guild
@@ -108,22 +115,19 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         return result
 
     async def create_role(self, **values):
-        for role in self.roles[1:]:
-            role.position += 1
+        # Discord creates new roles at 1; it does not renumber existing roles.
         role = Role(self.guild, 5000 + len(self.roles), values['name'], 1)
         await role.update(**values)
         role.edit.reset_mock()
         self.roles.append(role)
+        role.delete = AsyncMock(side_effect=lambda **kwargs: self.roles.remove(role))
         return role
 
     async def reorder(self, positions, **kwargs):
-        remaining = sorted(role for role in self.roles if role not in positions)
-        targets = sorted(positions, key=positions.get)
-        base = min(positions.values())
-        ordered = remaining[:base] + targets + remaining[base:]
-        for index, role in enumerate(ordered):
-            role.position = index
-        return ordered
+        # The endpoint sets the supplied raw positions without shifting omissions.
+        for role, position in positions.items():
+            role.position = position
+        return sorted(self.roles)
 
     async def edit_channel(self, **values):
         self.channel.topic = values['topic']
@@ -133,7 +137,7 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         previous = {key: role.id for key, role in self.by_key.items()}
         original_member_lists = {role.id: list(role.members) for role in self.roles}
         remaining_before = [role.id for role in sorted(self.roles) if role.id not in {
-            previous[key] for key in self.specs if key in previous}]
+            previous[key] for key in set(self.specs) | set(RETIRED_KEYS) if key in previous}]
         await self.manager.ready(self.refresh)
         self.assertEqual(self.store.get(RELEASE_KEY), CATALOG_VERSION)
         self.assertEqual(self.store.get('release'), None)
@@ -144,7 +148,11 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(role.members, original_member_lists[role.id])
         self.assertEqual(self.by_key['preferences_separator'].name, '━━ 🎮 PLATAFORMAS ━━')
         ordered_ids = [self.store.get('role:' + key) for key, *_ in OPTIONAL_ROLES]
-        self.assertEqual([role.id for role in sorted(self.roles, reverse=True) if role.id in ordered_ids], ordered_ids)
+        buckets = self.manager.bucket_positions({role.id: role for role in self.roles},
+                                                self.by_key['crew'], self.by_key['entry_separator'])
+        self.assertEqual([role.id for role in sorted(self.roles, reverse=True) if role.id in ordered_ids],
+                         [role.id for role in sorted(buckets, key=lambda role: (buckets[role], -role.id), reverse=True)])
+        self.assertEqual(self.by_key['pr'].position, 14)
         self.assertEqual([role.id for role in sorted(self.roles) if role.id not in ordered_ids], remaining_before)
         self.assertLess(self.by_key['entry_separator'].position, min(role.position for role in self.roles if role.id in ordered_ids))
         self.assertGreater(self.by_key['crew'].position, max(role.position for role in self.roles if role.id in ordered_ids))
@@ -157,6 +165,8 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
             self.by_key[key].edit.assert_not_awaited()
         changed = self.guild.edit_role_positions.await_args.kwargs['positions']
         self.assertEqual({role.id for role in changed}, set(ordered_ids))
+        self.assertNotIn(self.by_key['bot'], changed)
+        self.assertNotIn(self.by_key['founder'], changed)
 
     async def test_completed_migration_does_not_repeat_any_writes(self):
         await self.manager.ready(self.refresh)
@@ -219,8 +229,8 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         def current_roles():
             nonlocal calls
             calls += 1
-            # snapshot, preflight, then fresh read after the creation loop.
-            if calls == 3:
+            # A late change after every active role exists must block ordering.
+            if all(self.store.get('role:' + spec[0]) for spec in OPTIONAL_ROLES):
                 self.by_key['pr'].permissions = discord.Permissions(administrator=True)
             return list(self.roles)
         self.guild.fetch_roles.side_effect = current_roles
@@ -229,6 +239,127 @@ class OptionalRoleTests(unittest.IsolatedAsyncioTestCase):
         self.guild.edit_role_positions.assert_not_awaited()
         self.refresh.assert_not_awaited()
         self.assertIsNone(self.store.get(RELEASE_KEY))
+
+    async def test_duplicate_creation_positions_use_bounded_sections_without_moving_ceiling(self):
+        missing_before = sum(not self.store.get('role:' + key) for key, *_ in OPTIONAL_ROLES)
+        await self.manager.ready(self.refresh)
+        created = self.guild.create_role.await_count
+        self.assertEqual(created, missing_before)
+        self.assertEqual(self.by_key['member'].position, 1)
+        self.assertEqual(self.by_key['entry_separator'].position, 2)
+        self.assertEqual(self.by_key['bot'].position, 26)
+        self.assertEqual(self.by_key['founder'].position, 27)
+        await self.manager.ready(self.refresh)
+        self.assertEqual(self.guild.create_role.await_count, created)
+        self.assertEqual(self.by_key['member'].position, 1)
+        self.assertEqual(self.by_key['entry_separator'].position, 2)
+        self.assertEqual(self.by_key['crew'].position, 16)
+        self.assertEqual(self.by_key['bot'].position, 26)
+        self.assertEqual(self.by_key['founder'].position, 27)
+        self.assertEqual(self.store.get(RELEASE_KEY), CATALOG_VERSION)
+        positions = self.guild.edit_role_positions.await_args.kwargs['positions']
+        self.assertEqual(len(positions), EXPECTED_ACTIVE_COUNT)
+        self.assertEqual(set(positions.values()), set(range(5, 16)))
+        self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL)
+        self.assertEqual(self.by_key['pc'].position, 5)
+        self.assertIn(self.by_key['pc'], self.roles)
+
+    def complete_previous_catalog(self):
+        """The actual v1 partial state: 92 roles, 64 new roles at position one."""
+        for key in [spec[0] for spec in OPTIONAL_ROLES] + sorted(RETIRED_KEYS):
+            if key in V2_NEW_KEYS or self.store.get('role:' + key):
+                continue
+            spec = self.specs.get(key)
+            role = Role(self.guild, 50000 + len(self.roles), spec[1] if spec else key, 1,
+                        color=spec[2] if spec else 0x123456)
+            role.delete = AsyncMock(side_effect=lambda role=role, **kwargs: self.roles.remove(role))
+            self.roles.append(role)
+            self.store.put('role:' + key, role.id)
+            self.by_key[key] = role
+        self.assertEqual(len(self.roles), 92)
+
+    async def test_v1_partial_state_retires_exact_ids_and_creates_only_new_cloud_role(self):
+        self.complete_previous_catalog()
+        doomed = {self.store.get('role:' + key) for key in RETIRED_KEYS}
+        all_before = {role.id: role for role in self.roles}
+        await self.manager.ready(self.refresh)
+        self.assertEqual(self.guild.create_role.await_count, len(V2_NEW_KEYS))
+        self.assertEqual(self.guild.create_role.await_args.kwargs['name'], self.specs['xbox_one_cloud'][1])
+        self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL)
+        self.assertFalse(doomed & {role.id for role in self.roles})
+        for rid, role in all_before.items():
+            if rid in doomed:
+                role.delete.assert_awaited_once()
+            elif hasattr(role, 'delete'):
+                role.delete.assert_not_awaited()
+        self.assertEqual(len(self.store.get(RETIREMENT_KEY)), EXPECTED_RETIRED_COUNT)
+        self.assertTrue(all(row['state'] == 'deleted' for row in self.store.get(RETIREMENT_KEY)))
+        self.assertEqual(self.guild.fetch_members.call_count, EXPECTED_RETIRED_COUNT)
+        self.assertEqual(len(self.snapshots[0]['retired_role_registry']), EXPECTED_RETIRED_COUNT)
+        self.assertEqual(self.by_key['member'].position, 1)
+        self.assertEqual(self.by_key['entry_separator'].position, 2)
+        self.assertEqual(self.by_key['crew'].position, 16)
+        self.assertEqual(self.by_key['bot'].position, 26)
+        self.assertEqual(self.by_key['founder'].position, 27)
+
+    async def test_retirement_refreshes_raw_member_roles_before_every_delete(self):
+        self.complete_previous_catalog()
+        key = sorted(RETIRED_KEYS)[1]
+        retained = self.by_key[key]
+        calls = 0
+        def fresh_members(**kwargs):
+            nonlocal calls
+            calls += 1
+            return entries([NS(id=777, guild=self.guild, roles=[],
+                               _roles=[retained.id] if calls >= 2 else [])])
+        self.guild.fetch_members.side_effect = fresh_members
+        with self.assertLogs('ViceDistrict.optional_roles', level='WARNING'):
+            await self.manager.ready(self.refresh)
+        retained.delete.assert_not_awaited()
+        self.assertIn(retained, self.roles)
+        self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL + 1)
+        record = next(row for row in self.store.get(RETIREMENT_KEY) if row['key'] == key)
+        self.assertEqual(record['state'], 'kept_assigned')
+        self.assertEqual(record['member_count'], 1)
+        self.assertEqual(calls, EXPECTED_RETIRED_COUNT)
+
+    async def test_retirement_recovers_a_delete_without_response_without_repeating_it(self):
+        self.complete_previous_catalog()
+        role = self.by_key[sorted(RETIRED_KEYS)[0]]
+        async def interrupted(**kwargs):
+            self.roles.remove(role)
+            raise ConnectionError('response lost')
+        role.delete.side_effect = interrupted
+        with self.assertRaises(ConnectionError):
+            await self.manager.ready(self.refresh)
+        self.assertIsNone(self.store.get(RELEASE_KEY))
+        await self.manager.ready(self.refresh)
+        role.delete.assert_awaited_once()
+        self.assertEqual(len(self.roles), EXPECTED_FINAL_TOTAL)
+        record = next(row for row in self.store.get(RETIREMENT_KEY) if row['id'] == role.id)
+        self.assertEqual(record['state'], 'deleted_or_absent')
+
+    async def test_permission_denied_stops_retirement_immediately(self):
+        self.complete_previous_catalog()
+        role = self.by_key[sorted(RETIRED_KEYS)[0]]
+        role.delete.side_effect = discord.Forbidden(NS(status=403, reason='Forbidden'), 'Missing Permissions')
+        with self.assertRaises(discord.Forbidden):
+            await self.manager.ready(self.refresh)
+        role.delete.assert_awaited_once()
+        for key in sorted(RETIRED_KEYS)[1:]:
+            self.by_key[key].delete.assert_not_awaited()
+        self.assertEqual(len(self.roles), 92)
+        self.assertIsNone(self.store.get(RELEASE_KEY))
+
+    async def test_retirement_rejects_protected_or_outside_frozen_scope(self):
+        self.complete_previous_catalog()
+        key = sorted(RETIRED_KEYS)[0]
+        self.store.put(RETIREMENT_KEY, [dict(key=key, id=self.by_key['member'].id, state='pending')])
+        with self.assertRaises(ValueError):
+            await self.manager.ready(self.refresh)
+        for role in self.roles:
+            if hasattr(role, 'delete'):
+                role.delete.assert_not_awaited()
 
     async def test_interrupted_creation_recovers_only_exact_bot_audit_nonce(self):
         spec = next(spec for spec in OPTIONAL_ROLES if not self.store.get('role:' + spec[0]))

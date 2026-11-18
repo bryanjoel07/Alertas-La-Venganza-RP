@@ -100,13 +100,14 @@ def panel_copy(key, c):
             f'**¿Necesitas reportar algo?** Abre un ticket en {ref("support")}; evita confrontaciones públicas.', CORAL),
         'roles': ('🎭 TU IDENTIDAD EN EL DISTRITO',
             '**Tu comunidad, a tu manera.**\n\n'
-            '🌎 **País o territorio:** 50 opciones de Latinoamérica y el Caribe, con Puerto Rico primero. Elige uno en cualquiera de las dos primeras listas.\n'
+            '🌎 **País:** los 18 países de Hispanoamérica y Puerto Rico, primero en la lista. Elige uno si quieres.\n'
             '🧭 **Regiones:** elige las zonas con las que te identificas.\n'
-            '🎮 **Plataformas:** marca todas las que usas para jugar.\n'
+            '🎮 **GTA VI:** PlayStation 5, Xbox Series X|S y Xbox One mediante juego en la nube.\n'
             '🔔 **Intereses:** avisos de GTA VI, eventos y búsqueda de crew.\n\n'
-            'Todo es opcional. Las dos listas de países comparten una sola elección; las demás listas son independientes. '
+            'Todo es opcional. Elige un país y tantas regiones o plataformas como quieras. Cada lista es independiente. '
             'Deja un menú vacío para retirar los roles de ese grupo.\n\n'
-            'Las plataformas describen a la comunidad y no indican disponibilidad de GTA VI.\n\n'
+            '⌛ **PC:** el rol de espera está en Intereses. Una versión de PC no figura como confirmada por Rockstar. '
+            '[Plataformas oficiales](https://support.rockstargames.com/articles/4QfG4FmZCf5W1gS8jy4UVT/grand-theft-auto-vi-platform-editions-and-versions).\n\n'
             '**Equipo:** Fundador, Administrador, Moderación y Soporte.\n'
             '**Tu recorrido:** 👤 Miembro → 🌴 Ciudadano → 🌆 Veterano → 💎 Leyenda de Vice.\n'
             '**Miembro** se entrega al entrar; **Ciudadano**, al aceptar las normas. '
