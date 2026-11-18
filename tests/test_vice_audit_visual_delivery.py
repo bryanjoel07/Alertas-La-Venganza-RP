@@ -40,6 +40,7 @@ class AuditVisualDeliveryTests(unittest.IsolatedAsyncioTestCase):
                        'role:admin': 12, 'role:mod': 13, 'role:support': 14}
         self.messages, self.snapshots, self.registry = [], [], {}
         self.next_attachment = 10000
+        self.embedded_only = False
 
         def validate(guild):
             if guild is None or guild.id != GUILD_ID or guild.owner_id != OWNER_ID:
@@ -70,7 +71,8 @@ class AuditVisualDeliveryTests(unittest.IsolatedAsyncioTestCase):
             keys = {row['key'] for row in rows}
             for attachment in attachments:
                 registered = self.registry.get(attachment.filename)
-                if not registered or registered[0] not in keys or attachment.size != len(registered[1]):
+                if (not registered or registered[0] not in keys
+                        or (attachment.size is not None and attachment.size != len(registered[1]))):
                     return False
             return True
 
@@ -134,6 +136,8 @@ class AuditVisualDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 data['image'] = dict(url=attachment.url, proxy_url=attachment.proxy_url,
                                      width=960, height=320)
             message.embeds.append(discord.Embed.from_dict(data))
+        if self.embedded_only:
+            message.attachments = []
 
     def card(self, description='Un cambio real'):
         result = discord.Embed(description=description, timestamp=self.when, color=0xFFB44B)
@@ -343,6 +347,91 @@ class AuditVisualDeliveryTests(unittest.IsolatedAsyncioTestCase):
             await self.audit.flush_once()
         self.messages[0].edit.assert_not_awaited()
         self.assertEqual(self.audit.store.stats()['pending'], 1)
+
+    async def test_embedded_only_receipts_deliver_and_update_in_place_without_extra_edit(self):
+        self.embedded_only = True
+        names = ['vice-audit-one.jpg', 'vice-audit-two.jpg']
+        keys = ['audit:1572718032730464406', 'audit:1572718032730464407']
+        for key, name in zip(keys, names):
+            await self.publish(key, self.register(key, name))
+        await self.audit.flush_once()
+        message = self.messages[0]
+        self.assertEqual(message.attachments, [])
+        message.edit.assert_not_awaited()
+        self.assertEqual(self.audit.store.stats()['pending'], 0)
+        prior_url = message.embeds[0].image.url
+        card = self.register(keys[0], names[0])
+        card.description = 'An updated description on the same real comparison'
+        await self.publish(keys[0], card)
+        await self.audit.flush_once()
+        self.channel.send.assert_awaited_once()
+        message.edit.assert_awaited_once()
+        before = self.snapshots[-1]['before_message']
+        self.assertEqual(before['attachments'], [])
+        self.assertEqual(before['embedded_attachments'][0]['filename'], names[0])
+        self.assertEqual(before['embedded_attachments'][0]['url'], prior_url)
+        self.assertEqual(self.audit.store.stats()['pending'], 0)
+
+    async def test_embedded_only_receipt_requires_exact_channel_url_and_event_registry(self):
+        self.embedded_only = True
+        key, name = 'audit:1572718032730464406', 'vice-audit-one.jpg'
+        await self.publish(key, self.register(key, name))
+        await self.audit.flush_once()
+        message = self.messages[0]
+        real_url = message.embeds[0].image.url
+        self.register('audit:another-event', 'vice-audit-foreign.jpg')
+        updated = self.register(key, name)
+        updated.description = 'Updated description'
+        await self.publish(key, updated)
+        invalid = [real_url.replace('/7001/', '/9999/'),
+                   real_url.replace('cdn.discordapp.com', 'example.com'),
+                   real_url.replace('cdn.discordapp.com', 'user@cdn.discordapp.com'),
+                   real_url.replace('/10001/', '/not-an-id/'),
+                   real_url.replace(name, 'unknown.jpg'),
+                   real_url.replace(name, 'vice-audit-foreign.jpg')]
+        for url in invalid:
+            with self.subTest(url=url):
+                message.embeds[0].set_image(url=url)
+                with self.assertRaises(ValueError):
+                    await self.audit.flush_once()
+                message.edit.assert_not_awaited()
+                self.assertEqual(self.audit.store.stats()['pending'], 1)
+
+    async def test_file_without_corresponding_embed_image_is_not_acknowledged(self):
+        key = 'audit:1572718032730464406'
+        await self.publish(key, self.card())
+        await self.audit.flush_once()
+        message = self.messages[0]
+        original_edit = message.edit.side_effect
+        async def missing_image(**kwargs):
+            result = await original_edit(**kwargs)
+            result.embeds[0].set_image(url=None)
+            return result
+        message.edit.side_effect = missing_image
+        await self.publish(key, self.register(key, 'vice-audit-one.jpg'))
+        with self.assertRaisesRegex(ValueError, 'comparaciones visuales'):
+            await self.audit.flush_once()
+        self.assertEqual(len(message.attachments), 1)
+        self.assertEqual(self.audit.store.stats()['pending'], 1)
+
+    async def test_embedded_only_send_crash_recovers_registered_message_without_duplicate(self):
+        self.embedded_only = True
+        key = 'audit:1572718032730464406'
+        await self.publish(key, self.register(key, 'vice-audit-one.jpg'))
+        original_db = self.audit.db
+        async def interrupted(method, *args, **kwargs):
+            if method == 'mark_sent':
+                raise RuntimeError('Interrupted after Discord accepted the image')
+            return await original_db(method, *args, **kwargs)
+        with patch.object(self.audit, 'db', side_effect=interrupted):
+            with self.assertRaises(RuntimeError):
+                await self.audit.flush_once()
+        self.assertEqual(len(self.messages), 1)
+        self.assertIsNone(self.audit.store.get(key)['message_id'])
+        await self.audit.flush_once()
+        self.channel.send.assert_awaited_once()
+        self.assertEqual(self.audit.store.get(key)['message_id'], str(self.messages[0].id))
+        self.assertEqual(self.audit.store.stats()['pending'], 0)
 
     def test_semantics_normalize_only_evidenced_attachment_url_not_arbitrary_cdn_image(self):
         filename, identifier = 'vice-audit-image.jpg', 1234567

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import re
+from types import SimpleNamespace
 from urllib.parse import unquote, urlsplit
 
 import discord
@@ -389,6 +390,22 @@ class ViceAudit:
                         and not channel.permissions_for(channel.guild.me).attach_files):
                     raise ValueError('El bot necesita Adjuntar archivos para publicar comparaciones de auditoría.')
 
+            def embedded_file(embed):
+                # Discord omits files consumed by an embed from attachments[].
+                # Accept only a concrete receipt in this exact private channel;
+                # the registry and corresponding audit row are checked below.
+                url = str(embed.image.url or '')
+                parsed = urlsplit(url)
+                parts = parsed.path.split('/')
+                if (parsed.scheme != 'https'
+                        or parsed.netloc not in ('cdn.discordapp.com', 'media.discordapp.net')
+                        or len(parts) != 5 or parts[1] != 'attachments'
+                        or parts[2] != str(channel.id) or not parts[3].isdigit()
+                        or int(parts[3]) <= 0 or not parts[4]):
+                    return None
+                return SimpleNamespace(id=int(parts[3]), filename=unquote(parts[4]),
+                    size=None, url=url, content_type='image/png', embedded=True)
+
             async def validate_message(current, *, allow_stripped_url=False):
                 if (current.author.id != BOT_ID
                         or len(current.embeds) != len(rows)
@@ -397,21 +414,38 @@ class ViceAudit:
                             getattr(current, 'attachments', []), rows)
                         or getattr(current, 'components', [])):
                     raise ValueError('El mensaje no coincide con las tarjetas de auditoría registradas.')
-                if {embed_marker(e) for e in current.embeds} == wanted:
-                    return False
+                exact_markers = {embed_marker(e) for e in current.embeds} == wanted
+                safe_missing = allow_stripped_url and all(
+                    embed_marker(received) == marker(row['key'])
+                    or (not received.url and embed_marker(received) is None)
+                    for received, row in zip(current.embeds, rows))
+                if not exact_markers and not safe_missing:
+                    raise ValueError('El mensaje no conserva la identidad exacta del registro.')
+                by_marker = {marker(row['key']): row for row in rows}
+                files = {a.filename: a for a in getattr(current, 'attachments', [])}
+                for index, embed in enumerate(current.embeds):
+                    if not embed.image.url:
+                        continue
+                    receipt = embedded_file(embed)
+                    source_row = by_marker.get(embed_marker(embed), rows[index])
+                    if (receipt is None or not await self.visuals.validate_attachments(
+                            [receipt], [source_row])):
+                        raise ValueError('La imagen insertada no corresponde al registro autorizado.')
+                    if receipt.filename in files and files[receipt.filename].id != receipt.id:
+                        raise ValueError('La imagen y el archivo adjunto no tienen la misma identidad.')
+                    files.setdefault(receipt.filename, receipt)
+                receipts = list(files.values())
+                if exact_markers:
+                    return False, receipts
                 if allow_stripped_url:
-                    actual = semantic_embeds(current.embeds, getattr(current, 'attachments', []))
+                    actual = semantic_embeds(current.embeds, receipts)
                     desired = semantic_embeds(embeds)
                     # A titleless URL may be stripped by Discord. Accept this only
                     # when every other byte of the semantic body is still ours.
-                    safe_missing = all(
-                        embed_marker(received) == marker(row['key'])
-                        or (not received.url and embed_marker(received) is None)
-                        for received, row in zip(current.embeds, rows))
                     for value in actual + desired:
                         value.pop('url', None)
                     if safe_missing and actual == desired:
-                        return True
+                        return True, receipts
                 raise ValueError('El mensaje no conserva la identidad exacta del registro.')
 
             require_files_permission()
@@ -425,7 +459,10 @@ class ViceAudit:
                 return dict(id=current.id, author=current.author.id,
                     content=getattr(current, 'content', ''),
                     embeds=deepcopy([e.to_dict() for e in current.embeds]),
-                    attachments=attachment_state(current), components=[])
+                    attachments=attachment_state(current),
+                    embedded_attachments=[dict(id=str(a.id), filename=a.filename,
+                        url=a.url, size=None, content_type=a.content_type)
+                        for e in current.embeds if (a := embedded_file(e)) is not None], components=[])
             before_message = message_state(message) if message else None
             async def snapshot():
                 return dict(guild=GUILD_ID, channel=channel.id,
@@ -475,22 +512,27 @@ class ViceAudit:
                             file.close()
                     # Discord may return a previously accepted nonce after a lost
                     # response. Its body can predate a concurrent merged update.
-                    stripped = await validate_message(message, allow_stripped_url=True)
+                    stripped, receipts = await validate_message(message, allow_stripped_url=True)
                     if (not stripped and semantic_embeds(message.embeds,
-                            getattr(message, 'attachments', [])) != semantic_embeds(embeds)):
+                            receipts) != semantic_embeds(embeds)):
                         message = await edit_message(correction=True)
-                if await validate_message(message, allow_stripped_url=True):
+                if (await validate_message(message, allow_stripped_url=True))[0]:
                     # Defensive fallback if Discord ever strips titleless URL metadata.
                     for embed, row in zip(embeds, rows):
                         embed.set_footer(text=str(embed.footer.text or '') + ' • ' + marker(row['key']))
                     message = await edit_message(correction=True)
-                await validate_message(message)
+                _, receipts = await validate_message(message)
                 wanted_files = {str(e.image.url)[len('attachment://'):] for e in embeds
                                 if str(e.image.url or '').startswith('attachment://')}
-                actual_files = getattr(message, 'attachments', [])
-                if ({a.filename for a in actual_files} != wanted_files
-                        or len(actual_files) != len(wanted_files)
-                        or not await self.visuals.validate_attachments(actual_files, rows)):
+                actual_by_marker = {embed_marker(e): e for e in message.embeds}
+                images_match = all(
+                    (embedded_file(actual_by_marker[marker(row['key'])]).filename
+                     if embedded_file(actual_by_marker[marker(row['key'])]) else None)
+                    == (str(e.image.url)[len('attachment://'):]
+                        if str(e.image.url or '').startswith('attachment://') else None)
+                    for row, e in zip(rows, embeds))
+                if ({a.filename for a in receipts} != wanted_files
+                        or len(receipts) != len(wanted_files) or not images_match):
                     raise ValueError('Discord no confirmó las comparaciones visuales del registro.')
                 await self.db('mark_sent', expected, str(message.id))
             request = hashlib.sha256(json.dumps(expected).encode()).hexdigest()
