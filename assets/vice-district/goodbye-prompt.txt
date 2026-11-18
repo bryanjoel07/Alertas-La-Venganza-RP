@@ -1,0 +1,6 @@
+Generation mode: built-in image_gen edit
+Reference: welcome-template.jpg
+Final asset: goodbye-template.jpg
+
+Use case: precise-object-edit. Asset type: reusable Discord farewell banner background, landscape 16:9. Edit the supplied GTA VI Latino welcome artwork into a matching farewell banner for the same community. Preserve the existing illustrated man and woman, their faces, poses, red convertible, palm trees and city composition, and preserve the exact server title "GTA VI LATINO" and subtitle "VICE DISTRICT" at the left. Shift the light gently toward a richer plum and coral dusk while keeping the characters and car clear and vivid. Add the exact short text "HASTA PRONTO" in a tasteful cream/coral bold italic line beneath the left server subtitle, well above the bottom panel, with generous spacing and good readability. Keep the lower 20 percent as a completely blank dark plum strip with a thin magenta-to-cyan border at its top, ready for programmatic overlay of a circular member avatar and name. No avatar, no username, no personal name, no departure reason, no buttons, no extra text, no watermark. Polished neon tropical styling matching the source, restrained glow, crisp typography. Keep all essential artwork and text inside the 16:9 frame; target 1280x720 or higher matching aspect ratio.
+

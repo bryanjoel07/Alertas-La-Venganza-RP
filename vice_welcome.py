@@ -27,10 +27,11 @@ def fit_name(value, max_width=995):
     return value + '…', font
 
 
-def render_card(display_name, username, avatar_data):
+def render_card(display_name, username, avatar_data, *, template='welcome-template.jpg',
+                heading='PUERTO RICO + LATINOAMÉRICA · BIENVENIDO/A'):
     if not 0 < len(avatar_data) <= 4 * 1024 * 1024:
         raise ValueError('No se pudo cargar una foto de perfil válida.')
-    with Image.open(ASSETS / 'welcome-template.jpg') as source:
+    with Image.open(ASSETS / template) as source:
         canvas = source.convert('RGB').resize((1280, 720), Image.Resampling.LANCZOS)
     with Image.open(io.BytesIO(avatar_data)) as source:
         if source.width * source.height > 16_000_000:
@@ -44,7 +45,7 @@ def render_card(display_name, username, avatar_data):
     ImageDraw.Draw(mask).ellipse((0, 0, 399, 399), fill=255)
     canvas.paste(avatar, (66, 595), mask.resize((100, 100), Image.Resampling.LANCZOS))
     regular = str(FONTS / 'NotoSans-Regular.ttf')
-    draw.text((201, 587), 'PUERTO RICO + LATINOAMÉRICA · BIENVENIDO/A', font=ImageFont.truetype(regular, 17), fill='#FFB8D8')
+    draw.text((201, 587), heading, font=ImageFont.truetype(regular, 17), fill='#FFB8D8')
     name, font = fit_name(display_name)
     draw.text((200, 608), name, font=font, fill='#FFFBEA', stroke_width=1, stroke_fill='#170C25')
     tag = '@' + clean_name(username)
@@ -197,3 +198,4 @@ class ViceWelcome:
         if self.task:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
+

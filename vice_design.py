@@ -5,7 +5,7 @@ GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
 VERSION = 'vice-district-community-v4-pr'
-STAFF_VERSION = 'vice-staff-departures-v1'
+STAFF_VERSION = 'vice-staff-departures-v2-admin-only'
 ASSETS = Path(__file__).parent / 'assets' / 'vice-district'
 FONTS = Path(__file__).parent / 'assets' / 'esschino' / 'fonts'
 PINK, CYAN, CORAL = 0xFF168A, 0x00D9E8, 0xFF795D
@@ -82,7 +82,7 @@ CHANNELS = [
     ('support','help','🎫・soporte','Abre un ticket privado para ayuda del servidor o reportes al equipo.','read',False,0),
     ('staff','team','👥・chat-staff','Coordinación privada de Fundador, Administrador, Moderación y Soporte.','staff',False,0),
     ('log','team','📋・registro-staff','Resumen privado de la instalación y actividad de soporte.','staffread',False,0),
-    ('goodbye','team','🚪・despedidas','Registro automático de salidas. Visible únicamente para Fundador, Administrador, Moderación y Soporte.','staffread',False,0),
+    ('goodbye','team','🚪・despedidas','Registro privado de salidas, expulsiones y baneos. Acceso exclusivo de Fundador y Administrador.','adminread',False,0),
     ('staffvoice','team','🛠 Sala del equipo',None,'staff',True,0),
 ]
 
@@ -151,11 +151,11 @@ def panel_copy(key, c):
             'Nunca compartas contraseñas, tokens o datos de pago. Un ticket abierto por persona. '
             'Al cerrarlo, la conversación se conserva en privado.', CYAN),
         'goodbye': ('🚪 SALIDAS DEL DISTRITO',
-            '**Registro privado del equipo.**\n\n'
-            'EssChino registrará aquí a las personas que salgan del servidor, con su nombre, avatar y hora. '
-            'La fecha de entrada se mostrará cuando esté disponible.\n\n'
-            'Este registro es visible para **Fundador, Administrador, Moderación y Soporte**. '
-            'Una salida no indica por sí sola si fue voluntaria, una expulsión o un veto.', CORAL),
+            '**Solo para Fundador y Administrador.**\n\n'
+            'Cada despedida incluye **banner, nombre y avatar**, hora de salida y fecha de entrada cuando esté disponible.\n\n'
+            '**Expulsiones y baneos:** se muestra la razón y el responsable del registro de auditoría cuando Discord los proporciona.\n'
+            '**Otras salidas:** se indica que no hay una acción administrativa confirmada; Discord no proporciona el motivo personal. '
+            'Si la auditoría no está disponible, el panel lo indicará.', CORAL),
         'suggestions': ('💡 DISEÑEMOS EL BARRIO JUNTOS',
             '**Tu idea puede mejorar la comunidad.**\n\n'
             'Publica una propuesta por mensaje con **qué cambiarías**, **a quién ayuda** y **un ejemplo**. '

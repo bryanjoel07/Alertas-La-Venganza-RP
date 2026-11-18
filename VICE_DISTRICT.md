@@ -1,7 +1,7 @@
 # GTA VI Latino | VIce District
 
 Owner-authorized community release: `vice-district-community-v4-pr`, 2026-11-17.
-Additive staff migration: `vice-staff-departures-v1`, 2026-11-18.
+Additive staff migration: `vice-staff-departures-v2-admin-only`, 2026-11-18.
 Adds a private departures channel and the Administrator role without rebuilding
 the community layout or reposting the welcome sample. Administrator has full
 Discord Administrator permission and remains unassigned until the owner chooses
@@ -9,10 +9,17 @@ trusted people. Moderation can handle messages, pins, threads, nicknames, timeou
 kicks, bans, voice moderation and audit logs, but cannot manage server settings,
 roles, channels or webhooks. Support has ordinary communication permissions,
 private staff/ticket access and message moderation only inside open tickets.
-Departures are neutral records (not claims of bans or voluntary departures),
-including avatar, identity, departure time and known joining time. The raw member
-remove event covers members absent from Discord's cache. A private channel is
-required before posting. Membership receipts prevent duplicate cached events.
+Departures are visible only to Founder and Administrator, with explicit channel
+denials for Moderation and Support. Each record has an individualized farewell
+banner, avatar, identity, departure time and known joining time. The bot looks for
+matching recent kick/ban audit events (with brief retries for audit propagation)
+and displays their recorded reason and actor. Without matching evidence it makes
+no claim about the member's personal motive; unavailable audit data is disclosed.
+The raw member remove event covers members absent from Discord's cache. A private
+admin-only channel is required before posting. Membership receipts prevent duplicate
+cached events. The initial private panel includes a clearly labeled banner sample
+using the owner's profile; it is not a real departure. Assets and prompt are in
+assets/vice-district/goodbye-template.jpg and goodbye-prompt.txt (built-in imagegen).
 All these changes use the separate district journal and database.
 Puerto Rico is the community's primary identity, welcoming all of Latin America.
 The banner, description and welcome reflect this; Puerto Rico is the first optional

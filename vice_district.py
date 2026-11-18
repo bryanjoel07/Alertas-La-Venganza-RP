@@ -1,7 +1,8 @@
 """Guild-isolated GTA VI community, persistent panels and private support."""
 import asyncio
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
 import io
 import json
 import logging
@@ -14,7 +15,8 @@ from esschino import StudioStore
 from studio_journal import ChangeLog, server_snapshot
 from vice_design import (GUILD_ID, BOT_ID, OWNER_ID, VERSION, STAFF_VERSION, PINK, CYAN, CORAL, DESCRIPTION,
                          ROLES, GROUPS, SELF_ROLES, CATEGORIES, CHANNELS, panel_copy)
-from vice_welcome import ViceWelcome, render_cover
+from vice_welcome import ViceWelcome, render_card, render_cover
+from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
 REASON = 'Solicitud del propietario: comunidad GTA VI Latino | VIce District'
@@ -172,8 +174,8 @@ class ViceDistrict:
 
     def overwrites(self, guild, policy, owner=None):
         self.validate_guild(guild)
-        private = policy in {'staff', 'staffread', 'ticket', 'closed'}
-        readonly = policy in {'read', 'staffread', 'closed'}
+        private = policy in {'staff', 'staffread', 'adminread', 'ticket', 'closed'}
+        readonly = policy in {'read', 'staffread', 'adminread', 'closed'}
         rules = {guild.default_role: discord.PermissionOverwrite(view_channel=not private,
             read_message_history=not private, send_messages=not (private or readonly),
             send_messages_in_threads=not (private or readonly), create_public_threads=False,
@@ -184,9 +186,13 @@ class ViceDistrict:
         for key in ['founder', 'admin', 'mod', 'support']:
             role = self.role(guild, key)
             if role:
+                if policy == 'adminread' and key in {'mod', 'support'}:
+                    rules[role] = discord.PermissionOverwrite(view_channel=False, read_message_history=False,
+                        send_messages=False, send_messages_in_threads=False)
+                    continue
                 rules[role] = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
-                    send_messages=policy not in {'closed', 'staffread'} and (key != 'support' or policy != 'read'),
-                    send_messages_in_threads=policy not in {'closed', 'staffread', 'read'},
+                    send_messages=policy not in {'closed', 'staffread', 'adminread'} and (key != 'support' or policy != 'read'),
+                    send_messages_in_threads=policy not in {'closed', 'staffread', 'adminread', 'read'},
                     connect=True, speak=True, attach_files=True, embed_links=True)
                 if key == 'support' and policy == 'ticket':
                     rules[role].manage_messages = True
@@ -282,7 +288,7 @@ class ViceDistrict:
             '**⚙️ Administrador:** control completo del servidor. Solo se asigna manualmente a personas de confianza.\n\n'
             '**🛡️ Moderación:** mensajes, hilos, apodos, tiempos de espera, expulsiones, vetos, auditoría y moderación de voz.\n\n'
             '**🛟 Soporte:** atención de tickets y coordinación del equipo. Puede moderar mensajes dentro de tickets abiertos.\n\n'
-            f'**🚪 Despedidas:** salidas automáticas en <#{self.channel_id("goodbye")}>.\n\n'
+            '**🚪 Despedidas:** canal exclusivo de Fundador y Administrador, con banner y motivo según auditoría.\n\n'
             'Los roles del equipo están excluidos de los menús públicos. Administrador tiene acceso completo; '
             'Moderación y Soporte no pueden administrar roles ni configurar el servidor.', CYAN), None)
         await self.call('put', 'staff_release', STAFF_VERSION)
@@ -402,6 +408,13 @@ class ViceDistrict:
             data = await asyncio.to_thread(render_cover)
             files = [discord.File(io.BytesIO(data), filename='vice-district.jpg')]
             embed.set_image(url='attachment://vice-district.jpg')
+        elif key == 'goodbye':
+            owner = await guild.fetch_member(OWNER_ID)
+            data = await self.departure_card(owner)
+            files = [discord.File(io.BytesIO(data), filename='vice-despedida-muestra.jpg')]
+            embed.set_image(url='attachment://vice-despedida-muestra.jpg')
+            embed.add_field(name='Vista previa del banner',
+                value='Muestra con el perfil del propietario. No corresponde a una salida real.', inline=False)
         message = await self.find_panel(channel, key)
         if message:
             message = await message.edit(embed=embed, view=view, attachments=files,
@@ -548,19 +561,56 @@ class ViceDistrict:
                 snapshot=lambda: self.role_snapshot(member.guild, current.id))
         await self.welcome.joined(current)
 
+    async def resolve_departure(self, guild, user, left):
+        self.validate_guild(guild)
+        since = left - timedelta(seconds=15)
+        until = left + timedelta(seconds=10)
+        for attempt in range(3):
+            matches = []
+            try:
+                for action, label in [(discord.AuditLogAction.kick, 'Expulsión'), (discord.AuditLogAction.ban, 'Baneo')]:
+                    async for entry in guild.audit_logs(limit=20, action=action, after=since):
+                        if (getattr(entry.target, 'id', None) == user.id and entry.action == action
+                                and since <= entry.created_at <= until):
+                            matches.append((entry, label))
+                if matches:
+                    entry, label = min(matches, key=lambda item: abs((item[0].created_at - left).total_seconds()))
+                    reason = entry.reason or 'No se indicó una razón en el registro de auditoría.'
+                    return label, reason, entry.user
+            except discord.Forbidden:
+                return 'Salida del servidor', 'No se pudo confirmar el motivo: Discord no permitió consultar la auditoría.', None
+            except discord.HTTPException:
+                if attempt == 2:
+                    return 'Salida del servidor', 'No se pudo confirmar el motivo porque la auditoría no está disponible.', None
+            if attempt < 2:
+                await asyncio.sleep(2)
+        return ('Salida del servidor',
+                'No se detectó una expulsión ni un baneo en la auditoría. Discord no proporciona el motivo personal de una salida voluntaria.', None)
+
+    async def departure_card(self, user):
+        asset = user.display_avatar.with_format('png').with_size(256)
+        async with self.welcome.slots:
+            avatar = await WelcomeCards.avatar_bytes(self.welcome, asset)
+            return await asyncio.to_thread(render_card, user.display_name, user.name, avatar,
+                template='goodbye-template.jpg', heading='PUERTO RICO + LATINOAMÉRICA · HASTA PRONTO')
+
     async def member_remove(self, user, guild=None):
         guild = guild or getattr(user, 'guild', None)
         if guild is None or guild.id != GUILD_ID or user.bot:
             return
         self.validate_guild(guild)
+        left = datetime.now(timezone.utc)
         await self.ready_event.wait()
         channel = self.channel(guild, 'goodbye')
         if (channel is None or channel.guild.id != GUILD_ID or
                 channel.overwrites_for(guild.default_role).view_channel is not False):
             raise ValueError('El canal de despedidas debe ser privado para el equipo.')
+        allowed_ids = {OWNER_ID, BOT_ID, self.store.get('role:founder'), self.store.get('role:admin')}
+        for target, overwrite in channel.overwrites.items():
+            if overwrite.view_channel is True and target.id not in allowed_ids:
+                raise ValueError('Despedidas debe ser visible solo para los administradores.')
         joined = getattr(user, 'joined_at', None)
         joined_value = joined.isoformat() if isinstance(joined, datetime) else self.store.get('member_joined:' + str(user.id))
-        left = datetime.now(timezone.utc)
         # Membership generations distinguish a second departure after rejoining.
         # Uncached users without any known join get a fresh event, never a
         # permanent ID-only receipt that would suppress every future departure.
@@ -574,13 +624,20 @@ class ViceDistrict:
                 if message.author.id == BOT_ID and any(e.footer.text == marker for e in message.embeds):
                     await self.call('put', key, message.id)
                     return message.id
-            name = discord.utils.escape_markdown(user.display_name)[:100]
-            username = discord.utils.escape_markdown(user.name)[:100]
+            name = discord.utils.escape_markdown(clean_name(user.display_name))[:100]
+            username = discord.utils.escape_markdown(clean_name(user.name))[:100]
+            kind, reason, actor = await self.resolve_departure(guild, user, left)
+            filename = 'vice-despedida-' + hashlib.sha256(key.encode()).hexdigest()[:16] + '.jpg'
             embed = self.embed('🚪 Hasta luego, ' + name,
                 f'**{name}** salió del servidor.\n\n'
                 f'**Usuario:** {username}\n**ID:** `{user.id}`\n'
                 f'**Salida:** {discord.utils.format_dt(left, "F")}\n\n'
-                'Gracias por formar parte del corillo. Registro privado para el equipo.', CORAL)
+                'Registro privado para la administración del distrito.', CORAL)
+            embed.add_field(name='Tipo de salida', value=kind, inline=False)
+            embed.add_field(name='Razón', value=discord.utils.escape_markdown(reason)[:1024], inline=False)
+            if actor:
+                embed.add_field(name='Responsable',
+                    value=f'{discord.utils.escape_markdown(str(actor))[:100]} · `{actor.id}`', inline=False)
             if joined_value:
                 try:
                     joined_time = datetime.fromisoformat(joined_value)
@@ -588,12 +645,15 @@ class ViceDistrict:
                 except ValueError:
                     pass
             embed.set_thumbnail(url=user.display_avatar.url)
+            embed.set_image(url='attachment://' + filename)
             embed.set_footer(text=marker)
             embed.timestamp = left
             async def snapshot():
                 return dict(guild=GUILD_ID, channel=channel.id, member=user.id, message=self.store.get(key))
             async def send():
-                message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                card = await self.departure_card(user)
+                message = await channel.send(embed=embed, file=discord.File(io.BytesIO(card), filename=filename),
+                    allowed_mentions=discord.AllowedMentions.none())
                 await self.call('put', key, message.id)
                 log.info('VICE_GOODBYE_SENT guild=%s member=%s message=%s', GUILD_ID, user.id, message.id)
                 return message.id
