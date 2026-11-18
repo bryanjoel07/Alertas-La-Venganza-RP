@@ -13,10 +13,12 @@ import discord
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-channel-style-v4'
-MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v4.json'
+VERSION = 'vice-channel-style-v5'
+MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v5.json'
 RESTORE_REFERENCE = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v2.json'
 TEAM_CATEGORY_ID = 1572467006999896074
+ICON_SEPARATOR = '╎'
+CATEGORY_EDGES = {'first': '↱', 'middle': '│', 'last': '↳'}
 SUPPORTED_TYPES = frozenset((0, 2, 4, 5, 13, 15, 16))
 SMALL_CAPS = dict(zip('abcdefghijklmnopqrstuvwxyz', 'ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡXʏᴢ'))
 FROM_SMALL_CAPS = {value: key for key, value in SMALL_CAPS.items()}
@@ -53,9 +55,57 @@ def stylize(name):
     return ''.join(result)
 
 
-def format_name(name, *, category=False):
-    """Keep the original layout and apply only the requested smallcap letters."""
-    return stylize(name)
+def _first_separator(text):
+    matches = [(text.index(separator), separator) for separator in (ICON_SEPARATOR, '│')
+               if separator in text]
+    return min(matches)[1] if matches else None
+
+
+def _split_icon_label(text):
+    separator = _first_separator(text)
+    if separator:
+        icon, label = text.split(separator, 1)
+        return icon.strip(), label.strip()
+    # Dynamic voice names have a leading emoji followed by a player's name.
+    for index, character in enumerate(text):
+        if (unicodedata.category(character) in ('So', 'Sk')
+                or character in ('\ufe0f', '\ufe0e', '\u200d', '\u20e3')
+                or character in '0123456789#*' and '\u20e3' in text[index + 1:index + 3]):
+            continue
+        if index:
+            return text[:index].strip(), text[index:].strip()
+        break
+    return '', text
+
+
+def format_name(name, *, category=False, edge='middle'):
+    """Keep smallcaps and channel branches; use the owner's exact separators."""
+    text = str(name).strip()
+    if not text:
+        return ''
+    if category:
+        if edge not in CATEGORY_EDGES:
+            raise ValueError('La posición decorativa de la categoría no es válida.')
+        for frame in ('━━', '──'):
+            if text.startswith(frame) and text.endswith(frame):
+                text = text[len(frame):-len(frame)].strip()
+                break
+        if text[:1] in CATEGORY_EDGES.values():
+            text = text[1:].lstrip()
+        icon, label = _split_icon_label(text)
+        body = icon + ICON_SEPARATOR + stylize(label) if icon else stylize(label)
+        return CATEGORY_EDGES[edge] + ' ' + body
+    separator = _first_separator(text)
+    if separator:
+        prefix, label = text.split(separator, 1)
+        return stylize(prefix) + ICON_SEPARATOR + stylize(label)
+    branch = ''
+    for candidate in ('╭・', '├・', '╰・', '┊・'):
+        if text.startswith(candidate):
+            branch, text = candidate, text[len(candidate):]
+            break
+    icon, label = _split_icon_label(text)
+    return branch + (icon + ICON_SEPARATOR + stylize(label) if icon else stylize(label))
 
 
 
@@ -73,7 +123,7 @@ def channel_state(channel):
 
 
 def restore_reference():
-    """Use only the frozen original v1 names, not a newly inferred layout."""
+    """Keep the original 38 identities/types as the authorized rename scope."""
     value = json.loads(RESTORE_REFERENCE.read_text(encoding='utf-8'))
     if (value.get('version') != 'vice-channel-style-v2'
             or str(value.get('guild_id')) != str(GUILD_ID)
@@ -110,22 +160,30 @@ def load_manifest(path=MANIFEST):
         if (not channel_id.isdigit() or int(channel_id) <= 0 or channel_id in seen
                 or row.get('type') not in SUPPORTED_TYPES or not isinstance(row.get('name'), str)
                 or not row['name'] or not isinstance(row.get('target_name'), str)
-                or not 1 <= len(row['target_name']) <= 100):
+                or not 1 <= len(row['target_name']) <= 100
+                or type(row.get('position')) is not int or row['position'] < 0):
             raise ValueError('La lista congelada de nombres necesita revisión.')
         original = reference.get(channel_id)
         if original is None or original['type'] != row['type']:
             raise ValueError('El canal no pertenece a la restauración original autorizada.')
-        expected = original['name']
         if channel_id == team_id:
             if row['type'] != 4:
                 raise ValueError('Staff ya no es una categoría.')
-        if row['target_name'] != expected:
-            raise ValueError('El destino no coincide con el nombre original autorizado.')
         row['id'] = channel_id
         seen.add(channel_id)
         rows.append(row)
     if seen != set(reference):
-        raise ValueError('La restauración no coincide con los 38 canales originales.')
+        raise ValueError('La lista no coincide con los 38 canales originales.')
+    categories = sorted((row for row in rows if row['type'] == 4),
+                        key=lambda row: (row['position'], int(row['id'])))
+    for row in rows:
+        edge = ('first' if row['id'] == categories[0]['id'] else
+                'last' if row['id'] == categories[-1]['id'] else 'middle')
+        expected = format_name(row['name'], category=row['type'] == 4, edge=edge)
+        if row.get('edge', 'middle') != (edge if row['type'] == 4 else 'middle'):
+            raise ValueError('La posición decorativa no coincide con el orden comprobado.')
+        if row['target_name'] != expected:
+            raise ValueError('El destino cambia más que los separadores autorizados.')
     fingerprint = hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return rows, fingerprint
 
@@ -201,7 +259,7 @@ class ChannelStyle:
                 return 'manual_change'
             current_before = channel_state(fresh)
             await self.system.call('put', key, dict(binding, state='pending', before=current_before))
-            await fresh.edit(name=row['target_name'], reason='Restaurar nombres anteriores a petición del propietario • ' + VERSION)
+            await fresh.edit(name=row['target_name'], reason='Separadores solicitados por el propietario • ' + VERSION)
             verified = await current_guild.fetch_channel(int(row['id']))
             self.system.validate_guild(verified.guild)
             if (verified.id != int(row['id']) or type_number(verified) != row['type']

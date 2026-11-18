@@ -49,6 +49,12 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
+### Flechas de inicio y cierre, separador ╎ — v5
+
+La revisión v5 conserva las versalitas, los emojis y las ramas de los canales. Cambia el separador entre emoji y nombre a ╎. Las categorías usan ↱ al inicio de la lista, │ en posiciones intermedias y ↳ al final, según el orden observado; solo cambia sus nombres. El manifiesto v5 conserva los 38 IDs, nombres previos y posiciones de referencia. No añade relleno, no reordena objetos y no repite migraciones anteriores. La creación futura de tickets y salas conserva este formato.
+
+Para volver al diseño anterior, restaurar individualmente el nombre original del manifiesto v5 únicamente cuando todavía coincida con el nombre aplicado, mediante operaciones registradas. Restaurar primero el nombre del canal de mejoras o conservar su validación compatible antes de desplegar `29f96c499c41a5d4c18e88291a86ec6e7ce1addd`. Respetar cambios manuales y conservar la base actual, permisos, mensajes y recibos.
+
 ### Diseño anterior restaurado por solicitud del propietario — v4
 
 El propietario canceló el experimento de separadores y alineación. `vice-channel-style-v4` restaura exclusivamente los nombres de las 38 categorías y canales a sus valores originales en versalitas, guardados como `name` en `channel-style-v2.json`. Conserva Staff, Pendientes, los emojis y las ramas originales, además de IDs, permisos, posiciones, temas e historial. El manifiesto v4 parte de un nuevo estado real y cada restauración deja copia y recibo; cambios manuales posteriores se respetan. Los nombres futuros vuelven al formato original. No se repiten las migraciones anteriores ni se restablece una base antigua.

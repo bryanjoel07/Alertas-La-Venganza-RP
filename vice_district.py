@@ -725,11 +725,11 @@ class ViceDistrict:
                 category = guild.get_channel(self.store.get('category:closed'))
                 category = category or discord.utils.get(guild.categories, name=stylize(CLOSED_CATEGORY))
                 category = category or discord.utils.get(guild.categories, name='၊၊||၊ 🔒ᴀʀᴄʜɪᴠᴏ')
-                category = category or discord.utils.get(guild.categories, name=format_name(CLOSED_CATEGORY, category=True))
+                category = category or discord.utils.get(guild.categories, name=format_name(CLOSED_CATEGORY, category=True, edge='last'))
                 category = category or discord.utils.get(guild.categories, name=CLOSED_CATEGORY)
                 category = category or discord.utils.get(guild.categories, name='🔒 TICKETS ARCHIVADOS')
                 if category is None:
-                    category = await guild.create_category(format_name(CLOSED_CATEGORY, category=True), overwrites=self.overwrites(guild, 'staff'), reason=REASON)
+                    category = await guild.create_category(format_name(CLOSED_CATEGORY, category=True, edge='last'), overwrites=self.overwrites(guild, 'staff'), reason=REASON)
                 await self.call('put', 'category:closed', category.id)
                 try:
                     owner = await guild.fetch_member(int(row['owner']))
