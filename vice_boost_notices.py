@@ -17,6 +17,7 @@ import discord
 from vice_design import BOT_ID, GUILD_ID, OWNER_ID, PINK
 from vice_readonly import WRITE_FLAGS
 from vice_booster_club import benefits_copy
+from vice_channel_style import stylize
 
 log = logging.getLogger('ViceDistrict.boost_notices')
 VERSION = 'vice-boost-notices-v1'
@@ -120,7 +121,7 @@ class BoostNotices:
                 or record.get('guild') != GUILD_ID or channel.id != int(record.get('channel') or 0)
                 or channel.id == SOURCE_CHANNEL_ID
                 or channel.category_id != int(self.system.store.get('category:community') or 0)
-                or channel.name != NAME or channel.topic != TOPIC):
+                or channel.name not in {NAME, stylize(NAME)} or channel.topic != TOPIC):
             raise ValueError('El canal de mejoras registrado necesita revisión.')
         rules = {target.id: overwrite for target, overwrite in channel.overwrites.items()}
         if set(rules) != {GUILD_ID, BOT_ID}:
@@ -204,7 +205,7 @@ class BoostNotices:
                 record['attempted'] = True
                 await self.system.call('put', DESTINATION_KEY, record)
                 try:
-                    return await fresh['guild'].create_text_channel(NAME, category=current_category,
+                    return await fresh['guild'].create_text_channel(stylize(NAME), category=current_category,
                         topic=TOPIC, overwrites=rules, reason=reason, **position)
                 except discord.HTTPException as error:
                     if 400 <= error.status < 500 and error.status != 429:

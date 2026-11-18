@@ -99,6 +99,7 @@ class ReminderLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.helpers = {}
         for name in ('welcome', 'voice', 'community', 'audit', 'ticket_deletion',
                      'tickets', 'ticket_archive', 'ticket_feedback', 'ticket_reminders',
+                     'ticket_dashboard', 'channel_style',
                      'antispam', 'optional_roles', 'role_icons', 'bot_separator',
                      'booster_club', 'boost_notices'):
             helper = NS(start=AsyncMock(), ready=AsyncMock(), close=AsyncMock())

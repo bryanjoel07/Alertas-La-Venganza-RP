@@ -5,6 +5,7 @@ import logging
 import uuid
 
 import discord
+from vice_channel_style import stylize
 
 from vice_design import BOT_ID, GUILD_ID, OWNER_ID, CYAN
 from vice_readonly import WRITE_FLAGS
@@ -296,7 +297,7 @@ class TicketFeedback:
                 else:
                     record['attempted_at'] = datetime.now(timezone.utc).isoformat()
                     await self.system.call('put', DESTINATION_KEY, record)
-                    channel = await guild.create_text_channel('├・⭐│valoraciones', category=category,
+                    channel = await guild.create_text_channel(stylize('├・⭐│valoraciones'), category=category,
                         position=position, topic=TOPIC, overwrites=expected, reason=reason)
                 record['channel'] = channel.id
                 self.validate_destination(channel, record)

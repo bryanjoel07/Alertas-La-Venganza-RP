@@ -9,6 +9,7 @@ import uuid
 import discord
 
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID, CYAN
+from vice_channel_style import stylize
 from welcome_cards import clean_name
 
 log = logging.getLogger('ViceDistrict.voice')
@@ -250,18 +251,20 @@ class TempVoice:
         channels = await guild.fetch_channels()
         category = discord.utils.get(channels, id=self.system.store.get('category:tempvoice'))
         category = category or discord.utils.get(channels, name=CATEGORY_NAME)
+        category = category or discord.utils.get(channels, name=stylize(CATEGORY_NAME))
         if category is not None and (not isinstance(category, discord.CategoryChannel) or category.guild.id != GUILD_ID):
             raise ValueError('La categoría de salas necesita revisión; no se modificó el canal existente.')
         if category is None:
-            category = await guild.create_category(CATEGORY_NAME, position=4,
+            category = await guild.create_category(stylize(CATEGORY_NAME), position=4,
                 overwrites=self.system.overwrites(guild, 'read'), reason='Salas temporales solicitadas por el propietario')
         await self.system.call('put', 'category:tempvoice', category.id)
         panel = discord.utils.get(channels, id=self.system.channel_id('voicepanel'))
         panel = panel or discord.utils.get(channels, name=PANEL_NAME)
+        panel = panel or discord.utils.get(channels, name=stylize(PANEL_NAME))
         if panel is not None and (not isinstance(panel, discord.TextChannel) or panel.guild.id != GUILD_ID):
             raise ValueError('El panel de salas necesita revisión; no se modificó el canal existente.')
         if panel is None:
-            panel = await guild.create_text_channel(PANEL_NAME, category=category,
+            panel = await guild.create_text_channel(stylize(PANEL_NAME), category=category,
                 topic='Crea una sala de voz temporal y gestiona su acceso desde los botones.',
                 overwrites=self.system.overwrites(guild, 'read'), reason='Panel de salas temporales solicitado por el propietario')
         await self.system.call('put', 'channel:voicepanel', panel.id)
@@ -344,7 +347,7 @@ class TempVoice:
                 raise ValueError('Tu sala ya se está creando. Espera unos segundos.')
             name = clean_name(interaction.user.display_name)[:32] or 'Mi crew'
             async def create():
-                channel = await guild.create_voice_channel('┊・🎙️│' + name, category=category,
+                channel = await guild.create_voice_channel(stylize('┊・🎙️│' + name), category=category,
                     bitrate=64000, user_limit=6, overwrites=self.room_overwrites(guild, interaction.user),
                     reason='VICE_TEMP:' + row['token'])
                 await self.call('update', row['token'], channel=channel.id, state='active')
@@ -379,7 +382,7 @@ class TempVoice:
             if row['renamed'] and now - row['renamed'] < RENAME_COOLDOWN:
                 raise ValueError('Puedes cambiar el nombre una vez cada 5 minutos.')
             async def apply():
-                await channel.edit(name='┊・🎙️│' + value, reason='Nombre elegido por el creador de la sala')
+                await channel.edit(name=stylize('┊・🎙️│' + value), reason='Nombre elegido por el creador de la sala')
                 await self.call('update', row['token'], renamed=now)
             await self.tracked('VOICE_RENAME', 'Renombrar sala temporal', row, interaction.guild, apply, interaction.id)
 

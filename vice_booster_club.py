@@ -8,6 +8,7 @@ import discord
 
 from vice_design import BOT_ID, GUILD_ID, OWNER_ID
 from vice_role_icons import role_state
+from vice_channel_style import stylize
 
 log = logging.getLogger('ViceDistrict.booster_club')
 VERSION = 'vice-booster-club-v1'
@@ -238,13 +239,13 @@ class BoosterClub:
                 await self.system.call('put', receipt_key, record)
                 try:
                     if kind == 'category':
-                        channel = await guild.create_category(CATEGORY_NAME, position=community.position + 1,
+                        channel = await guild.create_category(stylize(CATEGORY_NAME), position=community.position + 1,
                                                              overwrites=overwrites, reason=record['reason'])
                     elif kind == 'lounge':
-                        channel = await guild.create_text_channel(LOUNGE_NAME, category=fresh_category,
+                        channel = await guild.create_text_channel(stylize(LOUNGE_NAME), category=fresh_category,
                             position=0, topic=LOUNGE_TOPIC, overwrites=overwrites, reason=record['reason'])
                     else:
-                        channel = await guild.create_voice_channel(TERRACE_NAME, category=fresh_category,
+                        channel = await guild.create_voice_channel(stylize(TERRACE_NAME), category=fresh_category,
                             position=1, user_limit=0, bitrate=min(int(guild.bitrate_limit), 256000),
                             overwrites=overwrites, reason=record['reason'])
                 except discord.HTTPException as error:

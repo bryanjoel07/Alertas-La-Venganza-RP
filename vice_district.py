@@ -27,6 +27,8 @@ from vice_tickets import TicketCenter
 from vice_ticket_archive import TicketArchive
 from vice_ticket_feedback import TicketFeedback
 from vice_ticket_reminders import TicketReminders
+from vice_ticket_dashboard import TicketDashboard
+from vice_channel_style import ChannelStyle, stylize
 from vice_optional_roles import OptionalRoles
 from vice_identity_panels import refresh_identity_panels
 from vice_role_icons import RoleIcons
@@ -141,6 +143,8 @@ class ViceDistrict:
         self.ticket_archive = TicketArchive(self)
         self.ticket_feedback = TicketFeedback(self)
         self.ticket_reminders = TicketReminders(self)
+        self.ticket_dashboard = TicketDashboard(self)
+        self.channel_style = ChannelStyle(self)
         self.optional_roles = OptionalRoles(self)
         self.role_icons = RoleIcons(self)
         self.bot_separator = BotSeparator(self)
@@ -212,6 +216,8 @@ class ViceDistrict:
         await self.ticket_archive.start()
         await self.ticket_feedback.start()
         await self.ticket_reminders.start()
+        await self.ticket_dashboard.start()
+        await self.channel_style.start()
         await self.antispam.start()
         for view in [WelcomePanel(self, links=False), RolesPanel(self), SupportPanel(self), CloseTicketPanel(self)]:
             self.bot.add_view(view)
@@ -283,6 +289,7 @@ class ViceDistrict:
         failed = set()
         guild = self.bot.get_guild(GUILD_ID)
         for name, operation in (
+                ('channel_style', self.channel_style.ready),
                 ('optional_roles', lambda: self.optional_roles.ready(lambda: self.panel(
                     guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))),
                 ('identity_guidance', lambda: refresh_identity_panels(self)),
@@ -293,6 +300,7 @@ class ViceDistrict:
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
                 ('ticket_feedback', self.ticket_feedback.ready),
                 ('ticket_reminders', self.ticket_reminders.ready),
+                ('ticket_dashboard', self.ticket_dashboard.ready),
                 ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),
                 ('audit', self.audit.ready), ('antispam', self.antispam.ready)):
             try:
@@ -692,7 +700,7 @@ class ViceDistrict:
                 category = guild.get_channel(self.store.get('category:help'))
                 if not isinstance(category, discord.CategoryChannel) or category.guild.id != GUILD_ID:
                     raise ValueError('La categoría privada de ayuda necesita revisión del equipo.')
-                channel = await guild.create_text_channel(TICKET_OPEN_PREFIX + str(interaction.user.id)[-6:],
+                channel = await guild.create_text_channel(stylize(TICKET_OPEN_PREFIX + str(interaction.user.id)[-6:]),
                     category=category, topic=marker, overwrites=self.overwrites(guild, 'ticket', interaction.user), reason=REASON)
                 await self.call('add_ticket', channel.id, interaction.user.id, kind)
                 await self.tickets.ensure_open_panel(channel)
@@ -715,16 +723,17 @@ class ViceDistrict:
             async def apply():
                 guild = interaction.guild
                 category = guild.get_channel(self.store.get('category:closed'))
+                category = category or discord.utils.get(guild.categories, name=stylize(CLOSED_CATEGORY))
                 category = category or discord.utils.get(guild.categories, name=CLOSED_CATEGORY)
                 category = category or discord.utils.get(guild.categories, name='🔒 TICKETS ARCHIVADOS')
                 if category is None:
-                    category = await guild.create_category(CLOSED_CATEGORY, overwrites=self.overwrites(guild, 'staff'), reason=REASON)
+                    category = await guild.create_category(stylize(CLOSED_CATEGORY), overwrites=self.overwrites(guild, 'staff'), reason=REASON)
                 await self.call('put', 'category:closed', category.id)
                 try:
                     owner = await guild.fetch_member(int(row['owner']))
                 except discord.NotFound:
                     owner = discord.Object(id=int(row['owner']), type=discord.Member)
-                closed_channel = await interaction.channel.edit(name=TICKET_CLOSED_PREFIX + str(row['owner'])[-6:], category=category,
+                closed_channel = await interaction.channel.edit(name=stylize(TICKET_CLOSED_PREFIX + str(row['owner'])[-6:]), category=category,
                     topic='VIce ticket closed owner=' + str(row['owner']),
                     overwrites=self.overwrites(guild, 'closed', owner), reason=REASON)
                 await self.call('ticket_state', interaction.channel_id, 'closed')
@@ -851,6 +860,7 @@ class ViceDistrict:
             return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
+        await self.ticket_dashboard.close()
         await self.ticket_reminders.close()
         await self.tickets.close()
         await self.ticket_feedback.close()

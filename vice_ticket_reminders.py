@@ -79,7 +79,7 @@ class TicketReminders:
         opened = datetime.fromtimestamp(int(row['created']), timezone.utc)
         return dict(binding, cursor=0, ever_replied=False, awaiting_since=opened.isoformat(),
                     episode='open:' + str(row['created']), owner_message=None,
-                    last_sent=None, pending=None)
+                    last_staff_reply_at=None, last_sent=None, pending=None)
 
     async def save(self, state):
         await self.system.call('put', state_key(state['channel']), state)
@@ -138,7 +138,7 @@ class TicketReminders:
                 # not mislabel the ticket as unanswered or guess their old role.
                 raise ValueError('No se pudo comprobar una respuesta anterior del equipo.')
             candidate.update(ever_replied=True, awaiting_since=None, episode=None,
-                             owner_message=None)
+                             owner_message=None, last_staff_reply_at=when.isoformat())
         await self.save(candidate)
         return candidate, complete
 
