@@ -8,14 +8,16 @@ import discord
 from vice_design import GUILD_ID, BOT_ID
 
 log = logging.getLogger('ViceDistrict.ticket_delete')
-DELETE_VERSION = 'vice-closed-ticket-delete-v1'
+DELETE_VERSION = 'vice-closed-ticket-feedback-v2'
 DELETE_CUSTOM_ID = 'vice:v1:ticket:delete'
+FEEDBACK_CUSTOM_ID = 'vice:v1:ticket:feedback'
 CLOSE_CUSTOM_ID = 'vice:v1:ticket:close'
 ARCHIVE_TITLE = '🔒 Conversación archivada'
 STARTER_TITLE = '🎫 Te escuchamos'
 LEGACY_FOOTER = 'GTA VI Latino • Puerto Rico + Latinoamérica • Fans no oficiales'
 ARCHIVE_DESCRIPTION = ('Ticket cerrado. Su historial sigue disponible para el autor y el equipo. '
-                       'Solo el equipo puede eliminarlo; antes se guardará una copia privada.')
+                       'Solo el equipo puede eliminarlo; antes se guardará una copia privada.\n\n'
+                       'El autor puede valorar la atención. Su valoración será privada, solo para Administración.')
 
 
 def record_key(channel_id):
@@ -58,6 +60,11 @@ class TicketDeleteView(discord.ui.View):
 
 
 class DeleteTicketPanel(TicketDeleteView):
+    @discord.ui.button(label='Valorar atención', emoji='⭐', style=discord.ButtonStyle.primary,
+                       custom_id=FEEDBACK_CUSTOM_ID)
+    async def rate_ticket(self, interaction, button):
+        await self.manager.system.ticket_feedback.request(interaction)
+
     @discord.ui.button(label='Eliminar', emoji='🗑️', style=discord.ButtonStyle.danger,
                        custom_id=DELETE_CUSTOM_ID)
     async def delete_ticket(self, interaction, button):
@@ -143,12 +150,14 @@ class TicketDeletion:
     @staticmethod
     def archive_matches(message, channel_id):
         controls = [child for row in message.components for child in getattr(row, 'children', ())]
+        identifiers = {getattr(child, 'custom_id', None) for child in controls}
+        known_controls = (not controls or (len(controls) == 1 and identifiers == {DELETE_CUSTOM_ID})
+                          or (len(controls) == 2 and identifiers == {FEEDBACK_CUSTOM_ID, DELETE_CUSTOM_ID}))
         return (message.author.id == BOT_ID and not message.content and not message.attachments
                 and len(message.embeds) == 1 and message.embeds[0].title == ARCHIVE_TITLE
                 and message.embeds[0].footer.text in (LEGACY_FOOTER, panel_footer(channel_id),
                                                      'VIce District • ticket-delete:' + str(channel_id))
-                and (not controls or (len(controls) == 1
-                     and getattr(controls[0], 'custom_id', None) == DELETE_CUSTOM_ID)))
+                and known_controls)
 
     @staticmethod
     def starter_matches(message):
@@ -191,6 +200,7 @@ class TicketDeletion:
                 if panel is None and self.archive_matches(message, channel.id):
                     panel = message
         if (panel is not None and has_control(panel, DELETE_CUSTOM_ID)
+                and has_control(panel, FEEDBACK_CUSTOM_ID)
                 and panel.embeds[0].footer.text == panel_footer(channel.id)
                 and panel.embeds[0].description == ARCHIVE_DESCRIPTION
                 and record.get('starters_cleaned') and not starters):
@@ -216,7 +226,7 @@ class TicketDeletion:
             record.setdefault('state', 'ready')
             await self.system.call('put', record_key(channel.id), record)
             return panel
-        return await self.system.track('TICKET_DELETE_PANEL', 'Añadir Eliminar al ticket cerrado',
+        return await self.system.track('TICKET_DELETE_PANEL', 'Actualizar controles del ticket cerrado',
             apply, DELETE_VERSION + ':' + str(channel.id), snapshot=snapshot)
 
     def channel_snapshot(self, channel, row, record, *, panels=()):

@@ -152,8 +152,10 @@ def panel_copy(key, c):
             'Pulsa **Abrir ticket** y elige el motivo:\n'
             '💬 Ayuda general · 🚩 Reportar a un jugador\n'
             '⚖️ Apelación · 🛠️ Problema técnico\n\n'
-            'Tu conversación será privada. El equipo puede pulsar **Atender** para asignarse el caso. '
+            'Tu conversación será privada y recibirás un aviso cuando alguien la atienda. '
             'Un ticket abierto por persona.\n\n'
+            'Al terminar podrás valorar la atención de **1 a 5 estrellas**, con comentario opcional. '
+            'Solo Administración verá tu valoración.\n\n'
             'Al cerrarlo, el historial se conserva. Antes de eliminarlo se guarda una copia privada para el equipo. '
             'Nunca compartas contraseñas, tokens ni datos de pago.', CYAN),
         'goodbye': ('🚪 SALIDAS DEL DISTRITO',

@@ -245,7 +245,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_archive_start_failure_does_not_block_antispam_audit_or_ticket_panel(self):
         for service in (self.system.tickets, self.system.ticket_archive,
-                        self.system.ticket_deletion, self.system.audit, self.system.antispam):
+                        self.system.ticket_feedback, self.system.ticket_deletion, self.system.audit, self.system.antispam):
             service.ready = AsyncMock()
         self.system.ticket_archive.ready.side_effect=ValueError('Archive not available')
         self.system.refresh_ticket_panel=AsyncMock()
@@ -253,7 +253,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs('ViceDistrict',level='ERROR'):
             await self.system.ready_community_services()
         for service in (self.system.tickets, self.system.ticket_deletion,
-                        self.system.audit, self.system.antispam):
+                        self.system.ticket_feedback, self.system.audit, self.system.antispam):
             service.ready.assert_awaited_once()
         self.system.refresh_ticket_panel.assert_awaited_once()
         self.system.start_ticket_backfill.assert_not_called()
@@ -270,6 +270,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         channel = NS(edit=AsyncMock(return_value=closed_channel), send=AsyncMock(), delete=AsyncMock())
         self.interaction.channel = channel
         self.system.ticket_deletion.ensure_closed_panel = AsyncMock()
+        self.system.ticket_feedback.capture_close = AsyncMock()
         self.system.tickets.archive_controls = AsyncMock()
         self.guild.get_channel.return_value = NS(id=200)
         await self.system.close_ticket(self.interaction)
@@ -280,6 +281,8 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(rules[self.member].send_messages)
         self.system.ticket_deletion.ensure_closed_panel.assert_awaited_once_with(closed_channel)
         self.system.tickets.archive_controls.assert_awaited_once_with(closed_channel)
+        self.system.ticket_feedback.capture_close.assert_awaited_once_with(
+            closed_channel, self.system.store.ticket(55), self.member.id)
         channel.delete.assert_not_awaited()
 
     async def test_welcome_receipt_prevents_double_send_and_survives_restart(self):

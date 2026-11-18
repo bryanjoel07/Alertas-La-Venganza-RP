@@ -3,7 +3,7 @@ import asyncio
 from copy import deepcopy
 from types import SimpleNamespace as NS
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
@@ -11,7 +11,7 @@ from tests import test_vice_ticket_delete as deletion_fixture
 from vice_design import BOT_ID, GUILD_ID, OWNER_ID
 from vice_tickets import (CLAIM_ID, CLOSE_ID, FOOTER, KINDS, LEGACY_CLOSE_ID, LEGACY_FOOTER,
                           RELEASE_ID, OpenTicketPanel, TicketCategories, TicketCenter,
-                          assignment_key, controls, panel_key)
+                          assignment_key, controls, panel_key, notice_key, NOTICE_TITLE)
 
 
 class TicketCenterTests(unittest.IsolatedAsyncioTestCase):
@@ -25,11 +25,20 @@ class TicketCenterTests(unittest.IsolatedAsyncioTestCase):
         self.store.put('category:help', 88)
         self.channel.topic = 'VIce ticket owner=999'
         self.channel.mention = '<#55>'
+        send = self.channel.send.side_effect
+        async def with_content(**kwargs):
+            message = await send(**kwargs)
+            message.content = kwargs.get('content', '')
+            return message
+        self.channel.send.side_effect = with_content
         self.system.open_ticket = AsyncMock(return_value=self.channel)
         self.system.close_ticket = AsyncMock()
         self.manager = TicketCenter(self.system)
         self.bot.add_view.reset_mock()
         await self.manager.start()
+
+    async def asyncTearDown(self):
+        await self.manager.close()
 
     async def prepared(self):
         panel = await self.manager.ensure_open_panel(self.channel)
@@ -245,8 +254,196 @@ class TicketCenterTests(unittest.IsolatedAsyncioTestCase):
         await self.manager.ready()
         self.assertEqual(panel.embeds[0].fields[1].value, '<@77>')
         self.assertEqual(self.store.get(panel_key(55))['panel_id'], panel.id)
-        self.assertEqual(len(self.messages), 1)
+        self.assertEqual(len(self.messages), 2)
+        self.channel.send.assert_awaited_once()
+        self.assertEqual(self.messages[-1].embeds[0].title, NOTICE_TITLE)
+
+    async def test_claim_notice_pings_only_owner_and_is_not_resent_by_ready_or_same_claim(self):
+        panel = await self.prepared()
+        await self.manager.claim(self.interaction(panel=panel))
+        assignment = self.store.get(assignment_key(55))
+        revision = assignment['notice_revision']
+        receipt = self.store.get(notice_key(55, revision))
+        self.assertEqual(receipt['state'], 'sent')
+        self.assertEqual(receipt['staff_id'], 77)
+        notice = self.messages[-1]
+        self.assertTrue(self.manager.notice_matches(notice, self.store.ticket(55), assignment))
+        kwargs = self.channel.send.await_args.kwargs
+        self.assertEqual(kwargs['content'], '<@999>')
+        self.assertEqual(kwargs['allowed_mentions'].to_dict(), {'users': [999], 'parse': []})
+        self.assertIn('<@77>', kwargs['embed'].description)
+        await self.manager.ready()
+        await self.manager.claim(self.interaction(panel=panel))
+        self.channel.send.assert_awaited_once()
+
+    async def test_released_then_claimed_again_has_one_new_notice_and_revision(self):
+        panel = await self.prepared()
+        await self.manager.claim(self.interaction(panel=panel))
+        first = self.store.get(assignment_key(55))['notice_revision']
+        await self.manager.release(self.interaction(panel=panel))
+        await self.manager.claim(self.interaction(panel=panel))
+        second = self.store.get(assignment_key(55))['notice_revision']
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.channel.send.await_count, 2)
+        self.assertEqual(self.store.get(notice_key(55, first))['state'], 'sent')
+        self.assertEqual(self.store.get(notice_key(55, second))['state'], 'sent')
+
+    async def test_failed_notice_keeps_assignment_and_next_boot_recovers_ack_without_duplicate(self):
+        panel = await self.prepared()
+        send = self.channel.send.side_effect
+        async def accepted_then_failed(**kwargs):
+            await send(**kwargs)
+            raise OSError('Acknowledgement lost')
+        self.channel.send.side_effect = accepted_then_failed
+        interaction = self.interaction(panel=panel)
+        with self.assertLogs('ViceDistrict.tickets', level='WARNING'):
+            await self.manager.claim(interaction)
+        assignment = self.store.get(assignment_key(55))
+        key = notice_key(55, assignment['notice_revision'])
+        self.assertEqual(assignment['staff_id'], 77)
+        self.assertEqual(self.store.get(key)['state'], 'pending')
+        self.assertIn('responsable', interaction.followup.send.await_args.args[0])
+        self.channel.send.side_effect = send
+        restarted = TicketCenter(self.system)
+        await restarted.ready()
+        self.assertEqual(self.store.get(key)['state'], 'sent')
+        self.channel.send.assert_awaited_once()
+        self.assertEqual(len(self.messages), 2)
+
+    async def test_failed_notice_before_send_is_pending_without_losing_claim(self):
+        panel = await self.prepared()
+        send = self.channel.send.side_effect
+        self.channel.send.side_effect = OSError('Network unavailable')
+        with self.assertLogs('ViceDistrict.tickets', level='WARNING'):
+            await self.manager.claim(self.interaction(panel=panel))
+        assignment = self.store.get(assignment_key(55))
+        key = notice_key(55, assignment['notice_revision'])
+        receipt = self.store.get(key)
+        self.assertEqual(assignment['staff_id'], 77)
+        self.assertEqual(receipt['state'], 'pending')
+        self.channel.send.side_effect = send
+        # Wait for the ambiguity window using a persisted older attempt timestamp.
+        receipt['attempted_at'] = '2026-01-01T00:00:00+00:00'
+        self.store.put(key, receipt)
+        await self.manager.ready()
+        self.assertEqual(self.store.get(key)['state'], 'sent')
+        self.assertEqual(len(self.messages), 2)
+
+    async def test_old_assignments_are_not_retroactively_notified(self):
+        panel = await self.prepared()
+        self.store.put(assignment_key(55), dict(guild=GUILD_ID, channel=55, owner='999', kind='general',
+            staff_id=77, staff_name='Staff', claimed_at='2026-01-01T00:00:00+00:00'))
+        await self.manager.ready()
+        await self.manager.claim(self.interaction(panel=panel))
         self.channel.send.assert_not_awaited()
+        self.assertNotIn('notice_revision', self.store.get(assignment_key(55)))
+
+    async def test_notice_cannot_be_published_in_public_or_changed_ticket(self):
+        panel = await self.prepared()
+        self.channel.overwrites[self.guild.default_role].view_channel = True
+        with self.assertLogs('ViceDistrict.tickets', level='WARNING'):
+            await self.manager.claim(self.interaction(panel=panel))
+        assignment = self.store.get(assignment_key(55))
+        self.assertEqual(assignment['staff_id'], 77)
+        self.channel.send.assert_not_awaited()
+        self.channel.overwrites[self.guild.default_role].view_channel = False
+        outsider = self.member(12345)
+        self.channel.overwrites[outsider] = discord.PermissionOverwrite(view_channel=True)
+        with self.assertRaisesRegex(ValueError, 'privado'):
+            await self.manager.claim_notice(self.channel, self.store.ticket(55))
+        self.channel.send.assert_not_awaited()
+        del self.channel.overwrites[outsider]
+        self.store.ticket_state(55, 'closed')
+        with self.assertRaisesRegex(ValueError, 'no está disponible'):
+            await self.manager.claim_notice(self.channel, self.store.ticket(55))
+        self.channel.send.assert_not_awaited()
+
+    async def test_retry_worker_skips_sent_and_legacy_assignments_without_rest(self):
+        panel = await self.prepared()
+        await self.manager.claim(self.interaction(panel=panel))
+        self.store.add_ticket(56, 998, 'general')
+        self.store.put(assignment_key(56), dict(guild=GUILD_ID, channel=56, owner='998',
+            kind='general', staff_id=77))
+        self.system.ready_event = asyncio.Event()
+        self.system.ready_event.set()
+        self.guild.fetch_channel.reset_mock()
+        self.guild.fetch_member.reset_mock()
+        self.channel.send.reset_mock()
+        self.assertEqual(await self.manager.retry_pending_notices(), 0)
+        self.guild.fetch_channel.assert_not_awaited()
+        self.guild.fetch_member.assert_not_awaited()
+        self.channel.send.assert_not_awaited()
+
+    async def test_retry_worker_waits_for_ready_and_configuration_then_recovers_pending_notice(self):
+        panel = await self.prepared()
+        send = self.channel.send.side_effect
+        self.channel.send.side_effect = OSError('Network unavailable')
+        with self.assertLogs('ViceDistrict.tickets', level='WARNING'):
+            await self.manager.claim(self.interaction(panel=panel))
+        assignment = self.store.get(assignment_key(55))
+        key = notice_key(55, assignment['notice_revision'])
+        receipt = self.store.get(key)
+        receipt['attempted_at'] = '2026-01-01T00:00:00+00:00'
+        self.store.put(key, receipt)
+        self.channel.send.side_effect = send
+        self.channel.send.reset_mock()
+        self.guild.fetch_channel.reset_mock()
+        self.system.ready_event = asyncio.Event()
+        self.assertEqual(await self.manager.retry_pending_notices(), 0)
+        self.system.ready_event.set()
+        self.system.configured = False
+        self.assertEqual(await self.manager.retry_pending_notices(), 0)
+        self.guild.fetch_channel.assert_not_awaited()
+        self.system.configured = True
+        self.assertEqual(await self.manager.retry_pending_notices(), 1)
+        self.assertEqual(self.store.get(key)['state'], 'sent')
+        self.channel.send.assert_awaited_once()
+
+    async def test_retry_worker_limits_attempts_and_rotates_past_failing_cases(self):
+        self.store.ticket_state(55, 'closed')
+        for channel_id in range(1000, 1025):
+            self.store.add_ticket(channel_id, 999, 'general')
+        self.system.ready_event = asyncio.Event()
+        self.system.ready_event.set()
+        self.manager.pending_notice = AsyncMock(return_value=True)
+        self.manager.notice_scope = Mock()
+        self.manager.ensure_open_panel = AsyncMock()
+        self.manager.try_claim_notice = AsyncMock(return_value=None)
+        self.guild.fetch_channel = AsyncMock(side_effect=lambda channel_id: NS(id=channel_id))
+        self.assertEqual(await self.manager.retry_pending_notices(), 20)
+        self.assertEqual([call.args[0] for call in self.guild.fetch_channel.await_args_list], list(range(1000, 1020)))
+        self.guild.fetch_channel.reset_mock()
+        self.assertEqual(await self.manager.retry_pending_notices(), 20)
+        self.assertEqual([call.args[0] for call in self.guild.fetch_channel.await_args_list][:5], list(range(1020, 1025)))
+
+    async def test_worker_lifecycle_waits_for_ready_starts_once_and_cancels(self):
+        self.system.ready_event = asyncio.Event()
+        observed = asyncio.Event()
+        async def attempt():
+            observed.set()
+            return 0
+        self.manager.retry_pending_notices = AsyncMock(side_effect=attempt)
+        with patch('vice_tickets.NOTICE_RETRY_SECONDS', 0.01):
+            await self.manager.ready()
+            task = self.manager.notice_task
+            self.manager.start_notice_worker()
+            self.assertIs(self.manager.notice_task, task)
+            await asyncio.sleep(0.02)
+            self.manager.retry_pending_notices.assert_not_awaited()
+            self.system.ready_event.set()
+            await asyncio.wait_for(observed.wait(), 1)
+            await self.manager.close()
+        self.assertTrue(task.done())
+        self.assertIsNone(self.manager.notice_task)
+
+    async def test_retry_worker_rejects_wrong_guild_before_rest(self):
+        self.system.ready_event = asyncio.Event()
+        self.system.ready_event.set()
+        self.guild.owner_id = 123
+        self.guild.fetch_channel.reset_mock()
+        with self.assertRaises(ValueError):
+            await self.manager.retry_pending_notices()
+        self.guild.fetch_channel.assert_not_awaited()
 
     async def test_accepted_send_with_failed_panel_record_recovers_without_duplicate(self):
         call = self.system.call.side_effect

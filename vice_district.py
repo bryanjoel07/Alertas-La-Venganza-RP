@@ -25,12 +25,13 @@ from vice_activity import ViceActivity
 from vice_ticket_delete import TicketDeletion
 from vice_tickets import TicketCenter
 from vice_ticket_archive import TicketArchive
+from vice_ticket_feedback import TicketFeedback
 from vice_antispam import AntiSpam
 from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
 REASON = 'Solicitud del propietario: comunidad GTA VI Latino | VIce District'
-TICKET_PANEL_VERSION = 'vice-ticket-categories-claim-v2'
+TICKET_PANEL_VERSION = 'vice-ticket-followup-feedback-v3'
 
 
 class SafeView(discord.ui.View):
@@ -130,6 +131,7 @@ class ViceDistrict:
         self.ticket_deletion = TicketDeletion(self)
         self.tickets = TicketCenter(self)
         self.ticket_archive = TicketArchive(self)
+        self.ticket_feedback = TicketFeedback(self)
         self.antispam = AntiSpam(self)
         self.ticket_backfill_task = None
         self.ready_lock = asyncio.Lock()
@@ -194,6 +196,7 @@ class ViceDistrict:
         await self.ticket_deletion.start()
         await self.tickets.start()
         await self.ticket_archive.start()
+        await self.ticket_feedback.start()
         await self.antispam.start()
         for view in [WelcomePanel(self, links=False), RolesPanel(self), SupportPanel(self), CloseTicketPanel(self)]:
             self.bot.add_view(view)
@@ -265,6 +268,7 @@ class ViceDistrict:
         failed = set()
         for name, operation in (
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
+                ('ticket_feedback', self.ticket_feedback.ready),
                 ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),
                 ('audit', self.audit.ready), ('antispam', self.antispam.ready)):
             try:
@@ -663,6 +667,7 @@ class ViceDistrict:
             if not row or (int(row['owner']) != interaction.user.id and not self.is_staff(interaction.user)):
                 raise ValueError('Solo el autor del ticket o el equipo puede cerrarlo.')
             if row['state'] == 'closed':
+                await self.ticket_feedback.capture_close(interaction.channel, row, None)
                 await self.tickets.archive_controls(interaction.channel, row)
                 await self.ticket_deletion.ensure_closed_panel(interaction.channel, row)
                 return
@@ -684,6 +689,8 @@ class ViceDistrict:
                     topic='VIce ticket closed owner=' + str(row['owner']),
                     overwrites=self.overwrites(guild, 'closed', owner), reason=REASON)
                 await self.call('ticket_state', interaction.channel_id, 'closed')
+                await self.ticket_feedback.capture_close(closed_channel,
+                    await self.call('ticket', interaction.channel_id), interaction.user.id)
                 await self.tickets.archive_controls(closed_channel)
                 await self.ticket_deletion.ensure_closed_panel(closed_channel)
             await self.track('TICKET_CLOSE', 'Cerrar ticket conservando su historial privado', apply, interaction.id)
@@ -805,6 +812,8 @@ class ViceDistrict:
             return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
+        await self.tickets.close()
+        await self.ticket_feedback.close()
         if self.ticket_backfill_task:
             self.ticket_backfill_task.cancel()
             await asyncio.gather(self.ticket_backfill_task, return_exceptions=True)

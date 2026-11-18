@@ -1,5 +1,6 @@
 """Private ticket categories and durable, staff-only responsibility assignments."""
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 import logging
 import uuid
 
@@ -17,6 +18,10 @@ CLAIM_ID = 'vice:v1:ticket:claim'
 RELEASE_ID = 'vice:v1:ticket:release'
 CLOSE_ID = 'vice:v2:ticket:close'
 LEGACY_CLOSE_ID = 'vice:v1:ticket:close'
+NOTICE_TITLE = '🙋 Tu ticket ya tiene responsable'
+NOTICE_FOOTER = 'VIce District • Seguimiento de ayuda'
+NOTICE_RETRY_SECONDS = 60
+NOTICE_RETRY_LIMIT = 20
 KINDS = {
     'general': 'Ayuda general',
     'report': 'Reportar a un jugador',
@@ -38,6 +43,10 @@ def assignment_key(channel_id):
 
 def panel_key(channel_id):
     return 'ticket_open_panel:' + str(channel_id)
+
+
+def notice_key(channel_id, revision):
+    return f'ticket_claim_notice:{channel_id}:{revision}'
 
 
 def controls(message):
@@ -121,6 +130,8 @@ class TicketCenter:
     def __init__(self, system):
         self.system = system
         self.registered = False
+        self.notice_task = None
+        self.notice_cursor = 0
 
     async def start(self):
         if not self.registered:
@@ -317,6 +328,8 @@ class TicketCenter:
                 changed = current_id != member.id
                 updated = dict(assignment, staff_id=member.id, staff_name=str(member.display_name)[:100],
                     claimed_at=datetime.now(timezone.utc).isoformat(), released_at=None, released_by=None)
+                if changed:
+                    updated['notice_revision'] = uuid.uuid4().hex
                 response = 'Ahora eres responsable de este ticket.'
             updated.update(guild=GUILD_ID, channel=channel.id, owner=str(row['owner']), kind=self.row_kind(row))
             if changed:
@@ -333,7 +346,187 @@ class TicketCenter:
                     apply, interaction.id, snapshot=snapshot)
             else:
                 await self.ensure_open_panel(channel, row)
+            if not release:
+                await self.try_claim_notice(channel, row)
         await interaction.followup.send(response, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+
+    def notice_scope(self, channel, row):
+        self.valid_channel(channel, row)
+        allowed = {GUILD_ID, BOT_ID, OWNER_ID, int(row['owner'])}
+        allowed.update(int(self.system.store.get('role:' + key) or 0)
+                       for key in ('founder', 'admin', 'mod', 'support'))
+        rules = {target.id: rule for target, rule in channel.overwrites.items()}
+        if (GUILD_ID not in rules or rules[GUILD_ID].view_channel is not False
+                or any(rule.view_channel is True and target not in allowed
+                       for target, rule in rules.items())):
+            raise ValueError('El aviso requiere un ticket privado para el autor y el equipo.')
+
+    @staticmethod
+    def notice_marker(channel_id, revision):
+        return f'https://discord.com/channels/{GUILD_ID}/{channel_id}?claim={revision}'
+
+    def notice_matches(self, message, row, assignment):
+        return (message.author.id == BOT_ID and message.channel.id == int(row['channel'])
+            and message.content == f'<@{row["owner"]}>' and not message.attachments
+            and not message.components and len(message.embeds) == 1
+            and message.embeds[0].title == NOTICE_TITLE
+            and message.embeds[0].description == f'<@{assignment["staff_id"]}> está atendiendo tu caso.'
+            and message.embeds[0].footer.text == NOTICE_FOOTER
+            and message.embeds[0].url == self.notice_marker(row['channel'], assignment['notice_revision']))
+
+    async def claim_notice(self, channel, row):
+        """Caller holds ticket_lock; old assignments deliberately have no notice revision."""
+        current = await self.system.call('ticket', channel.id)
+        self.valid_channel(channel, current)
+        if str(current['owner']) != str(row['owner']):
+            raise ValueError('El ticket cambió; se conserva el aviso pendiente.')
+        assignment = await self.assignment(current)
+        revision = assignment.get('notice_revision')
+        if not revision or assignment.get('staff_id') is None:
+            return None
+        if (not isinstance(revision, str) or len(revision) != 32
+                or any(char not in '0123456789abcdef' for char in revision)):
+            raise ValueError('El registro del aviso necesita revisión del equipo.')
+        key = notice_key(channel.id, revision)
+        expected = dict(guild=GUILD_ID, channel=channel.id, owner=str(current['owner']),
+                        staff_id=assignment['staff_id'], revision=revision)
+        receipt = await self.system.call('get', key) or {}
+        if receipt and any(receipt.get(name) != value for name, value in expected.items()):
+            raise ValueError('El aviso registrado pertenece a otra asignación.')
+        if receipt.get('state') not in (None, 'pending', 'sent'):
+            raise ValueError('El estado del aviso necesita revisión del equipo.')
+        if receipt.get('state') == 'sent':
+            return receipt.get('message_id')
+        guild = self.guild()
+        await self.fresh_staff(guild, assignment['staff_id'])
+        fresh = await guild.fetch_channel(channel.id)
+        if fresh.id != channel.id:
+            raise ValueError('El canal del aviso cambió.')
+        self.notice_scope(fresh, current)
+        receipt = dict(expected, **{k: v for k, v in receipt.items() if k not in expected})
+        found = None
+        if receipt.get('attempted_at'):
+            attempted = datetime.fromisoformat(receipt['attempted_at'])
+            async for message in fresh.history(limit=None, after=attempted - timedelta(seconds=5), oldest_first=True):
+                if self.notice_matches(message, current, assignment):
+                    found = message
+                    break
+            if found is None and datetime.now(timezone.utc) - attempted < timedelta(seconds=10):
+                raise ValueError('La entrega del aviso aún está pendiente de verificación.')
+        async def snapshot():
+            return dict(guild=GUILD_ID, channel=fresh.id, ticket=await self.system.call('ticket', fresh.id),
+                assignment=await self.system.call('get', assignment_key(fresh.id)),
+                receipt=await self.system.call('get', key))
+        async def publish():
+            nonlocal found, fresh
+            # Recheck the registered current assignment at the mutation boundary.
+            fresh = await guild.fetch_channel(channel.id)
+            if fresh.id != channel.id:
+                raise ValueError('El canal del aviso cambió.')
+            latest = await self.system.call('ticket', fresh.id)
+            self.notice_scope(fresh, latest)
+            live_assignment = await self.assignment(latest)
+            if (live_assignment.get('notice_revision') != revision
+                    or live_assignment.get('staff_id') != assignment['staff_id']):
+                raise ValueError('La asignación cambió; no se enviará un aviso anterior.')
+            if found is None:
+                await self.fresh_staff(guild, assignment['staff_id'])
+                receipt.update(state='pending', attempted_at=datetime.now(timezone.utc).isoformat())
+                await self.system.call('put', key, receipt)
+                embed = discord.Embed(title=NOTICE_TITLE,
+                    description=f'<@{assignment["staff_id"]}> está atendiendo tu caso.', color=CYAN,
+                    url=self.notice_marker(fresh.id, revision)).set_footer(text=NOTICE_FOOTER)
+                found = await fresh.send(content=f'<@{current["owner"]}>', embed=embed,
+                    nonce=str(int(revision[:16], 16)), allowed_mentions=discord.AllowedMentions(
+                        users=[discord.Object(id=int(current['owner']))], roles=False, everyone=False,
+                        replied_user=False))
+            receipt.update(state='sent', message_id=found.id, sent_at=datetime.now(timezone.utc).isoformat())
+            await self.system.call('put', key, receipt)
+            return found.id
+        result = await self.system.track('TICKET_CLAIM_NOTICE', 'Avisar al autor del responsable del ticket',
+            publish, f'{channel.id}:{revision}', snapshot=snapshot)
+        log.info('VICE_TICKET_CLAIM_NOTICE channel=%s message=%s', channel.id, result)
+        return result
+
+    async def try_claim_notice(self, channel, row):
+        try:
+            return await self.claim_notice(channel, row)
+        except Exception as error:
+            log.warning('VICE_TICKET_CLAIM_NOTICE_PENDING channel=%s error=%s', channel.id, type(error).__name__)
+            return None
+
+    async def pending_notice(self, row):
+        if not row or row['state'] != 'open':
+            return False
+        assignment = await self.assignment(row)
+        revision = assignment.get('notice_revision')
+        if not revision or assignment.get('staff_id') is None:
+            return False
+        if (not isinstance(revision, str) or len(revision) != 32
+                or any(char not in '0123456789abcdef' for char in revision)):
+            raise ValueError('El registro del aviso necesita revisión del equipo.')
+        receipt = await self.system.call('get', notice_key(row['channel'], revision)) or {}
+        return receipt.get('state') != 'sent'
+
+    async def retry_pending_notices(self):
+        """Poll durable pending receipts only; delivered/legacy tickets use no Discord REST."""
+        event = getattr(self.system, 'ready_event', None)
+        if (not self.system.configured or not isinstance(event, asyncio.Event) or not event.is_set()):
+            return 0
+        guild = self.guild()
+        rows = sorted((row for row in await self.system.call('tickets') if row['state'] == 'open'),
+                      key=lambda row: int(row['channel']))
+        rows = [row for row in rows if int(row['channel']) > self.notice_cursor] + [
+            row for row in rows if int(row['channel']) <= self.notice_cursor]
+        attempted = 0
+        for row in rows:
+            if attempted >= NOTICE_RETRY_LIMIT:
+                break
+            try:
+                if not await self.pending_notice(row):
+                    continue
+                async with self.system.ticket_lock:
+                    if not self.system.configured or not event.is_set():
+                        break
+                    self.guild()
+                    current = await self.system.call('ticket', row['channel'])
+                    if not await self.pending_notice(current):
+                        continue
+                    attempted += 1
+                    self.notice_cursor = int(row['channel'])
+                    channel = await guild.fetch_channel(int(row['channel']))
+                    if channel.id != int(row['channel']):
+                        raise ValueError('El canal del aviso cambió.')
+                    self.notice_scope(channel, current)
+                    # A pending assignment can follow a failed panel edit. Repair
+                    # that exact panel only, rather than polling every open ticket.
+                    await self.ensure_open_panel(channel, current)
+                    await self.try_claim_notice(channel, current)
+            except Exception as error:
+                log.warning('VICE_TICKET_NOTICE_RETRY_PENDING channel=%s error=%s',
+                            row['channel'], type(error).__name__)
+        return attempted
+
+    def start_notice_worker(self):
+        if not isinstance(getattr(self.system, 'ready_event', None), asyncio.Event):
+            return
+        if self.notice_task is None or self.notice_task.done():
+            self.notice_task = asyncio.create_task(self.notice_worker(), name='vice-ticket-claim-notices')
+
+    async def notice_worker(self):
+        await self.system.ready_event.wait()
+        while True:
+            await asyncio.sleep(NOTICE_RETRY_SECONDS)
+            try:
+                await self.retry_pending_notices()
+            except Exception as error:
+                log.warning('VICE_TICKET_NOTICE_WORKER error=%s', type(error).__name__)
+
+    async def close(self):
+        task, self.notice_task = self.notice_task, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     async def claim(self, interaction):
         await self.update_assignment(interaction, release=False)
@@ -372,6 +565,7 @@ class TicketCenter:
 
     async def ready(self):
         guild = self.guild()
+        self.start_notice_worker()
         updated = 0
         for row in await self.system.call('tickets'):
             if row['state'] != 'open':
@@ -380,6 +574,7 @@ class TicketCenter:
                 try:
                     channel = await guild.fetch_channel(int(row['channel']))
                     await self.ensure_open_panel(channel, row)
+                    await self.try_claim_notice(channel, row)
                     updated += 1
                 except discord.NotFound as error:
                     if error.code != 10003:

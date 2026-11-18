@@ -237,6 +237,29 @@ keeping ticket rows, assignments and panel receipts. To disable deletion safely,
 remove its controls; do not bypass the required backup check. Keep the archive channel,
 ZIP files and receipts as private records. Original Discord IDs cannot be restored.
 
+### Ticket assignment notices and private feedback
+
+New assignments publish one concise notice inside the registered private ticket,
+permitting a notification only to that ticket's owner. A persisted assignment revision
+and exact bot message marker recover interrupted sends without duplicate notices.
+Existing assignments are not notified retroactively. Failure to send never undoes
+the assigned responsible member. A bounded worker retries pending notices every
+60 seconds, and shutdown cancels it cleanly.
+
+`vice_ticket_feedback.py` freezes category, owner and assignee at closure and adds
+an author-only 1–5 rating form with an optional comment. The selector and modal are
+private; only an explicit submission creates a rating. One durable response is allowed
+per ticket, and current guild, member, source panel and closed-ticket scope are checked.
+Responses are delivered without pings to the registered administration-only
+`valoraciones` channel in Equipo, with the same publication restrictions as other
+view-only panels. Moderation and support cannot view responses through their roles.
+Pending deliveries survive restarts; ratings remain retained after ticket deletion.
+An independent worker retries up to 20 pending deliveries per pass every 60 seconds.
+Comments never appear in the ticket or its staff archive copy. Disabling the feature
+requires removing its notice/close hooks and feedback control together, preserving
+ratings, closure snapshots and delivery receipts. Do not replay old notifications,
+delete feedback history or create demonstration ratings on the live server.
+
 ### Closed ticket deletion controls
 
 `vice_ticket_delete.py` adds the persistent red **Eliminar** button to registered

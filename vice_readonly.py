@@ -39,7 +39,7 @@ class ReadOnlyChannels:
 
     def target_ids(self):
         keys = [spec[0] for spec in CHANNELS if spec[4] in READONLY_POLICIES and not spec[5]]
-        ids = {self.system.channel_id(key) for key in keys + ['voicepanel', 'ticket_archive']}
+        ids = {self.system.channel_id(key) for key in keys + ['voicepanel', 'ticket_archive', 'ticket_feedback']}
         ids.update(int(row['channel']) for row in self.system.store.tickets() if row['state'] == 'closed')
         return {int(value) for value in ids if value}
 

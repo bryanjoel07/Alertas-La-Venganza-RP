@@ -19,6 +19,7 @@ from vice_ticket_delete import ConfirmDeleteView, DeleteTicketPanel, TicketDelet
 FOOTER = 'GTA VI Latino • Puerto Rico + Latinoamérica • Fans no oficiales'
 CLOSE = 'vice:v1:ticket:close'
 DELETE = 'vice:v1:ticket:delete'
+FEEDBACK = 'vice:v1:ticket:feedback'
 
 
 def missing():
@@ -119,6 +120,7 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.system.ticket_archive = NS(backup=AsyncMock(return_value={
             'state': 'verified', 'sha256': 'a' * 64, 'message_id': 998}),
             verify_current=AsyncMock(return_value=self.channel))
+        self.system.ticket_feedback = NS(request=AsyncMock())
         await self.manager.start()
 
     def member(self, user_id, *, staff=False):
@@ -177,7 +179,7 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_persistent_delete_view_and_request_do_not_delete_without_confirmation(self):
         self.assertTrue(DeleteTicketPanel(self.manager).is_persistent())
-        self.assertEqual([c.custom_id for c in DeleteTicketPanel(self.manager).children], [DELETE])
+        self.assertEqual([c.custom_id for c in DeleteTicketPanel(self.manager).children], [FEEDBACK, DELETE])
         self.bot.add_view.assert_called_once()
         interaction, view = await self.requested()
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
@@ -189,6 +191,44 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(view.timeout, 60)
         self.channel.delete.assert_not_awaited()
         self.assertEqual(self.store.ticket(55)['state'], 'closed')
+
+    async def test_feedback_button_delegates_to_private_author_only_workflow_without_deleting(self):
+        panel = await self.prepared()
+        interaction = self.interaction(user=self.member(999), panel=panel)
+        view = DeleteTicketPanel(self.manager)
+        button = next(child for child in view.children if child.custom_id == FEEDBACK)
+        await button.callback(interaction)
+        self.system.ticket_feedback.request.assert_awaited_once_with(interaction)
+        self.channel.delete.assert_not_awaited()
+        self.system.ticket_archive.backup.assert_not_awaited()
+        self.assertEqual(self.store.ticket(55)['state'], 'closed')
+
+    async def test_feedback_control_migrates_registered_delete_only_panel_once_in_place(self):
+        panel = await self.prepared()
+        # Even a matching current description must not skip a missing feedback control.
+        panel.components = [NS(children=[NS(custom_id=DELETE, disabled=False)])]
+        panel.edit.reset_mock()
+        await self.manager.ready()
+        self.assertEqual([c.custom_id for row in panel.components for c in row.children], [FEEDBACK, DELETE])
+        self.assertIn('solo para Administración', panel.embeds[0].description)
+        self.assertEqual(self.store.get('ticket_delete:55')['panel_id'], panel.id)
+        panel.edit.assert_awaited_once()
+        await self.manager.ready()
+        panel.edit.assert_awaited_once()
+        self.channel.send.assert_not_awaited()
+        self.channel.delete.assert_not_awaited()
+
+    async def test_feedback_panel_recognition_rejects_unknown_or_duplicate_controls(self):
+        panel = await self.prepared()
+        self.assertTrue(self.manager.archive_matches(panel, 55))
+        for identifiers in ((DELETE, FEEDBACK, 'foreign:button'), (FEEDBACK, FEEDBACK), (DELETE, 'foreign:button')):
+            panel.components = [NS(children=[NS(custom_id=value, disabled=False) for value in identifiers])]
+            with self.subTest(identifiers=identifiers):
+                self.assertFalse(self.manager.archive_matches(panel, 55))
+                with self.assertRaises(ValueError):
+                    await self.manager.ensure_closed_panel(self.channel)
+        self.channel.send.assert_not_awaited()
+        self.channel.delete.assert_not_awaited()
 
     async def test_regular_ticket_owner_and_stale_cached_staff_cannot_request_delete(self):
         panel = await self.prepared()
