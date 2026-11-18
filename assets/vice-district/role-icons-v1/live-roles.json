@@ -1,0 +1,324 @@
+[
+  {
+    "id": "1572465087304700047",
+    "name": "👑 Fundador",
+    "color": 16739146,
+    "managed": false,
+    "position": 46
+  },
+  {
+    "id": "1572465389877858415",
+    "name": "🛡️ Moderación",
+    "color": 16717450,
+    "managed": false,
+    "position": 42
+  },
+  {
+    "id": "1572465800231788685",
+    "name": "🎬 Creadores",
+    "color": 12090111,
+    "managed": false,
+    "position": 40
+  },
+  {
+    "id": "1572465895341695036",
+    "name": "🤝 Crew",
+    "color": 55784,
+    "managed": false,
+    "position": 35
+  },
+  {
+    "id": "1572466044071575562",
+    "name": "🌴 Ciudadano",
+    "color": 2284724,
+    "managed": false,
+    "position": 36
+  },
+  {
+    "id": "1572466655785652308",
+    "name": "🤖 EssChino Studio Bot",
+    "color": 3447003,
+    "managed": true,
+    "position": 45
+  },
+  {
+    "id": "1572473452848226364",
+    "name": "🛟 Soporte",
+    "color": 3723182,
+    "managed": false,
+    "position": 41
+  },
+  {
+    "id": "1572473456639869050",
+    "name": "🎮 PlayStation 5",
+    "color": 7118847,
+    "managed": false,
+    "position": 7
+  },
+  {
+    "id": "1572473457579659367",
+    "name": "🎮 Xbox Series X|S",
+    "color": 5817962,
+    "managed": false,
+    "position": 6
+  },
+  {
+    "id": "1572473458577907792",
+    "name": "⌛ PC · Esperando GTA VI",
+    "color": 11309301,
+    "managed": false,
+    "position": 5
+  },
+  {
+    "id": "1572473460339245166",
+    "name": "🌋 Centroamérica",
+    "color": 16752229,
+    "managed": false,
+    "position": 13
+  },
+  {
+    "id": "1572473461580763207",
+    "name": "🌴 Caribe",
+    "color": 2611396,
+    "managed": false,
+    "position": 12
+  },
+  {
+    "id": "1572473463346692177",
+    "name": "🌎 Sudamérica",
+    "color": 6670730,
+    "managed": false,
+    "position": 11
+  },
+  {
+    "id": "1572474472206835712",
+    "name": "━━ 🛡️ EQUIPO ━━",
+    "color": 16717450,
+    "managed": false,
+    "position": 44
+  },
+  {
+    "id": "1572474481472180295",
+    "name": "━━ 🌆 COMUNIDAD ━━",
+    "color": 55784,
+    "managed": false,
+    "position": 39
+  },
+  {
+    "id": "1572474482184949824",
+    "name": "💎 Leyenda de Vice",
+    "color": 16765802,
+    "managed": false,
+    "position": 38
+  },
+  {
+    "id": "1572474483283992700",
+    "name": "🌆 Veterano",
+    "color": 11828479,
+    "managed": false,
+    "position": 37
+  },
+  {
+    "id": "1572474486337576982",
+    "name": "━━ 🎮 PLATAFORMAS ━━",
+    "color": 8560383,
+    "managed": false,
+    "position": 8
+  },
+  {
+    "id": "1572474490833731594",
+    "name": "🇲🇽 México",
+    "color": 5553323,
+    "managed": false,
+    "position": 22
+  },
+  {
+    "id": "1572474495506059396",
+    "name": "🌎 Norteamérica",
+    "color": 7384311,
+    "managed": false,
+    "position": 10
+  },
+  {
+    "id": "1572474499712946327",
+    "name": "━━ 🌅 RECIÉN LLEGADOS ━━",
+    "color": 5814271,
+    "managed": false,
+    "position": 3
+  },
+  {
+    "id": "1572474500770172958",
+    "name": "👤 Miembro",
+    "color": 5814271,
+    "managed": false,
+    "position": 2
+  },
+  {
+    "id": "1572475199696404592",
+    "name": "🇵🇷 Puerto Rico",
+    "color": 16730214,
+    "managed": false,
+    "position": 33
+  },
+  {
+    "id": "1572581938798272642",
+    "name": "⚙️ Administrador",
+    "color": 16730214,
+    "managed": false,
+    "position": 43
+  },
+  {
+    "id": "1572688094413463663",
+    "name": "━━ 🌎 PAÍSES ━━",
+    "color": 16739743,
+    "managed": false,
+    "position": 34
+  },
+  {
+    "id": "1572688098997964892",
+    "name": "🇦🇷 Argentina",
+    "color": 6932981,
+    "managed": false,
+    "position": 32
+  },
+  {
+    "id": "1572688106065502301",
+    "name": "🇧🇴 Bolivia",
+    "color": 6870667,
+    "managed": false,
+    "position": 31
+  },
+  {
+    "id": "1572688110654066780",
+    "name": "🇨🇱 Chile",
+    "color": 15557758,
+    "managed": false,
+    "position": 30
+  },
+  {
+    "id": "1572688113065525379",
+    "name": "🇨🇴 Colombia",
+    "color": 15912025,
+    "managed": false,
+    "position": 29
+  },
+  {
+    "id": "1572688114374414476",
+    "name": "🇨🇷 Costa Rica",
+    "color": 6135039,
+    "managed": false,
+    "position": 28
+  },
+  {
+    "id": "1572688119059320932",
+    "name": "🇨🇺 Cuba",
+    "color": 5616882,
+    "managed": false,
+    "position": 27
+  },
+  {
+    "id": "1572688123694022888",
+    "name": "🇪🇨 Ecuador",
+    "color": 15713111,
+    "managed": false,
+    "position": 26
+  },
+  {
+    "id": "1572688124557926544",
+    "name": "🇸🇻 El Salvador",
+    "color": 6795002,
+    "managed": false,
+    "position": 25
+  },
+  {
+    "id": "1572688129960317308",
+    "name": "🇬🇹 Guatemala",
+    "color": 8048119,
+    "managed": false,
+    "position": 24
+  },
+  {
+    "id": "1572688135094280373",
+    "name": "🇭🇳 Honduras",
+    "color": 6148837,
+    "managed": false,
+    "position": 23
+  },
+  {
+    "id": "1572688147119087738",
+    "name": "🇳🇮 Nicaragua",
+    "color": 6928370,
+    "managed": false,
+    "position": 21
+  },
+  {
+    "id": "1572688148322984036",
+    "name": "🇵🇦 Panamá",
+    "color": 15826060,
+    "managed": false,
+    "position": 20
+  },
+  {
+    "id": "1572688148968767651",
+    "name": "🇵🇾 Paraguay",
+    "color": 15304609,
+    "managed": false,
+    "position": 19
+  },
+  {
+    "id": "1572688150608871635",
+    "name": "🇵🇪 Perú",
+    "color": 15820926,
+    "managed": false,
+    "position": 18
+  },
+  {
+    "id": "1572688152383070429",
+    "name": "🇩🇴 República Dominicana",
+    "color": 7704564,
+    "managed": false,
+    "position": 17
+  },
+  {
+    "id": "1572688170548596777",
+    "name": "🇺🇾 Uruguay",
+    "color": 8897525,
+    "managed": false,
+    "position": 16
+  },
+  {
+    "id": "1572688171496513767",
+    "name": "🇻🇪 Venezuela",
+    "color": 16170595,
+    "managed": false,
+    "position": 15
+  },
+  {
+    "id": "1572688173459443733",
+    "name": "━━ 🧭 REGIONES ━━",
+    "color": 2414795,
+    "managed": false,
+    "position": 14
+  },
+  {
+    "id": "1572688189829677079",
+    "name": "🏝️ Antillas Mayores",
+    "color": 5297130,
+    "managed": false,
+    "position": 9
+  },
+  {
+    "id": "1572692912930685020",
+    "name": "☁️ Xbox One · Nube",
+    "color": 6997733,
+    "managed": false,
+    "position": 4
+  },
+  {
+    "id": "1572695862809853982",
+    "name": "Server Booster",
+    "color": 16023551,
+    "managed": true,
+    "position": 1
+  }
+]

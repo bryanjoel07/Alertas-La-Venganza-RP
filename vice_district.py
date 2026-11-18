@@ -28,6 +28,7 @@ from vice_ticket_archive import TicketArchive
 from vice_ticket_feedback import TicketFeedback
 from vice_optional_roles import OptionalRoles
 from vice_identity_panels import refresh_identity_panels
+from vice_role_icons import RoleIcons
 from vice_antispam import AntiSpam
 from vice_role_catalog import GROUP_SCOPES
 from welcome_cards import WelcomeCards, clean_name
@@ -136,6 +137,7 @@ class ViceDistrict:
         self.ticket_archive = TicketArchive(self)
         self.ticket_feedback = TicketFeedback(self)
         self.optional_roles = OptionalRoles(self)
+        self.role_icons = RoleIcons(self)
         self.antispam = AntiSpam(self)
         self.ticket_backfill_task = None
         self.ready_lock = asyncio.Lock()
@@ -275,6 +277,7 @@ class ViceDistrict:
                 ('optional_roles', lambda: self.optional_roles.ready(lambda: self.panel(
                     guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))),
                 ('identity_guidance', lambda: refresh_identity_panels(self)),
+                ('role_icons', self.role_icons.ready),
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
                 ('ticket_feedback', self.ticket_feedback.ready),
                 ('support_panel', self.refresh_ticket_panel), ('ticket_deletion', self.ticket_deletion.ready),
