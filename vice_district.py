@@ -26,7 +26,9 @@ from vice_ticket_delete import TicketDeletion
 from vice_tickets import TicketCenter
 from vice_ticket_archive import TicketArchive
 from vice_ticket_feedback import TicketFeedback
+from vice_optional_roles import OptionalRoles
 from vice_antispam import AntiSpam
+from vice_role_catalog import GROUP_SCOPES
 from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
@@ -91,7 +93,7 @@ class RoleSelect(discord.ui.Select):
     async def callback(self, interaction):
         await interaction.response.defer(ephemeral=True)
         await self.system.select_roles(interaction, self.group, self.values)
-        await interaction.followup.send('✅ Preferencias actualizadas. Puedes cambiarlas cuando quieras.', ephemeral=True)
+        await interaction.followup.send('✅ Roles actualizados. Puedes cambiarlos cuando quieras.', ephemeral=True)
 
 
 class RolesPanel(SafeView):
@@ -132,6 +134,7 @@ class ViceDistrict:
         self.tickets = TicketCenter(self)
         self.ticket_archive = TicketArchive(self)
         self.ticket_feedback = TicketFeedback(self)
+        self.optional_roles = OptionalRoles(self)
         self.antispam = AntiSpam(self)
         self.ticket_backfill_task = None
         self.ready_lock = asyncio.Lock()
@@ -234,6 +237,9 @@ class ViceDistrict:
     async def ready(self):
         async with self.ready_lock:
             if self.configured:
+                guild = self.bot.get_guild(GUILD_ID)
+                await self.optional_roles.ready(lambda: self.panel(
+                    guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))
                 await self.voice.ready()
                 await self.readonly.ready()
                 await self.community.ready()
@@ -254,6 +260,8 @@ class ViceDistrict:
             if self.store.get('decoration_release') != DECORATION_VERSION:
                 await self.track('DECORATION', 'Decorar categorías y canales del distrito',
                     lambda: self.decorate(guild), DECORATION_VERSION)
+            await self.optional_roles.ready(lambda: self.panel(
+                guild, 'roles', panel_copy('roles', self.channel_id), RolesPanel(self)))
             self.configured = True
             self.ready_event.set()
             if self.welcome.task is None or self.welcome.task.done():
@@ -613,20 +621,35 @@ class ViceDistrict:
         if group not in GROUPS:
             raise ValueError('Grupo de roles desconocido.')
         _, keys, maximum = GROUPS[group]
-        if len(selected) > maximum or not set(selected) <= (set(keys) & SELF_ROLES):
-            raise ValueError('Selección de roles no válida.')
-        roles = {key: self.role(interaction.guild, key) for key in keys}
-        if any(role is None or role.permissions.value != 0 or role.managed for role in roles.values()):
+        selected = list(selected)
+        if (len(selected) != len(set(selected)) or len(selected) > maximum
+                or not set(selected) <= (set(keys) & SELF_ROLES)):
+            raise ValueError('Selección de roles no válida. Usa el panel actualizado de elige-tus-roles.')
+        scope = tuple(GROUP_SCOPES.get(group, keys))
+        if not set(keys) <= set(scope) or not set(scope) <= SELF_ROLES:
             raise ValueError('Estos roles necesitan revisión del equipo.')
         async with self.roles_lock:
+            # Both country pages replace the same country slot. Read live role
+            # definitions so a formerly cosmetic role cannot grant new powers.
+            live_roles = {role.id: role for role in await interaction.guild.fetch_roles()}
+            roles = {key: live_roles.get(self.store.get('role:' + key)) for key in scope}
+            protected = {self.store.get('role:' + key) for key, *_ in ROLES if key not in SELF_ROLES}
+            protected.add(self.store.get('role:founder'))
+            if (any(role is None or role.permissions.value != 0 or role.managed
+                    or role.id == interaction.guild.id or role.id in protected
+                    or role.guild.id != interaction.guild_id for role in roles.values())
+                    or len({role.id for role in roles.values()}) != len(roles)):
+                raise ValueError('Estos roles necesitan revisión del equipo.')
             member = await interaction.guild.fetch_member(interaction.user.id)
+            if member.id != interaction.user.id or member.guild.id != interaction.guild_id or member.bot:
+                raise ValueError('No se pudo validar al miembro del distrito.')
             async def apply():
                 remove = [role for key, role in roles.items() if key not in selected and role in member.roles]
                 add = [role for key, role in roles.items() if key in selected and role not in member.roles]
                 if remove:
-                    await member.remove_roles(*remove, reason='Preferencias elegidas por el miembro')
+                    await member.remove_roles(*remove, reason='Roles opcionales elegidos por el miembro')
                 if add:
-                    await member.add_roles(*add, reason='Preferencias elegidas por el miembro')
+                    await member.add_roles(*add, reason='Roles opcionales elegidos por el miembro')
             await self.track('ROLES', 'Actualizar roles opcionales del miembro', apply, interaction.id,
                 snapshot=lambda: self.role_snapshot(interaction.guild, member.id))
 

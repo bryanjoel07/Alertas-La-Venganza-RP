@@ -260,6 +260,30 @@ requires removing its notice/close hooks and feedback control together, preservi
 ratings, closure snapshots and delivery receipts. Do not replay old notifications,
 delete feedback history or create demonstration ratings on the live server.
 
+### Country, region and platform roles
+
+The optional role catalog includes 50 inhabited Latin America/Caribbean countries
+and territories, 11 overlapping regional identity tags, and 10 gaming platform
+families. Country coverage follows UN M49; Bouvet and South Georgia/South Sandwich
+are omitted because they have no permanent population. Puerto Rico comes first.
+The old Preferences divider retains its ID and becomes Platforms. Countries,
+Regions and Alerts each receive a separate divider. Existing roles and member
+assignments are preserved; all added roles are cosmetic with zero permissions.
+
+`vice_optional_roles.py` applies only its versioned catalog migration, using
+journaled before-states and durable creation nonces with exact audit recovery.
+It does not replay base/staff installation or modify welcome/ticket permissions.
+Both country selectors (25 options each) share one replacement scope. Regions,
+platforms and alerts remain independent, multi-select groups. Every selection
+fetches current roles and member data; managed, protected or privileged roles
+are rejected. Staff/rank roles remain manually assigned. The five controls stay
+in `elige-tus-roles`; none is added to the welcome panel.
+
+To disable, remove the optional migration hook and adapt the roles panel together.
+Keep the role registry, creation receipts and member assignments. Do not delete
+roles or replay a full installation as a rollback. Platform tags describe community
+members' devices and do not announce GTA VI availability.
+
 ### Closed ticket deletion controls
 
 `vice_ticket_delete.py` adds the persistent red **Eliminar** button to registered

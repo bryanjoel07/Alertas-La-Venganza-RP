@@ -1,5 +1,6 @@
 """The owner's GTA VI community design; never used by the Studio storefront."""
 from pathlib import Path
+from vice_role_catalog import OPTIONAL_ROLES, OPTIONAL_GROUPS
 
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
@@ -34,27 +35,11 @@ ROLES = [
     ('veteran', '🌆 Veterano', 0xB47CFF, {}, True, None),
     ('citizen', '🌴 Ciudadano', 0x22DCB4, {}, True, '🌴 Comunidad'),
     ('crew', '🤝 Crew', CYAN, {}, False, 'Crew'),
-    ('preferences_separator', '━━ 🎮 PREFERENCIAS ━━', 0x6C9FFF, {}, False, None),
-    ('ps', '🎮 PlayStation', 0x6C9FFF, {}, False, None),
-    ('xbox', '🎮 Xbox', 0x58C66A, {}, False, None),
-    ('pc', '💻 PC', 0xAC90F5, {}, False, None),
-    ('pr', '🇵🇷 Puerto Rico', 0xFF4866, {}, False, None),
-    ('mexico', '🇲🇽 México', 0x54BCAB, {}, False, None),
-    ('central', '🌋 Centroamérica', 0x54BCAB, {}, False, None),
-    ('caribbean', '🌴 Caribe', 0x54BCAB, {}, False, None),
-    ('south', '🌎 Sudamérica', 0x54BCAB, {}, False, None),
-    ('north', '🌎 Norteamérica', 0x54BCAB, {}, False, None),
-    ('europe', '🌍 España / Europa', 0x54BCAB, {}, False, None),
-    ('news', '📰 Avisos de GTA VI', 0xFFB36A, {}, False, None),
-    ('events', '🎉 Avisos de eventos', 0xFF8EBE, {}, False, None),
+    *OPTIONAL_ROLES,
     ('entry_separator', '━━ 🌅 RECIÉN LLEGADOS ━━', 0x58B7FF, {}, False, None),
     ('member', '👤 Miembro', 0x58B7FF, {}, True, None),
 ]
-GROUPS = {
-    'platform': ('Tus plataformas', ['ps', 'xbox', 'pc'], 3),
-    'region': ('Tu región · Puerto Rico y Latinoamérica', ['pr', 'mexico', 'central', 'caribbean', 'south', 'north', 'europe'], 1),
-    'interests': ('Tus avisos y tu crew', ['news', 'events', 'crew'], 3),
-}
+GROUPS = OPTIONAL_GROUPS
 SELF_ROLES = frozenset(key for _, keys, _ in GROUPS.values() for key in keys)
 CATEGORIES = [
     ('info', '━━ 🌴 EMPIEZA AQUÍ ━━', 'read'),
@@ -68,7 +53,7 @@ CATEGORIES = [
 CHANNELS = [
     ('welcome','info','╭・👋│bienvenida','Tu llegada a VIce District. Lee las normas, elige tus roles y conoce a la comunidad.','read',False,0),
     ('rules','info','├・📜│normas','Convivencia, privacidad, spoilers y juego limpio.','read',False,0),
-    ('roles','info','├・🎭│elige-tus-roles','Personaliza tu perfil: plataformas, región y avisos. Puedes cambiar tus elecciones cuando quieras.','read',False,0),
+    ('roles','info','├・🎭│elige-tus-roles','Personaliza tu perfil: país o territorio, regiones, plataformas y avisos. Todo es opcional y puedes cambiarlo cuando quieras.','read',False,0),
     ('announcements','info','╰・📢│anuncios','Comunicados de la comunidad y novedades del servidor.','read',False,0),
     ('general','community','╭・💬│general','El punto de encuentro del corillo boricua y latinoamericano. Charla, comparte y disfruta del ambiente.','chat',False,5),
     ('introductions','community','├・🙌│presentaciones','Cuéntanos tu apodo, región, plataformas y tu GTA favorito. No publiques datos personales.','chat',False,10),
@@ -115,11 +100,13 @@ def panel_copy(key, c):
             f'**¿Necesitas reportar algo?** Abre un ticket en {ref("support")}; evita confrontaciones públicas.', CORAL),
         'roles': ('🎭 TU IDENTIDAD EN EL DISTRITO',
             '**Tu comunidad, a tu manera.**\n\n'
-            '🎮 **Plataformas:** elige todas las que usas.\n'
-            '🌎 **Región:** una opción, totalmente voluntaria.\n'
+            '🌎 **País o territorio:** 50 opciones de Latinoamérica y el Caribe, con Puerto Rico primero. Elige uno en cualquiera de las dos primeras listas.\n'
+            '🧭 **Regiones:** elige las zonas con las que te identificas.\n'
+            '🎮 **Plataformas:** marca todas las que usas para jugar.\n'
             '🔔 **Intereses:** avisos de GTA VI, eventos y búsqueda de crew.\n\n'
-            'Cada menú reemplaza solo las opciones de su grupo. Déjalo vacío para retirarlas. '
-            'Puedes volver cuando quieras.\n\n'
+            'Todo es opcional. Las dos listas de países comparten una sola elección; las demás listas son independientes. '
+            'Deja un menú vacío para retirar los roles de ese grupo.\n\n'
+            'Las plataformas describen a la comunidad y no indican disponibilidad de GTA VI.\n\n'
             '**Equipo:** Fundador, Administrador, Moderación y Soporte.\n'
             '**Tu recorrido:** 👤 Miembro → 🌴 Ciudadano → 🌆 Veterano → 💎 Leyenda de Vice.\n'
             '**Miembro** se entrega al entrar; **Ciudadano**, al aceptar las normas. '

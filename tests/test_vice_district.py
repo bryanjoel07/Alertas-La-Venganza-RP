@@ -87,6 +87,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
             self.rolemap[key] = role
             self.system.store.put('role:' + key, index)
         self.guild.get_role.side_effect = lambda rid: next((r for r in self.rolemap.values() if r.id == rid), None)
+        self.guild.fetch_roles = AsyncMock(side_effect=lambda: list(self.rolemap.values()))
         async def track(kind, title, operation, request, snapshot=None):
             return await operation()
         self.system.track = AsyncMock(side_effect=track)
@@ -108,7 +109,13 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
     async def test_member_is_lowest_and_all_roles_have_solid_colors(self):
         self.assertEqual(ROLES[-1][0], 'member')
         self.assertTrue(all(0 < spec[2] <= 0xFFFFFF for spec in ROLES))
-        self.assertEqual(len([r for r in ROLES if r[0].endswith('separator')]),4)
+        separators = {row[0]: row for row in ROLES if row[0].endswith('separator')}
+        self.assertEqual(set(separators), {
+            'team_separator', 'community_separator', 'country_separator',
+            'region_separator', 'preferences_separator', 'interests_separator', 'entry_separator'})
+        self.assertTrue(all(not row[3] and row[4] is False for row in separators.values()))
+        self.assertIn('PLATAFORMAS', separators['preferences_separator'][1])
+        self.assertNotIn('PREFERENCIAS', separators['preferences_separator'][1])
         for key in ['member','citizen','veteran','legend']:
             self.assertEqual(self.rolemap[key].permissions.value,0)
 
