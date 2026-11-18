@@ -6,7 +6,10 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from vice_design import BOT_ID, GUILD_ID, OWNER_ID
-from vice_expressions import ANIMATED_EMOJIS, EXPRESSIONS_VERSION, STATIC_EMOJIS, install_expansion
+from vice_expressions import (
+    ALL_ANIMATED_EMOJIS, ANIMATED_EMOJIS, EMOJI_PACKS, EXPRESSIONS_VERSION,
+    HYPE_ANIMATED_EMOJIS, MASCOT_ANIMATED_EMOJIS, STATIC_EMOJIS, install_expansion,
+)
 
 
 class ExpressionsTests(unittest.IsolatedAsyncioTestCase):
@@ -14,11 +17,10 @@ class ExpressionsTests(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.assets = Path(self.tmp.name)
-        for folder, names, extension, header in (
-            ('static', STATIC_EMOJIS, '.png', b'\x89PNG\r\n\x1a\n'),
-            ('animated', ANIMATED_EMOJIS, '.gif', b'GIF89a'),
-        ):
-            base = self.assets / 'emojis-v2' / folder
+        self.total = len(STATIC_EMOJIS) + len(ALL_ANIMATED_EMOJIS)
+        for animated, names, folder, extension in EMOJI_PACKS:
+            header = b'GIF89a' if animated else b'\x89PNG\r\n\x1a\n'
+            base = self.assets / folder
             base.mkdir(parents=True)
             for name in names:
                 (base / (name + extension)).write_bytes(header + b'test-only-format-payload')
@@ -64,19 +66,58 @@ class ExpressionsTests(unittest.IsolatedAsyncioTestCase):
         self.system.track.assert_not_awaited()
 
     async def test_each_format_has_independent_quota_and_preflight_never_partially_uploads(self):
-        self.guild.emoji_limit = 6
-        for animated in (False, True):
-            self.existing[:] = [self.existing_emoji(1, animated=animated)]
+        self.guild.emoji_limit = max(len(STATIC_EMOJIS), len(ALL_ANIMATED_EMOJIS))
+        for animated, names in ((False, STATIC_EMOJIS), (True, ALL_ANIMATED_EMOJIS)):
+            occupied = self.guild.emoji_limit - len(names) + 1
+            self.existing[:] = [self.existing_emoji(index, animated=animated)
+                                for index in range(occupied)]
             with self.subTest(animated=animated), self.assertRaisesRegex(ValueError, 'espacios'):
                 await install_expansion(self.system)
             self.guild.create_custom_emoji.assert_not_awaited()
             self.system.track.assert_not_awaited()
             self.assertEqual(self.config, {})
-        # Six of each type is allowed, even though their combined count is twelve.
+        # Each format has its own quota, even when the combined count exceeds it.
         self.existing.clear()
         await install_expansion(self.system)
-        self.assertEqual(sum(e.animated for e in self.existing), 6)
-        self.assertEqual(sum(not e.animated for e in self.existing), 6)
+        self.assertEqual(sum(e.animated for e in self.existing), len(ALL_ANIMATED_EMOJIS))
+        self.assertEqual(sum(not e.animated for e in self.existing), len(STATIC_EMOJIS))
+
+    async def test_upgrade_sums_both_new_animated_packs_before_upload_and_preserves_previous(self):
+        for animated, names in ((False, STATIC_EMOJIS), (True, ANIMATED_EMOJIS)):
+            for name in names:
+                emoji = self.existing_emoji(len(self.existing), animated=animated,
+                                            name=name, author=BOT_ID)
+                self.existing.append(emoji)
+                self.config['emoji:' + name] = emoji.id
+        self.config['emoji_expansion_release'] = 'vice-expressions-expanded-v1'
+        previous = list(self.existing)
+        previous_config = dict(self.config)
+        new_names = MASCOT_ANIMATED_EMOJIS + HYPE_ANIMATED_EMOJIS
+
+        # Ten free animated slots fit either six-emoji pack, but not both packs.
+        self.guild.emoji_limit = len(ANIMATED_EMOJIS) + len(new_names) - 2
+        with self.assertRaisesRegex(ValueError, 'espacios'):
+            await install_expansion(self.system)
+        self.guild.create_custom_emoji.assert_not_awaited()
+        self.system.track.assert_not_awaited()
+        self.system.call.assert_not_awaited()
+        self.assertEqual(self.existing, previous)
+        self.assertEqual(self.config, previous_config)
+
+        # Exactly enough animated slots permit the whole upgrade in one tracked operation.
+        self.guild.emoji_limit = len(ALL_ANIMATED_EMOJIS)
+        await install_expansion(self.system)
+        self.assertEqual(self.guild.create_custom_emoji.await_count, len(new_names))
+        self.assertEqual({call.kwargs['name'] for call in self.guild.create_custom_emoji.await_args_list},
+                         set(new_names))
+        self.assertEqual(len(self.existing), self.total)
+        for index, emoji in enumerate(previous):
+            self.assertIs(self.existing[index], emoji)
+            self.assertEqual(self.config['emoji:' + emoji.name], emoji.id)
+            self.assertEqual([role.id for role in emoji.roles], [500])
+        self.system.track.assert_awaited_once()
+        self.assertEqual(len(self.snapshots[0][1]['emojis']), len(previous))
+        self.assertEqual(self.config['emoji_expansion_release'], EXPRESSIONS_VERSION)
 
     async def test_existing_foreign_emoji_is_preserved_and_new_emojis_are_unrestricted(self):
         foreign = self.existing_emoji(1, name=STATIC_EMOJIS[0])
@@ -84,15 +125,15 @@ class ExpressionsTests(unittest.IsolatedAsyncioTestCase):
         await install_expansion(self.system)
         self.assertIs(self.existing[0], foreign)
         self.assertEqual(foreign.roles[0].id, 500)
-        self.assertEqual(len(self.existing), 13)
-        self.assertEqual(self.guild.create_custom_emoji.await_count, 12)
+        self.assertEqual(len(self.existing), self.total + 1)
+        self.assertEqual(self.guild.create_custom_emoji.await_count, self.total)
         for call in self.guild.create_custom_emoji.await_args_list:
             self.assertEqual(call.kwargs['roles'], [])
         kind, before, after = self.snapshots[0]
         self.assertEqual(kind, 'EXPRESSIONS_EXPAND')
         self.assertEqual(before['emojis'], [dict(id=foreign.id, name=foreign.name,
                                                animated=False, roles=[500])])
-        self.assertEqual(len(after['emojis']), 13)
+        self.assertEqual(len(after['emojis']), self.total + 1)
 
     async def test_retry_recovers_upload_before_database_write_and_marker_skips_api(self):
         put = self.system.call.side_effect
@@ -110,9 +151,9 @@ class ExpressionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.existing), 1)
         self.assertNotIn('emoji_expansion_release', self.config)
         await install_expansion(self.system)
-        self.assertEqual(len(self.existing), 12)
+        self.assertEqual(len(self.existing), self.total)
         self.assertEqual(self.config['emoji:' + STATIC_EMOJIS[0]], first_id)
-        self.assertEqual(self.guild.create_custom_emoji.await_count, 12)
+        self.assertEqual(self.guild.create_custom_emoji.await_count, self.total)
         self.assertEqual(self.config['emoji_expansion_release'], EXPRESSIONS_VERSION)
         self.guild.fetch_emojis.reset_mock()
         self.guild.create_custom_emoji.reset_mock()
@@ -121,7 +162,7 @@ class ExpressionsTests(unittest.IsolatedAsyncioTestCase):
         self.guild.create_custom_emoji.assert_not_awaited()
 
     async def test_invalid_animated_payload_or_registered_format_aborts_without_upload(self):
-        path = self.assets / 'emojis-v2' / 'animated' / (ANIMATED_EMOJIS[-1] + '.gif')
+        path = self.assets / 'emojis-v3' / 'hype' / (HYPE_ANIMATED_EMOJIS[-1] + '.gif')
         for data in (b'not-a-gif', b'GIF89a' + b'x' * (256 * 1024)):
             path.write_bytes(data)
             with self.subTest(size=len(data)), self.assertRaisesRegex(ValueError, 'Formato'):

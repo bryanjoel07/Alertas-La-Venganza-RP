@@ -1,0 +1,93 @@
+{
+  "mode": "original vector animation",
+  "renderer": "render.py (Pillow supersampled canvas geometry)",
+  "frame_count": 24,
+  "frame_duration_ms": 100,
+  "loop": "infinite",
+  "assets": [
+    {
+      "name": "vd_pr_onda",
+      "path": "assets/vice-district/emojis-v3/hype/vd_pr_onda.gif",
+      "description": "Bandera de Puerto Rico ondeando: cinco franjas, triangulo azul y una estrella",
+      "bytes": 95682,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 2400,
+      "transparent": true,
+      "git_blob_sha": "f10cd0c2595376f71bd32460c0db9eb08738c7f6",
+      "prompt": "Original code-native vector design: Bandera de Puerto Rico ondeando: cinco franjas, triangulo azul y una estrella. Bold plum outline; coral, magenta, cyan and ivory. Smooth 2.4-second motion."
+    },
+    {
+      "name": "vd_duro",
+      "path": "assets/vice-district/emojis-v3/hype/vd_duro.gif",
+      "description": "DURO en letras gigantes con rebote, impacto y acentos neón",
+      "bytes": 128122,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 2400,
+      "transparent": true,
+      "git_blob_sha": "10756eee2023e6e70e12d870b5872fd4ae2f3d35",
+      "prompt": "Original code-native vector design: DURO en letras gigantes con rebote, impacto y acentos neón. Bold plum outline; coral, magenta, cyan and ivory. Smooth 2.4-second motion."
+    },
+    {
+      "name": "vd_gg_brillo",
+      "path": "assets/vice-district/emojis-v3/hype/vd_gg_brillo.gif",
+      "description": "GG gigante sobre placa rosa con estrella de brillo recorriendo el borde",
+      "bytes": 137869,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 2400,
+      "transparent": true,
+      "git_blob_sha": "a3610ce17fc92787656d9049ff4decfc4c68db1a",
+      "prompt": "Original code-native vector design: GG gigante sobre placa rosa con estrella de brillo recorriendo el borde. Bold plum outline; coral, magenta, cyan and ivory. Smooth 2.4-second motion."
+    },
+    {
+      "name": "vd_corona",
+      "path": "assets/vice-district/emojis-v3/hype/vd_corona.gif",
+      "description": "Corona dorada y coral flotando e inclinándose con joya turquesa",
+      "bytes": 118956,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 2400,
+      "transparent": true,
+      "git_blob_sha": "b3c9150406a3c91f9686ded152035591e6234372",
+      "prompt": "Original code-native vector design: Corona dorada y coral flotando e inclinándose con joya turquesa. Bold plum outline; coral, magenta, cyan and ivory. Smooth 2.4-second motion."
+    },
+    {
+      "name": "vd_drift",
+      "path": "assets/vice-district/emojis-v3/hype/vd_drift.gif",
+      "description": "Coupé coral original derrapando con ruedas giratorias y humo móvil",
+      "bytes": 104625,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 2400,
+      "transparent": true,
+      "git_blob_sha": "f1b53785eca687f3436be14297ea19ead7254d91",
+      "prompt": "Original code-native vector design: Coupé coral original derrapando con ruedas giratorias y humo móvil. Bold plum outline; coral, magenta, cyan and ivory. Smooth 2.4-second motion."
+    },
+    {
+      "name": "vd_boom",
+      "path": "assets/vice-district/emojis-v3/hype/vd_boom.gif",
+      "description": "BOOM de cómic expandiéndose sobre explosión dorada y coral",
+      "bytes": 148529,
+      "width": 128,
+      "height": 128,
+      "frames": 24,
+      "distinct_frames": 24,
+      "duration_ms": 2400,
+      "transparent": true,
+      "git_blob_sha": "c88ddbe2cd842f5a46adfbab7f1f8bbfe8ce3f66",
+      "prompt": "Original code-native vector design: BOOM de cómic expandiéndose sobre explosión dorada y coral. Bold plum outline; coral, magenta, cyan and ivory. Smooth 2.4-second motion."
+    }
+  ]
+}

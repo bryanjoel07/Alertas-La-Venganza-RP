@@ -100,10 +100,18 @@ The second expression pack adds six original coquí meme faces (built-in imagege
 and six vector/canvas GIF loops (VI neon, WEPA, alert, loading palm, hype and RIP).
 All assets are 128×128 with transparency, under 256 KiB. GIFs have 20 frames and
 2.4-second infinite loops. Source renderers and final prompts are in the static/animated
-manifests under assets/vice-district/emojis-v2. The server now has 12 static and
-6 animated emojis, plus the existing three stickers. `vice_expressions.py` checks
-format-specific capacity and preserves unrelated expressions, with tracked writes and
-durable ID/release markers. The announcements panel displays all 18 expressions.
+manifests under assets/vice-district/emojis-v2.
+
+The third pack adds 12 original vector/canvas animated GIFs under emojis-v3: six
+expressive coquí mascots (party, laughter, tears, anger, love and wave) and six
+Puerto Rico/crew reactions (waving flag, DURO, GG, crown, drift and BOOM). Large
+silhouettes and contrasting outlines are checked at both 128 and 32 pixels.
+The server now has 12 static and 18 animated emojis, plus the existing three stickers.
+`vice_expressions.py` prevalidates every asset and aggregates capacity across all
+packs of each format before any upload. It preserves unrelated expressions and
+existing emoji IDs, with tracked writes and durable ID/release markers. The announcements
+panel displays all 30 expressions. To stop further installation, revert the expression
+installer and showcase release together; keep the installed emojis and their journal.
 
 View-only panels (`vice_readonly.py`, vice-view-only-v1) deny member publication,
 attachments, emoji/sticker posts, new reactions, polls, voice messages and threads.
