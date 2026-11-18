@@ -15,7 +15,7 @@ from vice_audit_format import format_audit_entry, compact_stored_embed, is_permi
 
 log = logging.getLogger('ViceDistrict.audit')
 AUDIT_VERSION = 'vice-audit-compact-v2'
-FORMAT_VERSION = 'vice-audit-permission-lines-v4'
+FORMAT_VERSION = 'vice-audit-server-details-v5'
 POLL_SECONDS = 60
 TOPIC = 'Auditoría y actividad del distrito: miembros, voz y cambios administrativos. Registro privado del equipo.'
 
@@ -360,11 +360,26 @@ class ViceAudit:
                 rows = await self.db('batch', batch)
             if recovery:
                 message = await self.recover(channel, rows)
+            if message:
+                wanted = {marker(row['key']) for row in rows}
+                if (message.author.id != BOT_ID
+                        or {embed_marker(e) for e in message.embeds} != wanted
+                        or len(message.embeds) != len(rows)
+                        or getattr(message, 'content', '')
+                        or getattr(message, 'attachments', [])
+                        or getattr(message, 'components', [])):
+                    raise ValueError('El mensaje no coincide con las tarjetas de auditoría registradas.')
+            before_message = (dict(id=message.id, author=message.author.id,
+                content=getattr(message, 'content', ''),
+                embeds=deepcopy([e.to_dict() for e in message.embeds]),
+                attachments=[], components=[]) if message else None)
             expected = [(row['key'], row['fingerprint']) for row in rows]
             embeds = fit_batch(self.embeds(rows))
             async def snapshot():
                 return dict(guild=GUILD_ID, channel=channel.id,
-                    records=[dict(key=r['key'], fingerprint=r['fingerprint'], message=r['message_id']) for r in rows])
+                    records=[dict(key=r['key'], fingerprint=r['fingerprint'], message=r['message_id']) for r in rows],
+                    before_message=before_message,
+                    delivered_embeds=deepcopy([e.to_dict() for e in message.embeds]) if message else [])
             async def send():
                 nonlocal message
                 if message:

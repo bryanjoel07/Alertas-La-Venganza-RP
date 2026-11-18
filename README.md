@@ -49,6 +49,14 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
+### Registros claros de VIce District — revisión v5
+
+Las actualizaciones del servidor explican qué cambió: fondo de invitación, banner, icono, nombre, descripción o canal del sistema. Los cambios de imagen se comparan por su identidad real y se describen sin mostrar hashes; los identificadores se distinguen como Usuario y Servidor. Los permisos conservan su lista por líneas.
+
+La revisión `vice-audit-server-details-v5` vuelve a leer la auditoría disponible y actualiza las tarjetas registradas cuyo contenido cambió, conservando IDs de mensaje y fechas originales. No cambia la versión de la sustitución anterior, ni borra mensajes o vuelve a publicar el historial. Antes de editar, valida autor e identificadores de todas las tarjetas del mensaje y guarda sus inserciones completas mediante `AUDIT_RECORD`; una segunda pasada sin cambios no publica ni edita nada.
+
+Para restaurar esta revisión, conservar la base actual y desplegar `f208c30b1785c84744e5945ea04f629f97878f6c` del servicio independiente. Las tarjetas pueden restaurarse individualmente desde `before_message` del diario mediante otra operación registrada; no restaurar una base antigua, purgar registro-staff ni reiniciar la instalación. Studio y el bot original permanecen fuera de este cambio.
+
 Desactivar el servicio nuevo detiene sus funciones sin afectar al otro bot. Conservar el volumen y SQLite actuales. `/studio copia` descarga el estado previo y posterior de cada operación; las tablas esschino_messages y esschino_files guardan las copias anteriores a la retirada de canales. Discord no recupera IDs ni fechas originales de canales eliminados. Nunca restaurar una base vieja sobre pedidos y tickets nuevos.
 
 Para revertir los botones de idiomas, primero restaurar los componentes anteriores de las operaciones `PANEL_LANGUAGES` (sin alterar texto, adjuntos, permisos ni roles) mediante una operación registrada, y después desplegar `23ad8d96b0eaa12cdd058559a7ee237b93b1f11c`. Volver solo al código anterior deja botones de idiomas sin manejador; no restaurar una base antigua ni repetir la instalación del servidor.

@@ -304,6 +304,83 @@ def _role_summary(added, removed, actor, target):
     return AMBER, f'{actor} actualizó los roles de {target}.'
 
 
+_GUILD_IMAGE_FIELDS = {
+    'splash': ('Fondo de invitación', 'el fondo de invitación del servidor'),
+    'banner': ('Banner del servidor', 'el banner del servidor'),
+    'icon': ('Icono del servidor', 'el icono del servidor'),
+    'discovery_splash': ('Imagen de descubrimiento', 'la imagen de descubrimiento del servidor'),
+}
+_GUILD_FIELD_ALIASES = {
+    **{key + '_hash': key for key in _GUILD_IMAGE_FIELDS},
+    **{key + '_id': key for key in ('afk_channel', 'system_channel', 'rules_channel',
+                                   'public_updates_channel', 'widget_channel', 'owner')},
+    'default_message_notifications': 'default_notifications',
+}
+_GUILD_FIELD_NOUNS = {
+    'name': 'el nombre del servidor', 'description': 'la descripción del servidor',
+    'system_channel': 'el canal de notificaciones del servidor',
+    'rules_channel': 'el canal de normas', 'public_updates_channel': 'el canal de avisos oficiales',
+    'afk_channel': 'el canal AFK', 'widget_channel': 'el canal del widget',
+    'owner': 'el propietario del servidor', 'preferred_locale': 'el idioma del servidor',
+    'premium_progress_bar_enabled': 'la barra de mejoras',
+}
+
+
+def _guild_changed_fields(before, after):
+    """Compare the original evidence, not labels such as Asset -> 'Imagen'."""
+    before = {_GUILD_FIELD_ALIASES.get(key, key): value for key, value in before.items()}
+    after = {_GUILD_FIELD_ALIASES.get(key, key): value for key, value in after.items()}
+    result = []
+    for key in dict.fromkeys((*before, *after)):
+        if not isinstance(key, str) or _SENSITIVE_KEY.search(key):
+            continue
+        old, new = before.get(key), after.get(key)
+        if old != new:
+            result.append((key, old, new))
+    return result
+
+
+def _guild_update(actor, before, after):
+    """Name the actual server setting; keep asset hashes and opaque data private."""
+    changes = _guild_changed_fields(before, after)
+    if not changes:
+        return (f'{actor} actualizó el servidor.',
+                'Discord no detalló el ajuste modificado en este registro.')
+    if len(changes) == 1:
+        key, old, new = changes[0]
+        if key in _GUILD_IMAGE_FIELDS:
+            verb = 'retiró' if new is None else ('añadió' if old is None else 'cambió')
+            return f'🖼️ {actor} {verb} {_GUILD_IMAGE_FIELDS[key][1]}.', ''
+        noun = _GUILD_FIELD_NOUNS.get(key, 'un ajuste del servidor')
+        sentence = f'{actor} cambió {noun}.'
+    else:
+        subject = 'la apariencia' if all(key in _GUILD_IMAGE_FIELDS for key, _, _ in changes) else 'la configuración'
+        sentence = f'{actor} actualizó {subject} del servidor.'
+    lines = []
+    for key, old, new in changes:
+        if key in _GUILD_IMAGE_FIELDS:
+            status = 'Imagen retirada' if new is None else ('Imagen añadida' if old is None else 'Imagen reemplazada')
+            lines.append(f'{_GUILD_IMAGE_FIELDS[key][0]}: {status}')
+        elif key in LABELS and key not in ('flags', 'system_channel_flags', 'permissions'):
+            if key == 'owner':
+                prior = _ref(old, 'user', fallback='—')
+                current = _ref(new, 'user', fallback='—')
+            elif 'channel' in key:
+                prior = _ref(old, 'channel', fallback='—')
+                current = _ref(new, 'channel', fallback='—')
+            else:
+                prior, current = _simple(old, key), _simple(new, key)
+            label = 'Canal de notificaciones' if key == 'system_channel' else LABELS[key]
+            # A library object may have no human-readable before/after values.
+            # Keep the evidenced field visible without dumping its internals.
+            detail = f'{prior} → {current}' if prior != current else 'Actualizado'
+            lines.append(f'{label}: {detail}')
+        else:
+            label = LABELS.get(key) or _text(key.replace('_', ' ').capitalize(), 70)
+            lines.append(f'{label}: Actualizado')
+    return sentence, _cut('\n'.join(lines), 280)
+
+
 def _changes(code, category, before, after):
     if code in (13, 14, 15):
         return _permission_changes(before, after, overwrite=True)
@@ -386,7 +463,7 @@ def _sentence(code, actor, target, channel, extra_ref, count):
     return f'{actor} registró {ACTION_NAMES.get(code, f"la acción {code}").lower()}.'
 
 
-def _ids(pairs):
+def _ids(pairs, *, separator=' · '):
     seen, items = set(), []
     for label, identifier in pairs:
         identifier = _id(identifier)
@@ -395,11 +472,11 @@ def _ids(pairs):
             items.append(f'{label} {chr(96)}{identifier}{chr(96)}')
     chosen = []
     for item in items:
-        if len(' · '.join(chosen + [item])) > 350:
+        if len(separator.join(chosen + [item])) > 350:
             break
         chosen.append(item)
     suffix = f' · +{len(items)-len(chosen)} IDs' if len(chosen) < len(items) else ''
-    return ' · '.join(chosen) + suffix
+    return separator.join(chosen) + suffix
 
 
 def _card(description, color, created, *, author_name=None, avatar=None, thumbnail=None,
@@ -482,6 +559,10 @@ def format_audit_entry(entry, *, historical=False):
     if code == 25:
         color, sentence = _role_summary(after.get('roles'), before.get('roles'), actor_ref, target_ref)
     pairs = [('Actor', actor_id), ('Canal' if kind == 'channel' else 'Afectado', target_id)]
+    change = _changes(code, category, before, after)
+    if code == 1:
+        sentence, change = _guild_update(actor_ref, before, after)
+        pairs = [('Usuario:', actor_id), ('Servidor:', target_id)]
     if _id(extra) and code in (13, 14, 15):
         pairs.append(('Permiso', _id(extra)))
     pairs.extend((('Canal', _id(channel)), ('Mensaje', _id(_get(extra, 'message_id')))))
@@ -493,7 +574,8 @@ def format_audit_entry(entry, *, historical=False):
     return _card(sentence, color, created,
                  author_name=_get(actor, 'display_name') or _get(actor, 'name'), avatar=_avatar(actor),
                  thumbnail=_avatar(target) if kind == 'user' and code not in (26, 27) else None,
-                 change=_changes(code, category, before, after), reason=reason, identifiers=_ids(pairs))
+                 change=change, reason=reason,
+                 identifiers=_ids(pairs, separator='\n' if code == 1 else ' · '))
 
 
 def _stored_ref(value, kind=None):
