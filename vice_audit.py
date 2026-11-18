@@ -15,7 +15,7 @@ from vice_audit_format import format_audit_entry, compact_stored_embed, is_permi
 
 log = logging.getLogger('ViceDistrict.audit')
 AUDIT_VERSION = 'vice-audit-compact-v2'
-FORMAT_VERSION = 'vice-audit-server-details-v5'
+FORMAT_VERSION = 'vice-audit-server-names-v6'
 POLL_SECONDS = 60
 TOPIC = 'Auditoría y actividad del distrito: miembros, voz y cambios administrativos. Registro privado del equipo.'
 

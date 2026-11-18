@@ -60,7 +60,9 @@ class HumanReadableServerAuditTests(unittest.TestCase):
                          f'🖼️ <@{ACTOR}> cambió el fondo de invitación del servidor.')
         self.assertEqual(result.author.name, 'esschino')
         self.assertEqual(result.timestamp, source.created_at)
-        self.assertEqual(fields(result)['IDs'], f'Usuario: `{ACTOR}`\nServidor: `{GUILD}`')
+        self.assertEqual(fields(result)['IDs'],
+                         f'Usuario: esschino (`{ACTOR}`)\n'
+                         f'Servidor: GTA VI Latino \\| VIce District (`{GUILD}`)')
         self.assertNotIn('Actor', contents(result))
         self.assertNotIn('Afectado', contents(result))
         self.assertNotIn(OLD_HASH, contents(result))
@@ -146,8 +148,84 @@ class HumanReadableServerAuditTests(unittest.TestCase):
         self.assertEqual(result.description, 'Se actualizó el servidor.')
         self.assertEqual(fields(result)['Cambio'],
                          'Discord no detalló el ajuste modificado en este registro.')
-        self.assertEqual(fields(result)['IDs'], f'Servidor: `{GUILD}`')
+        self.assertEqual(fields(result)['IDs'], f'Servidor: VIce District (`{GUILD}`)')
         self.assertIsNone(result.author.name)
+
+    def test_ids_show_real_username_instead_of_server_display_name(self):
+        actor = user()
+        actor.display_name = 'El Fundador'
+        result = format_audit_entry(entry(user=actor))
+        self.assertEqual(fields(result)['IDs'],
+                         f'Usuario: esschino (`{ACTOR}`)\nServidor: VIce District (`{GUILD}`)')
+        self.assertNotIn('El Fundador', fields(result)['IDs'])
+
+    def test_matching_actor_without_username_can_use_its_display_name(self):
+        actor = user()
+        actor.name, actor.display_name = '', 'El Fundador'
+        result = format_audit_entry(entry(user=actor))
+        self.assertIn(f'Usuario: El Fundador (`{ACTOR}`)', fields(result)['IDs'])
+
+    def test_known_user_id_without_matching_user_name_remains_an_honest_id(self):
+        for actor in (None, NS(name='Unverified user', display_name='Unverified display')):
+            with self.subTest(actor=actor):
+                result = format_audit_entry(entry(user=actor, user_id=ACTOR))
+                self.assertEqual(fields(result)['IDs'],
+                                 f'Usuario: `{ACTOR}`\nServidor: VIce District (`{GUILD}`)')
+                self.assertNotIn('Unverified', fields(result)['IDs'])
+
+    def test_matching_guild_supplies_name_when_target_is_unresolved(self):
+        guild = NS(id=GUILD, name='GTA VI Latino | VIce District')
+        for target in (None, discord.Object(id=GUILD)):
+            with self.subTest(target=target):
+                result = format_audit_entry(entry(target=target, guild=guild))
+                self.assertEqual(fields(result)['IDs'],
+                                 f'Usuario: esschino (`{ACTOR}`)\n'
+                                 f'Servidor: GTA VI Latino \\| VIce District (`{GUILD}`)')
+
+    def test_missing_target_id_can_use_the_audit_entry_guild_identity(self):
+        result = format_audit_entry(entry(
+            target=None, _target_id=None, guild=NS(id=GUILD, name='VIce District')))
+        self.assertEqual(fields(result)['IDs'],
+                         f'Usuario: esschino (`{ACTOR}`)\nServidor: VIce District (`{GUILD}`)')
+
+    def test_unmatched_guild_or_unidentified_target_cannot_supply_server_name(self):
+        for target in (None, discord.Object(id=GUILD), NS(name='Unidentified server')):
+            with self.subTest(target=target):
+                result = format_audit_entry(entry(
+                    target=target, guild=NS(id=999999999999999999, name='Unrelated server')))
+                self.assertEqual(fields(result)['IDs'],
+                                 f'Usuario: esschino (`{ACTOR}`)\nServidor: `{GUILD}`')
+                self.assertNotIn('Unrelated', fields(result)['IDs'])
+                self.assertNotIn('Unidentified', fields(result)['IDs'])
+
+    def test_absent_identities_are_not_invented(self):
+        result = format_audit_entry(entry(user=None, user_id=None, target=None,
+                                         _target_id=None, guild=None))
+        self.assertNotIn('IDs', fields(result))
+        self.assertIsNone(result.author.name)
+
+    def test_long_names_are_bounded_without_truncating_either_id(self):
+        actor = user()
+        actor.name = 'a' * 300
+        result = format_audit_entry(entry(user=actor, target=NS(id=GUILD, name='b' * 400)))
+        value = fields(result)['IDs']
+        self.assertEqual(value,
+                         f'Usuario: {"a" * 79}… (`{ACTOR}`)\n'
+                         f'Servidor: {"b" * 119}… (`{GUILD}`)')
+        self.assertIn(f'`{ACTOR}`', value)
+        self.assertIn(f'`{GUILD}`', value)
+        self.assertLessEqual(len(value), 370)
+        self.assertNotIn('+', value)
+
+    def test_names_escape_markdown_and_mentions_without_changing_ids(self):
+        actor = user()
+        actor.name = 'user_*name*'
+        result = format_audit_entry(entry(user=actor, target=NS(id=GUILD, name='**VICE** @everyone')))
+        value = fields(result)['IDs']
+        self.assertEqual(value,
+                         f'Usuario: user\\_\\*name\\* (`{ACTOR}`)\n'
+                         f'Servidor: \\*\\*VICE\\*\\* @\u200beveryone (`{GUILD}`)')
+        self.assertNotIn('@everyone', value)
 
     def test_non_server_audit_descriptions_and_id_labels_are_unchanged(self):
         result = format_audit_entry(entry({'name': 'Old'}, {'name': 'New'},

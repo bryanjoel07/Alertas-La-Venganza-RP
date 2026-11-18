@@ -49,13 +49,13 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
-### Registros claros de VIce District — revisión v5
+### Registros claros de VIce District — revisión v6
 
-Las actualizaciones del servidor explican qué cambió: fondo de invitación, banner, icono, nombre, descripción o canal del sistema. Los cambios de imagen se comparan por su identidad real y se describen sin mostrar hashes; los identificadores se distinguen como Usuario y Servidor. Los permisos conservan su lista por líneas.
+Las actualizaciones del servidor explican qué cambió: fondo de invitación, banner, icono, nombre, descripción o canal del sistema. Los cambios de imagen se comparan por su identidad real y se describen sin mostrar hashes; los identificadores se distinguen como Usuario y Servidor, con el nombre real de cada uno junto al ID. Los nombres se obtienen de las identidades coincidentes del evento; si Discord no resuelve un nombre, se conserva su ID sin inventarlo. Los permisos conservan su lista por líneas.
 
-La revisión `vice-audit-server-details-v5` vuelve a leer la auditoría disponible y actualiza las tarjetas registradas cuyo contenido cambió, conservando IDs de mensaje y fechas originales. No cambia la versión de la sustitución anterior, ni borra mensajes o vuelve a publicar el historial. Antes de editar, valida autor e identificadores de todas las tarjetas del mensaje y guarda sus inserciones completas mediante `AUDIT_RECORD`; una segunda pasada sin cambios no publica ni edita nada.
+La revisión `vice-audit-server-names-v6` vuelve a leer la auditoría disponible y actualiza las tarjetas registradas cuyo contenido cambió, conservando IDs de mensaje y fechas originales. No cambia la versión de la sustitución anterior, ni borra mensajes o vuelve a publicar el historial. Antes de editar, valida autor e identificadores de todas las tarjetas del mensaje y guarda sus inserciones completas mediante `AUDIT_RECORD`; una segunda pasada sin cambios no publica ni edita nada.
 
-Para restaurar esta revisión, conservar la base actual y desplegar `f208c30b1785c84744e5945ea04f629f97878f6c` del servicio independiente. Las tarjetas pueden restaurarse individualmente desde `before_message` del diario mediante otra operación registrada; no restaurar una base antigua, purgar registro-staff ni reiniciar la instalación. Studio y el bot original permanecen fuera de este cambio.
+Para restaurar esta revisión, conservar la base actual y desplegar `6f85cbf920ec942a0f1e5bb6eed1a51787380c18` del servicio independiente. Las tarjetas pueden restaurarse individualmente desde `before_message` del diario mediante otra operación registrada; no restaurar una base antigua, purgar registro-staff ni reiniciar la instalación. Studio y el bot original permanecen fuera de este cambio.
 
 Desactivar el servicio nuevo detiene sus funciones sin afectar al otro bot. Conservar el volumen y SQLite actuales. `/studio copia` descarga el estado previo y posterior de cada operación; las tablas esschino_messages y esschino_files guardan las copias anteriores a la retirada de canales. Discord no recupera IDs ni fechas originales de canales eliminados. Nunca restaurar una base vieja sobre pedidos y tickets nuevos.
 

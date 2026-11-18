@@ -479,6 +479,28 @@ def _ids(pairs, *, separator=' · '):
     return separator.join(chosen) + suffix
 
 
+def _guild_ids(entry, actor, actor_id, target, target_id):
+    """Pair readable names with IDs only when their resolved identity matches."""
+    guild = _get(entry, 'guild')
+    target_id = target_id or _id(guild)
+    actor_name = ((_get(actor, 'name') or _get(actor, 'display_name'))
+                  if _id(actor) == actor_id else None)
+    server_name = _get(target, 'name') if _id(target) == target_id else None
+    if not server_name and _id(guild) == target_id:
+        server_name = _get(guild, 'name')
+    lines = []
+    for label, identifier, name, limit in (
+            ('Usuario', actor_id, actor_name, 80),
+            ('Servidor', target_id, server_name, 120)):
+        if not identifier:
+            continue
+        if isinstance(name, str) and name.strip():
+            lines.append(f'{label}: {_text(name.strip(), limit)} (`{identifier}`)')
+        else:
+            lines.append(f'{label}: `{identifier}`')
+    return '\n'.join(lines)
+
+
 def _card(description, color, created, *, author_name=None, avatar=None, thumbnail=None,
           change='', reason='', identifiers=''):
     result = discord.Embed(description=_rich(description, 240), color=color, timestamp=created)
@@ -575,7 +597,8 @@ def format_audit_entry(entry, *, historical=False):
                  author_name=_get(actor, 'display_name') or _get(actor, 'name'), avatar=_avatar(actor),
                  thumbnail=_avatar(target) if kind == 'user' and code not in (26, 27) else None,
                  change=change, reason=reason,
-                 identifiers=_ids(pairs, separator='\n' if code == 1 else ' · '))
+                 identifiers=(_guild_ids(entry, actor, actor_id, target, target_id)
+                              if code == 1 else _ids(pairs)))
 
 
 def _stored_ref(value, kind=None):
