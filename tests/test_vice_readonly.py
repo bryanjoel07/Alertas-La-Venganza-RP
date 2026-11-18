@@ -150,12 +150,13 @@ class ReadOnlyPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.system.store.put('channel:welcome', 10101)
         self.system.store.put('channel:voicepanel', 10102)
         self.system.store.put('channel:general', 10103)
+        self.system.store.put('channel:ticket_archive', 10106)
         self.system.store.add_ticket(10104, self.owner.id, 'comunidad')
         self.system.store.add_ticket(10105, self.owner.id, 'comunidad')
         self.system.store.ticket_state(10105, 'closed')
         guard = ReadOnlyChannels(self.system)
         ids = guard.target_ids()
-        self.assertTrue({10101, 10102, 10105} <= ids)
+        self.assertTrue({10101, 10102, 10105, 10106} <= ids)
         self.assertFalse({10103, 10104} & ids)
 
     async def test_targets_include_threads_of_registered_panels_but_not_similar_names(self):

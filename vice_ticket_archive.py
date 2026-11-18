@@ -19,6 +19,7 @@ import discord
 
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID
 from vice_tickets import KINDS
+from vice_readonly import WRITE_FLAGS
 
 log = logging.getLogger('ViceDistrict.ticket_archive')
 DESTINATION_KEY = 'ticket_archive:destination'
@@ -30,6 +31,10 @@ MAX_TOTAL = 100 * 1024 * 1024
 MAX_TRANSCRIPT = 20 * 1024 * 1024
 MAX_ATTACHMENTS = 200
 CDN_HOSTS = {'cdn.discordapp.com', 'media.discordapp.net'}
+PUBLICATION_VERSION = 'vice-ticket-archive-readonly-v1'
+LEGACY_WRITE_GAPS = frozenset(WRITE_FLAGS) - {
+    'send_messages', 'send_messages_in_threads', 'add_reactions', 'create_public_threads',
+    'create_private_threads', 'send_voice_messages', 'send_polls'}
 
 
 def canonical(value):
@@ -126,6 +131,7 @@ class TicketArchive:
         readonly = dict(view_channel=True, read_message_history=True, send_messages=False,
             send_messages_in_threads=False, add_reactions=False, create_public_threads=False,
             create_private_threads=False, send_voice_messages=False, send_polls=False)
+        readonly.update({flag: False for flag in WRITE_FLAGS})
         # Member caching is intentionally disabled by this bot. The guild's
         # owner ID was validated above; an overwrite needs only its typed ID.
         self.system.validate_guild(guild)
@@ -140,9 +146,10 @@ class TicketArchive:
             send_messages=True, embed_links=True, attach_files=True, manage_messages=True)
         return result
 
-    def validate_destination(self, channel, record):
+    def validate_destination(self, channel, record, *, allow_legacy_publication=False):
         guild = self.guild()
         if (not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID
+                or record.get('guild') != GUILD_ID
                 or int(record.get('channel') or 0) != channel.id
                 or channel.category_id != int(self.system.store.get('category:team') or 0)
                 or channel.topic != TOPIC):
@@ -154,9 +161,39 @@ class TicketArchive:
         for target, required in expected.items():
             overwrite = actual[target.id]
             for permission, value in required:
+                if (allow_legacy_publication and target.id != BOT_ID and permission in LEGACY_WRITE_GAPS
+                        and getattr(overwrite, permission) is None):
+                    continue
                 if value is not None and getattr(overwrite, permission) is not value:
                     raise ValueError('Los permisos del archivo cambiaron; el ticket se conserva.')
         return channel
+
+    async def migrate_publication(self, channel, record):
+        """Complete the known original policy, never repair a visibility drift."""
+        self.validate_destination(channel, record, allow_legacy_publication=True)
+        rules = {target: discord.PermissionOverwrite.from_pair(*overwrite.pair())
+                 for target, overwrite in channel.overwrites.items()}
+        changed = False
+        for target, overwrite in rules.items():
+            if target.id == BOT_ID:
+                continue
+            changed |= any(getattr(overwrite, flag) is not False for flag in WRITE_FLAGS)
+            overwrite.update(**{flag: False for flag in WRITE_FLAGS})
+        async def snapshot():
+            return dict(destination=await self.system.call('get', DESTINATION_KEY),
+                overwrites=[dict(id=str(target.id), allow=str(overwrite.pair()[0].value),
+                                deny=str(overwrite.pair()[1].value))
+                            for target, overwrite in channel.overwrites.items()])
+        async def apply():
+            nonlocal channel
+            if changed:
+                channel = await channel.edit(overwrites=rules, reason='Archivo privado de tickets: solo lectura')
+            self.validate_destination(channel, record)
+            record['publication_version'] = PUBLICATION_VERSION
+            await self.system.call('put', DESTINATION_KEY, record)
+            return channel
+        return await self.system.track('TICKET_ARCHIVE_READONLY', 'Completar restricciones del archivo privado',
+            apply, f'{channel.id}:{PUBLICATION_VERSION}', snapshot=snapshot)
 
     async def destination(self):
         record = await self.system.call('get', DESTINATION_KEY) or {}
@@ -183,6 +220,9 @@ class TicketArchive:
             guild = self.guild()
             record = await self.system.call('get', DESTINATION_KEY) or {}
             if record.get('channel'):
+                if record.get('publication_version') is None:
+                    channel = await guild.fetch_channel(int(record['channel']))
+                    return await self.migrate_publication(channel, record)
                 return await self.destination()
             category = await guild.fetch_channel(int(self.system.store.get('category:team') or 0))
             if not isinstance(category, discord.CategoryChannel) or category.guild.id != GUILD_ID:
@@ -246,6 +286,7 @@ class TicketArchive:
                         overwrites=expected_overwrites, reason=reason)
                 record['channel'] = channel.id
                 self.validate_destination(channel, record)
+                record['publication_version'] = PUBLICATION_VERSION
                 await self.system.call('put', DESTINATION_KEY, record)
                 await self.system.call('put', 'channel:ticket_archive', channel.id)
                 return channel

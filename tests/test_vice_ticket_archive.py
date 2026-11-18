@@ -13,7 +13,8 @@ import discord
 
 from esschino import StudioStore
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID
-from vice_ticket_archive import TicketArchive, DESTINATION_KEY, MAX_ATTACHMENT, TOPIC, sha_file
+from vice_ticket_archive import (TicketArchive, DESTINATION_KEY, MAX_ATTACHMENT, TOPIC,
+                                PUBLICATION_VERSION, LEGACY_WRITE_GAPS, sha_file)
 
 
 async def values(items):
@@ -280,6 +281,39 @@ class TicketArchiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(owner.type, discord.Member)
         self.assertIs(overwrites[owner].view_channel, True)
         self.guild.get_member.assert_not_called()
+
+    async def test_registered_legacy_archive_gets_publish_denies_once_without_access_changes(self):
+        before = {target.id: (overwrite.view_channel, overwrite.read_message_history)
+                  for target, overwrite in self.destination.overwrites.items()}
+        for target, overwrite in self.destination.overwrites.items():
+            if target.id != BOT_ID:
+                overwrite.update(**{flag: None for flag in LEGACY_WRITE_GAPS})
+        async def edit(**kwargs):
+            self.destination.overwrites = kwargs['overwrites']
+            return self.destination
+        self.destination.edit = AsyncMock(side_effect=edit)
+        await self.archive.ready()
+        for target, overwrite in self.destination.overwrites.items():
+            self.assertEqual((overwrite.view_channel, overwrite.read_message_history), before[target.id])
+            if target.id != BOT_ID:
+                self.assertIs(overwrite.use_application_commands, False)
+                self.assertIs(overwrite.use_external_apps, False)
+        self.assertEqual(self.store.get(DESTINATION_KEY)['publication_version'], PUBLICATION_VERSION)
+        self.assertEqual(self.system.track.await_args.args[0], 'TICKET_ARCHIVE_READONLY')
+        await self.archive.ready()
+        self.destination.edit.assert_awaited_once()
+
+    async def test_legacy_migration_refuses_visibility_drift_and_unexpected_publication_allow(self):
+        self.destination.edit = AsyncMock()
+        self.destination.overwrites[self.guild.default_role].view_channel = True
+        with self.assertRaises(ValueError):
+            await self.archive.ready()
+        self.destination.overwrites = self.archive.overwrites(self.guild)
+        self.destination.overwrites[self.guild.default_role].use_external_apps = True
+        with self.assertRaises(ValueError):
+            await self.archive.ready()
+        self.destination.edit.assert_not_awaited()
+        self.assertNotIn('publication_version', self.store.get(DESTINATION_KEY))
 
     async def test_preparation_failure_never_records_a_dispatched_attempt(self):
         self.store.put(DESTINATION_KEY, {})
