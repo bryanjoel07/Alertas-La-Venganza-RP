@@ -4,7 +4,7 @@ from pathlib import Path
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-district-community-v2'
+VERSION = 'vice-district-community-v3'
 ASSETS = Path(__file__).parent / 'assets' / 'vice-district'
 FONTS = Path(__file__).parent / 'assets' / 'esschino' / 'fonts'
 PINK, CYAN, CORAL = 0xFF168A, 0x00D9E8, 0xFF795D
@@ -14,13 +14,18 @@ DESCRIPTION = ('Tu punto de encuentro latino para GTA VI. Noticias con fuentes, 
 
 # Keys, display names, color, permission flags, display separately, old name.
 ROLES = [
+    ('team_separator', '━━ 🛡️ EQUIPO ━━', PINK, {}, False, None),
     ('mod', '🛡️ Moderación', PINK, dict(manage_messages=True, manage_threads=True,
         moderate_members=True, kick_members=True, mute_members=True, deafen_members=True,
         move_members=True, view_audit_log=True), True, 'Moderación'),
     ('support', '🛟 Soporte', 0x38CFAE, {}, True, None),
     ('creator', '🎬 Creadores', 0xB87AFF, {}, True, 'Creadores'),
+    ('community_separator', '━━ 🌆 COMUNIDAD ━━', CYAN, {}, False, None),
+    ('legend', '💎 Leyenda de Vice', 0xFFD36A, {}, True, None),
+    ('veteran', '🌆 Veterano', 0xB47CFF, {}, True, None),
+    ('citizen', '🌴 Ciudadano', 0x22DCB4, {}, True, '🌴 Comunidad'),
     ('crew', '🤝 Crew', CYAN, {}, False, 'Crew'),
-    ('member', '🌴 Comunidad', 0xFFFBEA, {}, True, 'Comunidad'),
+    ('preferences_separator', '━━ 🎮 PREFERENCIAS ━━', 0x6C9FFF, {}, False, None),
     ('ps', '🎮 PlayStation', 0x6C9FFF, {}, False, None),
     ('xbox', '🎮 Xbox', 0x58C66A, {}, False, None),
     ('pc', '💻 PC', 0xAC90F5, {}, False, None),
@@ -32,6 +37,8 @@ ROLES = [
     ('europe', '🌍 España / Europa', 0x54BCAB, {}, False, None),
     ('news', '📰 Avisos de GTA VI', 0xFFB36A, {}, False, None),
     ('events', '🎉 Avisos de eventos', 0xFF8EBE, {}, False, None),
+    ('entry_separator', '━━ 🌅 RECIÉN LLEGADOS ━━', 0x58B7FF, {}, False, None),
+    ('member', '👤 Miembro', 0x58B7FF, {}, True, None),
 ]
 GROUPS = {
     'platform': ('Tus plataformas', ['ps', 'xbox', 'pc'], 3),
@@ -79,7 +86,8 @@ def panel_copy(key, c):
             '**GTA VI Latino · Tu próxima crew empieza aquí.**\n\n'
             'Atardeceres, motores y una comunidad con la que compartir la pasión por GTA. '
             'Ponte cómodo: ya estás en el distrito.\n\n'
-            f'**01 · Conoce el barrio**\nLee {ref("rules")} y pulsa **Unirme a la comunidad**.\n\n'
+            f'**01 · Conoce el barrio**\nAl entrar recibes **👤 Miembro**. Lee {ref("rules")} y pulsa '
+            '**Unirme a la comunidad** para aceptar las normas y ser **🌴 Ciudadano**.\n\n'
             f'**02 · Dale tu estilo**\nElige plataformas, región y avisos en {ref("roles")}.\n\n'
             f'**03 · Encuentra tu gente**\nPreséntate en {ref("introductions")} y pásate por {ref("general")}.', PINK),
         'rules': ('📜 EL CÓDIGO DEL DISTRITO',
@@ -101,7 +109,9 @@ def panel_copy(key, c):
             'Cada menú reemplaza solo las opciones de su grupo. Déjalo vacío para retirarlas. '
             'Puedes volver cuando quieras.\n\n'
             '**Equipo:** Fundador, Moderación y Soporte.\n'
-            '**Comunidad:** Creadores, Crew y Comunidad. Los roles del equipo y Creadores los asigna la administración.', CYAN),
+            '**Tu recorrido:** 👤 Miembro → 🌴 Ciudadano → 🌆 Veterano → 💎 Leyenda de Vice.\n'
+            '**Miembro** se entrega al entrar; **Ciudadano**, al aceptar las normas. '
+            'Veterano, Leyenda, Creadores y los roles del equipo los asigna la administración.', CYAN),
         'announcements': ('📢 LA VOZ DEL DISTRITO',
             'Aquí encontrarás los comunicados de **GTA VI Latino | VIce District**: cambios, novedades y avisos importantes.\n\n'
             f'Activa solo los avisos que te interesen en {ref("roles")}. Las sugerencias van en {ref("suggestions")}.', PINK),

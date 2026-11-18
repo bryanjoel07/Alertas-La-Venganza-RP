@@ -100,6 +100,39 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLessEqual(len(child.custom_id), 100)
         self.assertEqual(len(ids), len(set(ids)))
 
+    async def test_welcome_has_no_role_menu_or_role_menu_button(self):
+        view = WelcomePanel(self.system, links=False)
+        self.assertTrue(all(isinstance(child, discord.ui.Button) for child in view.children))
+        self.assertNotIn('vice:v1:roles', [child.custom_id for child in view.children])
+
+    async def test_member_is_lowest_and_all_roles_have_solid_colors(self):
+        self.assertEqual(ROLES[-1][0], 'member')
+        self.assertTrue(all(0 < spec[2] <= 0xFFFFFF for spec in ROLES))
+        self.assertEqual(len([r for r in ROLES if r[0].endswith('separator')]),4)
+        for key in ['member','citizen','veteran','legend']:
+            self.assertEqual(self.rolemap[key].permissions.value,0)
+
+    async def test_new_member_gets_lowest_role_before_personal_welcome(self):
+        self.system.ready_event.set()
+        self.member.joined_at = datetime.now(timezone.utc)
+        calls=[]
+        async def add(*roles, **kwargs):
+            calls.append('role')
+            self.assertEqual(roles,(self.rolemap['member'],))
+        async def welcome(member):
+            calls.append('welcome')
+        self.member.add_roles.side_effect=add
+        self.system.welcome.joined=AsyncMock(side_effect=welcome)
+        await self.system.member_join(self.member)
+        self.assertEqual(calls,['role','welcome'])
+        self.system.track.assert_awaited_once()
+
+    async def test_accepting_rules_promotes_only_the_entry_rank(self):
+        self.member.roles=[self.rolemap['member'],self.rolemap['pc']]
+        await self.system.join_community(self.interaction)
+        self.assertEqual(self.member.add_roles.await_args.args,(self.rolemap['citizen'],))
+        self.assertEqual(self.member.remove_roles.await_args.args,(self.rolemap['member'],))
+
     async def test_wrong_guild_owner_and_bots_are_rejected(self):
         self.system.authorize(self.interaction)
         self.guild.id = 1514871828189941881

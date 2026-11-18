@@ -1,6 +1,6 @@
 # GTA VI Latino | VIce District
 
-Owner-authorized community release: `vice-district-community-v2`, 2026-11-17.
+Owner-authorized community release: `vice-district-community-v3`, 2026-11-17.
 The welcome panel has no role menu or role-menu button, as explicitly requested.
 Role selections live only in their dedicated channel (and the optional /vice roles command).
 Guild: `1572462544302383164`. Bot: `1571639486591402174` (EssChino Studio Bot).
@@ -10,8 +10,12 @@ VIce District uses a separate `/data/vice-district.sqlite3`, exact guild and own
 its own command group `/vice`, persistent component IDs prefixed `vice:v1:` and welcome receipts.
 
 The layout contains six categories and 21 permanent channels: arrival, community,
-GTA discussion, voice, support and private staff. There are 17 human roles (including
-the existing Founder), plus the bot's managed role. Optional platform, region and
+GTA discussion, voice, support and private staff. There are 20 human roles (including
+the existing Founder), four visual separator roles, plus the bot's managed role. The
+lowest role, Miembro, is assigned automatically on joining. Accepting the rules through
+the welcome button promotes Miembro to Ciudadano. Veterano and Leyenda de Vice are
+manual recognition ranks; no automatic XP or activity-based promotions are claimed.
+Optional platform, region and
 notification roles have zero administrative permissions; staff roles are never offered
 by the role menus. Moderation has message, timeout and voice tools without Administrator.
 

@@ -46,7 +46,7 @@ class WelcomePanel(SafeView):
     async def join(self, interaction, button):
         await interaction.response.defer(ephemeral=True)
         await self.system.join_community(interaction)
-        await interaction.followup.send('🌴 ¡Ya eres parte del distrito! Al unirte aceptas las normas. '
+        await interaction.followup.send('🌴 ¡Ya eres Ciudadano del distrito! Al unirte aceptas las normas. '
             f'Ahora personaliza tu perfil en <#{self.system.channel_id("roles")}>.', ephemeral=True)
 
     @discord.ui.button(label='Mi bienvenida', emoji='🖼️', style=discord.ButtonStyle.secondary,
@@ -213,6 +213,12 @@ class ViceDistrict:
 
     async def install(self, guild):
         roles = await guild.fetch_roles()
+        # Preserve the original community role when converting the early design
+        # to the owner's requested rank ladder. Miembro gets its own lowest role.
+        previous_member = discord.utils.get(roles, id=self.store.get('role:member'))
+        if previous_member and previous_member.name in {'Comunidad', '🌴 Comunidad'}:
+            await self.call('put', 'role:citizen', previous_member.id)
+            await self.call('put', 'role:member', None)
         founder = discord.utils.get(roles, name='Fundador') or discord.utils.get(roles, name='👑 Fundador')
         if founder:
             await self.call('put', 'role:founder', founder.id)
@@ -350,13 +356,16 @@ class ViceDistrict:
 
     async def join_community(self, interaction):
         self.authorize(interaction)
-        role = self.role(interaction.guild, 'member')
+        role = self.role(interaction.guild, 'citizen')
         if role is None or role.permissions.value != 0:
-            raise ValueError('El rol de Comunidad necesita revisión del equipo.')
+            raise ValueError('El rol de Ciudadano necesita revisión del equipo.')
         async with self.roles_lock:
             member = await interaction.guild.fetch_member(interaction.user.id)
             async def apply():
                 await member.add_roles(role, reason='El miembro acepta las normas y se une a la comunidad')
+                entry = self.role(interaction.guild, 'member')
+                if entry and entry in member.roles:
+                    await member.remove_roles(entry, reason='Pasa de Miembro a Ciudadano al aceptar las normas')
             await self.track('MEMBER', 'Unirse a la comunidad', apply, interaction.id,
                 snapshot=lambda: self.role_snapshot(interaction.guild, member.id))
 
@@ -441,6 +450,15 @@ class ViceDistrict:
             return
         await self.ready_event.wait()
         current = await member.guild.fetch_member(member.id)
+        role = self.role(member.guild, 'member')
+        if role is None or role.permissions.value != 0:
+            raise ValueError('El rol automático Miembro necesita revisión del equipo.')
+        if role not in current.roles:
+            event, _ = self.welcome.event(current)
+            async def assign():
+                await current.add_roles(role, reason='Rol inicial automático al entrar a GTA VI Latino')
+            await self.track('AUTO_MEMBER', 'Entregar rol Miembro al entrar', assign, event,
+                snapshot=lambda: self.role_snapshot(member.guild, current.id))
         await self.welcome.joined(current)
 
     async def close(self):
@@ -463,7 +481,8 @@ class ViceDistrict:
             self.authorize(interaction, staff=True)
             await interaction.response.send_message(f'🟢 **VIce District**\nConfigurado: {self.configured}\n'
                 f'Bienvenidas con avatar: {bool(self.welcome.task and not self.welcome.task.done())}\n'
-                f'Roles de comunidad: {len(ROLES) + 1}\nVersión: {VERSION}', ephemeral=True)
+                f'Roles de personas: {sum(not r[0].endswith("separator") for r in ROLES) + 1}\n'
+                f'Separadores visuales: 4\nVersión: {VERSION}', ephemeral=True)
 
         @group.command(name='publicar', description='Publicar un anuncio, una noticia o un evento')
         @app_commands.choices(destino=[app_commands.Choice(name=n, value=k) for k,n in
