@@ -23,10 +23,14 @@ from vice_readonly import ReadOnlyChannels, lock_overwrites
 from vice_audit import ViceAudit
 from vice_activity import ViceActivity
 from vice_ticket_delete import TicketDeletion
+from vice_tickets import TicketCenter
+from vice_ticket_archive import TicketArchive
+from vice_antispam import AntiSpam
 from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
 REASON = 'Solicitud del propietario: comunidad GTA VI Latino | VIce District'
+TICKET_PANEL_VERSION = 'vice-ticket-categories-claim-v2'
 
 
 class SafeView(discord.ui.View):
@@ -100,9 +104,7 @@ class SupportPanel(SafeView):
     @discord.ui.button(label='Abrir ticket', emoji='🎫', style=discord.ButtonStyle.primary,
                        custom_id='vice:v1:ticket:open')
     async def open(self, interaction, button):
-        await interaction.response.defer(ephemeral=True)
-        channel = await self.system.open_ticket(interaction)
-        await interaction.followup.send(f'Tu conversación privada está aquí: {channel.mention}', ephemeral=True)
+        await self.system.tickets.show_categories(interaction)
 
 
 class CloseTicketPanel(SafeView):
@@ -126,6 +128,10 @@ class ViceDistrict:
         self.audit = ViceAudit(self)
         self.activity = ViceActivity(self.audit)
         self.ticket_deletion = TicketDeletion(self)
+        self.tickets = TicketCenter(self)
+        self.ticket_archive = TicketArchive(self)
+        self.antispam = AntiSpam(self)
+        self.ticket_backfill_task = None
         self.ready_lock = asyncio.Lock()
         self.roles_lock = asyncio.Lock()
         self.ticket_lock = asyncio.Lock()
@@ -186,6 +192,9 @@ class ViceDistrict:
         await self.community.start()
         await self.audit.start()
         await self.ticket_deletion.start()
+        await self.tickets.start()
+        await self.ticket_archive.start()
+        await self.antispam.start()
         for view in [WelcomePanel(self, links=False), RolesPanel(self), SupportPanel(self), CloseTicketPanel(self)]:
             self.bot.add_view(view)
 
@@ -225,8 +234,13 @@ class ViceDistrict:
                 await self.voice.ready()
                 await self.readonly.ready()
                 await self.community.ready()
+                await self.tickets.ready()
+                await self.ticket_archive.ready()
+                await self.refresh_ticket_panel()
                 await self.ticket_deletion.ready()
                 await self.audit.ready()
+                await self.antispam.ready()
+                self.start_ticket_backfill()
                 return
             guild = self.bot.get_guild(GUILD_ID)
             self.validate_guild(guild)
@@ -251,8 +265,64 @@ class ViceDistrict:
             await self.voice.ready()
             await self.readonly.ready()
             await self.community.ready()
+            await self.tickets.ready()
+            await self.ticket_archive.ready()
+            await self.refresh_ticket_panel()
             await self.ticket_deletion.ready()
             await self.audit.ready()
+            await self.antispam.ready()
+            self.start_ticket_backfill()
+
+    def start_ticket_backfill(self):
+        if self.ticket_backfill_task is None or self.ticket_backfill_task.done():
+            self.ticket_backfill_task = asyncio.create_task(
+                self.backfill_ticket_copies(), name='vice-existing-closed-ticket-copies')
+
+    async def backfill_ticket_copies(self):
+        """Copy the frozen pre-existing closed tickets once; never delete a source."""
+        key = 'ticket_archive_initial_closed_v1'
+        try:
+            manifest = await self.call('get', key)
+            if manifest is None:
+                rows = await self.call('tickets')
+                manifest = dict(channels=[str(r['channel']) for r in rows if r['state'] == 'closed'],
+                                completed=[], unavailable=[])
+                await self.call('put', key, manifest)
+            guild = self.validate_guild(self.bot.get_guild(GUILD_ID))
+            for channel_id in manifest['channels']:
+                if channel_id in manifest['completed'] or channel_id in manifest['unavailable']:
+                    continue
+                try:
+                    async with self.ticket_lock:
+                        row = await self.call('ticket', channel_id)
+                        if not row or row['state'] != 'closed':
+                            continue
+                        channel = await guild.fetch_channel(int(channel_id))
+                        await self.ticket_archive.backup(channel, row, BOT_ID)
+                        manifest['completed'].append(channel_id)
+                        await self.call('put', key, manifest)
+                except discord.NotFound as error:
+                    if error.code == 10003:
+                        manifest['unavailable'].append(channel_id)
+                        await self.call('put', key, manifest)
+                    else:
+                        log.exception('VICE_TICKET_COPY_BACKFILL_FAILED channel=%s', channel_id)
+                except Exception:
+                    log.exception('VICE_TICKET_COPY_BACKFILL_FAILED channel=%s', channel_id)
+            log.info('VICE_TICKET_COPY_BACKFILL completed=%s total=%s',
+                     len(manifest['completed']), len(manifest['channels']))
+        except Exception:
+            log.exception('VICE_TICKET_COPY_BACKFILL_INIT_FAILED')
+
+    async def refresh_ticket_panel(self):
+        if self.store.get('ticket_panel_release') == TICKET_PANEL_VERSION:
+            return
+        guild = self.validate_guild(self.bot.get_guild(GUILD_ID))
+        async def apply():
+            await self.panel(guild, 'support', panel_copy('support', self.channel_id), SupportPanel(self))
+            await self.call('put', 'ticket_panel_release', TICKET_PANEL_VERSION)
+        await self.track('TICKET_CATEGORIES', 'Actualizar acceso a categorías de ayuda', apply,
+                         TICKET_PANEL_VERSION)
 
     async def decorate(self, guild):
         """Rename existing objects only; preserve parents, IDs and permissions."""
@@ -554,29 +624,33 @@ class ViceDistrict:
             await self.track('ROLES', 'Actualizar roles opcionales del miembro', apply, interaction.id,
                 snapshot=lambda: self.role_snapshot(interaction.guild, member.id))
 
-    async def open_ticket(self, interaction):
+    async def open_ticket(self, interaction, kind='general'):
         self.authorize(interaction)
+        kind = self.tickets.validate_kind(kind)
         async with self.ticket_lock:
             for row in await self.call('tickets', interaction.user.id):
                 if row['state'] == 'open':
                     channel = interaction.guild.get_channel(int(row['channel']))
                     if channel:
+                        await self.tickets.ensure_open_panel(channel, row)
                         return channel
             marker = 'VIce ticket owner=' + str(interaction.user.id)
             for channel in interaction.guild.text_channels:
-                if channel.topic == marker:
-                    await self.call('add_ticket', channel.id, interaction.user.id, 'comunidad')
+                if (channel.topic == marker
+                        and channel.category_id == int(self.store.get('category:help') or 0)
+                        and channel.overwrites_for(interaction.guild.default_role).view_channel is False):
+                    await self.call('add_ticket', channel.id, interaction.user.id, kind)
+                    await self.tickets.ensure_open_panel(channel)
                     return channel
             async def apply():
                 guild = interaction.guild
                 category = guild.get_channel(self.store.get('category:help'))
+                if not isinstance(category, discord.CategoryChannel) or category.guild.id != GUILD_ID:
+                    raise ValueError('La categoría privada de ayuda necesita revisión del equipo.')
                 channel = await guild.create_text_channel(TICKET_OPEN_PREFIX + str(interaction.user.id)[-6:],
                     category=category, topic=marker, overwrites=self.overwrites(guild, 'ticket', interaction.user), reason=REASON)
-                await self.call('add_ticket', channel.id, interaction.user.id, 'comunidad')
-                await channel.send(embed=self.embed('🎫 Te escuchamos',
-                    f'{interaction.user.mention}, explica tu consulta o reporte. Solo tú y el equipo podéis ver este canal.\n\n'
-                    'Añade contexto y enlaces de mensajes si los tienes. Cuando esté resuelto, usa **Cerrar y archivar**.'),
-                    view=CloseTicketPanel(self), allowed_mentions=discord.AllowedMentions.none())
+                await self.call('add_ticket', channel.id, interaction.user.id, kind)
+                await self.tickets.ensure_open_panel(channel)
                 return channel
             return await self.track('TICKET_OPEN', 'Abrir ticket privado de comunidad', apply, interaction.id)
 
@@ -587,6 +661,7 @@ class ViceDistrict:
             if not row or (int(row['owner']) != interaction.user.id and not self.is_staff(interaction.user)):
                 raise ValueError('Solo el autor del ticket o el equipo puede cerrarlo.')
             if row['state'] == 'closed':
+                await self.tickets.archive_controls(interaction.channel, row)
                 await self.ticket_deletion.ensure_closed_panel(interaction.channel, row)
                 return
             if row['state'] != 'open':
@@ -607,6 +682,7 @@ class ViceDistrict:
                     topic='VIce ticket closed owner=' + str(row['owner']),
                     overwrites=self.overwrites(guild, 'closed', owner), reason=REASON)
                 await self.call('ticket_state', interaction.channel_id, 'closed')
+                await self.tickets.archive_controls(closed_channel)
                 await self.ticket_deletion.ensure_closed_panel(closed_channel)
             await self.track('TICKET_CLOSE', 'Cerrar ticket conservando su historial privado', apply, interaction.id)
 
@@ -727,6 +803,9 @@ class ViceDistrict:
             return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
+        if self.ticket_backfill_task:
+            self.ticket_backfill_task.cancel()
+            await asyncio.gather(self.ticket_backfill_task, return_exceptions=True)
         await self.audit.close()
         await self.voice.close()
         await self.welcome.close()

@@ -122,6 +122,12 @@ class StoreBot(discord.Client):
                 log.exception('STUDIO_SETUP failed')
 
     async def on_message(self, message):
+        if message.guild and message.guild.id == VICE_GUILD_ID:
+            try:
+                await self.vice.antispam.message(message)
+            except Exception:
+                log.exception('VICE_ANTISPAM_MESSAGE failed channel=%s', message.channel.id)
+            return
         if message.guild and message.guild.id == GUILD_ID:
             try:
                 await self.esschino.observe(message)
@@ -130,6 +136,10 @@ class StoreBot(discord.Client):
 
     async def on_member_join(self, member):
         if member.guild.id == VICE_GUILD_ID:
+            try:
+                await self.vice.antispam.member_join(member)
+            except Exception:
+                log.exception('VICE_ANTISPAM_JOIN failed member=%s', member.id)
             try:
                 await self.vice.activity.member_join(member)
             except Exception:

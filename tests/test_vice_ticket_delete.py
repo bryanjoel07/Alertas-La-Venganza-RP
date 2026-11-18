@@ -116,6 +116,9 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
             embed=lambda title, description, color=0x00D9E8: discord.Embed(
                 title=title, description=description, color=color).set_footer(text=FOOTER))
         self.manager = TicketDeletion(self.system)
+        self.system.ticket_archive = NS(backup=AsyncMock(return_value={
+            'state': 'verified', 'sha256': 'a' * 64, 'message_id': 998}),
+            verify_current=AsyncMock(return_value=self.channel))
         await self.manager.start()
 
     def member(self, user_id, *, staff=False):
@@ -355,6 +358,24 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(after[field], original[field])
         self.assertEqual(self.store.get('ticket_delete:55')['state'], 'deleted')
         self.assertTrue(view.finished)
+
+    async def test_failed_backup_never_starts_delete_or_changes_ticket_state(self):
+        interaction, view = await self.requested()
+        self.system.ticket_archive.backup.side_effect = ValueError('Copia incompleta; el ticket se conserva.')
+        with self.assertRaises(ValueError):
+            await self.manager.confirm(interaction, view)
+        self.channel.delete.assert_not_awaited()
+        self.system.ticket_archive.verify_current.assert_not_awaited()
+        self.assertEqual(self.store.ticket(55)['state'], 'closed')
+        self.assertEqual(self.store.get('ticket_delete:55')['state'], 'ready')
+
+    async def test_changed_ticket_after_backup_aborts_before_deletion_intent(self):
+        interaction, view = await self.requested()
+        self.system.ticket_archive.verify_current.side_effect = ValueError('El ticket cambió.')
+        with self.assertRaises(ValueError):
+            await self.manager.confirm(interaction, view)
+        self.channel.delete.assert_not_awaited()
+        self.assertEqual(self.store.get('ticket_delete:55')['state'], 'ready')
 
     async def test_ready_refreshes_exact_legacy_technical_footer_once(self):
         panel = await self.prepared()

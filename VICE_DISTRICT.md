@@ -195,6 +195,48 @@ garbage before TestCase.doCleanups to release those handles without altering run
 
 ## Restoration
 
+### Spam protection and ticket help center
+
+`vice_antispam.py` acts only in the authorized district, excluding bots, webhooks,
+the owner and current administrator/moderation/support staff. It detects 6 messages
+in 8 seconds, 3 repeated texts in 15 seconds (with message-content intent), 6 distinct
+user/role mentions and unauthorized global mentions. It removes only the triggering
+message, warns without pinging, and records a compact private alert. A burst counts
+as one incident per 10 seconds; repeat incidents within 5 minutes use 60-second then
+300-second timeouts, never shortening an existing timeout. Fresh membership,
+hierarchy and bot permissions are checked before action. Young accounts (under 24 h)
+and arrival bursts (5 in 10 seconds) only produce private observations, never bans.
+Counters/digests are bounded and in-memory; raw message contents are not journaled.
+Disabling this feature means removing its message/member handlers and lifecycle;
+keep audit history. Existing timeouts expire normally.
+
+`vice_tickets.py` adds an ephemeral selection of Ayuda general, Reportar a un jugador,
+Apelación and Problema técnico. One open ticket per person is retained; choosing another
+category never relabels an existing conversation. The starter shows category and
+responsible staff member with persistent Atender, Liberar and Cerrar y archivar buttons.
+Assignments are serialized under the ticket lock and persisted before panel updates;
+only the current assignee or an administrator can release an assignment. Restart
+recovery repairs the exact registered panel. Closing preserves the assignment and
+history and removes its open controls.
+
+`vice_ticket_archive.py` creates a registered, private, read-only archivo-tickets
+channel in Equipo for the owner, administrator, moderation and support roles. Before
+confirmed deletion, it saves a ZIP containing escaped static HTML, JSON and the actual
+Discord attachment bytes under `/data/vice-ticket-archives`, then uploads it privately
+and downloads it again to verify its SHA-256. Current ticket content and destination
+permissions are checked again before deletion. Failed downloads, changed content,
+missing content intent, unexpected access, threads or excessive size keep the source
+ticket intact. Limits: 10,000 messages, 200 attachments, 25 MiB each, 100 MiB attachments
+total and 20 MiB transcript data; the final ZIP must also fit the guild upload limit.
+No public storage is used. A frozen, one-time list of existing closed tickets receives
+copies without deleting the sources. Receipts and exact fingerprints prevent duplicate
+uploads; missing sources are recorded as unavailable rather than recreated.
+
+To revert the help center, restore the previous opener and starter views together,
+keeping ticket rows, assignments and panel receipts. To disable deletion safely,
+remove its controls; do not bypass the required backup check. Keep the archive channel,
+ZIP files and receipts as private records. Original Discord IDs cannot be restored.
+
 ### Closed ticket deletion controls
 
 `vice_ticket_delete.py` adds the persistent red **Eliminar** button to registered

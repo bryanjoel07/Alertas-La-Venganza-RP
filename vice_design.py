@@ -149,11 +149,13 @@ def panel_copy(key, c):
             'Cuando corresponda, añadiremos equivalencias para el resto de Latinoamérica.\n\n'
             f'Activa **Avisos de eventos** en {ref("roles")} para enterarte cuando el equipo publique una actividad.', PINK),
         'support': ('🎫 TU EQUIPO, A UN CLIC',
-            '**¿Necesitas ayuda con el servidor o quieres hacer un reporte?**\n\n'
-            'Pulsa **Abrir ticket** para hablar en un canal privado contigo y el equipo. '
-            'Explica el problema y añade enlaces o pruebas útiles.\n\n'
-            'Nunca compartas contraseñas, tokens o datos de pago. Un ticket abierto por persona. '
-            'Al cerrarlo, la conversación se conserva en privado.', CYAN),
+            'Pulsa **Abrir ticket** y elige el motivo:\n'
+            '💬 Ayuda general · 🚩 Reportar a un jugador\n'
+            '⚖️ Apelación · 🛠️ Problema técnico\n\n'
+            'Tu conversación será privada. El equipo puede pulsar **Atender** para asignarse el caso. '
+            'Un ticket abierto por persona.\n\n'
+            'Al cerrarlo, el historial se conserva. Antes de eliminarlo se guarda una copia privada para el equipo. '
+            'Nunca compartas contraseñas, tokens ni datos de pago.', CYAN),
         'goodbye': ('🚪 SALIDAS DEL DISTRITO',
             '**Solo para Fundador y Administrador.**\n\n'
             'Cada despedida incluye **banner, nombre y avatar**, hora de salida y fecha de entrada cuando esté disponible.\n\n'

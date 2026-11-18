@@ -14,6 +14,8 @@ CLOSE_CUSTOM_ID = 'vice:v1:ticket:close'
 ARCHIVE_TITLE = '🔒 Conversación archivada'
 STARTER_TITLE = '🎫 Te escuchamos'
 LEGACY_FOOTER = 'GTA VI Latino • Puerto Rico + Latinoamérica • Fans no oficiales'
+ARCHIVE_DESCRIPTION = ('Ticket cerrado. Su historial sigue disponible para el autor y el equipo. '
+                       'Solo el equipo puede eliminarlo; antes se guardará una copia privada.')
 
 
 def record_key(channel_id):
@@ -151,11 +153,15 @@ class TicketDeletion:
     @staticmethod
     def starter_matches(message):
         controls = [child for row in message.components for child in getattr(row, 'children', ())]
+        identifiers = {getattr(child, 'custom_id', None) for child in controls}
+        legacy = (message.embeds and message.embeds[0].footer.text == LEGACY_FOOTER
+                  and len(controls) == 1 and has_control(message, CLOSE_CUSTOM_ID))
+        current = (message.embeds and message.embeds[0].footer.text == 'VIce District • Ticket abierto'
+                   and len(controls) == 3 and identifiers == {
+                       'vice:v1:ticket:claim', 'vice:v1:ticket:release', 'vice:v2:ticket:close'})
         return (message.author.id == BOT_ID and not message.content and not message.attachments
                 and len(message.embeds) == 1 and message.embeds[0].title == STARTER_TITLE
-                and message.embeds[0].footer.text == LEGACY_FOOTER
-                and len(controls) == 1
-                and has_control(message, CLOSE_CUSTOM_ID))
+                and (legacy or current))
 
     async def ensure_closed_panel(self, channel, row=None):
         """Called under the ticket lock by ready/close; does not delete anything."""
@@ -186,6 +192,7 @@ class TicketDeletion:
                     panel = message
         if (panel is not None and has_control(panel, DELETE_CUSTOM_ID)
                 and panel.embeds[0].footer.text == panel_footer(channel.id)
+                and panel.embeds[0].description == ARCHIVE_DESCRIPTION
                 and record.get('starters_cleaned') and not starters):
             return panel
         before = self.channel_snapshot(channel, current, record,
@@ -196,9 +203,7 @@ class TicketDeletion:
             nonlocal panel
             for starter in starters:
                 await starter.edit(view=None, allowed_mentions=discord.AllowedMentions.none())
-            embed = self.system.embed(ARCHIVE_TITLE,
-                'Ticket cerrado. Su historial sigue disponible para el autor y el equipo. '
-                'Solo el equipo puede eliminarlo.')
+            embed = self.system.embed(ARCHIVE_TITLE, ARCHIVE_DESCRIPTION)
             embed.set_footer(text=panel_footer(channel.id))
             if panel is None:
                 panel = await channel.send(embed=embed, view=DeleteTicketPanel(self),
@@ -297,6 +302,7 @@ class TicketDeletion:
                 raise ValueError('Usa el botón Eliminar del panel archivado de este ticket.')
             view = ConfirmDeleteView(self, interaction.user.id, channel.id, record['panel_id'])
         await interaction.followup.send('Eliminarás este canal y **todo su historial**. Esta acción es permanente.\n'
+                                        'Antes se guardará una copia privada para el equipo.\n'
                                         '¿Quieres continuar?', view=view, ephemeral=True)
         return view
 
@@ -330,13 +336,20 @@ class TicketDeletion:
                     return dict(before=before, ticket=await self.system.call('ticket', channel.id),
                                 deletion_state=(await self.record(channel.id)).get('state'))
                 async def remove():
+                    receipt = await self.system.ticket_archive.backup(channel, row, member.id)
+                    # Copying attachments can take time: recheck authorization,
+                    # source identity and privacy immediately before deletion.
+                    await self.fresh_staff(guild, view.actor_id)
+                    current_channel = await self.system.ticket_archive.verify_current(channel, row, receipt)
+                    current_row = await self.system.call('ticket', channel.id)
+                    self.valid_closed(current_channel, current_row)
                     intent = dict(record, guild=GUILD_ID, channel=channel.id, owner=str(row['owner']),
                         state='deleting', request_id=str(interaction.id), actor=member.id,
                         confirmation_token=view.token, started_at=datetime.now(timezone.utc).isoformat(),
-                        snapshot=before)
+                        snapshot=before, archive=receipt)
                     await self.system.call('put', record_key(channel.id), intent)
                     try:
-                        await channel.delete(reason=f'Ticket cerrado eliminado tras confirmación del equipo: {member.id}')
+                        await current_channel.delete(reason=f'Ticket cerrado eliminado tras confirmación del equipo: {member.id}')
                     except discord.NotFound as error:
                         # This exact channel was validated immediately before the
                         # confirmed request and its deletion intent was persisted.

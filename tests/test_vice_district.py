@@ -199,8 +199,49 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.system.store.add_ticket(99,77,'comunidad')
         channel = NS(id=99)
         self.guild.get_channel.return_value = channel
+        self.system.tickets.ensure_open_panel = AsyncMock()
         self.assertIs(await self.system.open_ticket(self.interaction), channel)
+        self.system.tickets.ensure_open_panel.assert_awaited_once_with(channel, self.system.store.ticket(99))
         self.guild.create_text_channel.assert_not_called()
+
+    async def test_unknown_category_cannot_create_or_reuse_ticket(self):
+        self.system.store.add_ticket(99,77,'general')
+        self.system.tickets.ensure_open_panel = AsyncMock()
+        with self.assertRaises(ValueError):
+            await self.system.open_ticket(self.interaction, kind='administrator')
+        self.system.tickets.ensure_open_panel.assert_not_awaited()
+        self.guild.create_text_channel.assert_not_called()
+
+    async def test_initial_closed_copies_are_frozen_once_and_never_delete_sources(self):
+        self.system.store.add_ticket(55,77,'general')
+        self.system.store.ticket_state(55,'closed')
+        channel = NS(id=55, delete=AsyncMock())
+        self.guild.fetch_channel = AsyncMock(return_value=channel)
+        self.system.ticket_archive.backup = AsyncMock()
+        await self.system.backfill_ticket_copies()
+        self.system.ticket_archive.backup.assert_awaited_once_with(channel, self.system.store.ticket(55), BOT_ID)
+        self.system.store.add_ticket(56,78,'report')
+        self.system.store.ticket_state(56,'closed')
+        await self.system.backfill_ticket_copies()
+        self.assertEqual(self.system.ticket_archive.backup.await_count,1)
+        self.assertEqual(self.system.store.get('ticket_archive_initial_closed_v1')['completed'],['55'])
+        self.assertEqual(self.system.store.ticket(55)['state'],'closed')
+        channel.delete.assert_not_awaited()
+
+    async def test_initial_copy_failure_preserves_ticket_and_retries_same_frozen_source(self):
+        self.system.store.add_ticket(55,77,'technical')
+        self.system.store.ticket_state(55,'closed')
+        channel = NS(id=55, delete=AsyncMock())
+        self.guild.fetch_channel = AsyncMock(return_value=channel)
+        self.system.ticket_archive.backup = AsyncMock(side_effect=ValueError('Incomplete copy'))
+        with self.assertLogs('ViceDistrict',level='ERROR'):
+            await self.system.backfill_ticket_copies()
+        self.assertEqual(self.system.store.get('ticket_archive_initial_closed_v1')['completed'],[])
+        self.system.ticket_archive.backup.side_effect=None
+        await self.system.backfill_ticket_copies()
+        self.assertEqual(self.system.ticket_archive.backup.await_count,2)
+        self.assertEqual(self.system.store.ticket(55)['state'],'closed')
+        channel.delete.assert_not_awaited()
 
     async def test_non_owner_cannot_close_another_members_ticket(self):
         self.system.store.add_ticket(55,999,'comunidad')
@@ -214,6 +255,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         channel = NS(edit=AsyncMock(return_value=closed_channel), send=AsyncMock(), delete=AsyncMock())
         self.interaction.channel = channel
         self.system.ticket_deletion.ensure_closed_panel = AsyncMock()
+        self.system.tickets.archive_controls = AsyncMock()
         self.guild.get_channel.return_value = NS(id=200)
         await self.system.close_ticket(self.interaction)
         self.assertEqual(self.system.store.ticket(55)['state'], 'closed')
@@ -222,6 +264,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(rules[self.member].view_channel)
         self.assertFalse(rules[self.member].send_messages)
         self.system.ticket_deletion.ensure_closed_panel.assert_awaited_once_with(closed_channel)
+        self.system.tickets.archive_controls.assert_awaited_once_with(closed_channel)
         channel.delete.assert_not_awaited()
 
     async def test_welcome_receipt_prevents_double_send_and_survives_restart(self):

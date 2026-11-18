@@ -1,4 +1,4 @@
-"""District audit dispatch must not break welcomes, departures or room cleanup."""
+"""District audit/anti-spam dispatch stays isolated and cannot break other handlers."""
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -16,10 +16,13 @@ class AuditDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.entry = NS(id=987, guild=self.guild)
         self.activity = NS(member_join=AsyncMock(), member_remove=AsyncMock(),
                            voice_state_update=AsyncMock())
+        self.antispam = NS(message=AsyncMock(), member_join=AsyncMock())
         self.vice = NS(activity=self.activity, member_join=AsyncMock(), member_remove=AsyncMock(),
-            voice=NS(voice_state_update=AsyncMock()), audit=NS(entry_create=AsyncMock()))
+            antispam=self.antispam, voice=NS(voice_state_update=AsyncMock()),
+            audit=NS(entry_create=AsyncMock()))
         self.bot = NS(vice=self.vice, get_guild=Mock(return_value=self.guild),
-            configured_event=NS(wait=AsyncMock()), welcome=NS(joined=AsyncMock()))
+            configured_event=NS(wait=AsyncMock()), welcome=NS(joined=AsyncMock()),
+            esschino=NS(observe=AsyncMock()))
         logger = patch('store_bot.log')
         self.logger = logger.start()
         self.addCleanup(logger.stop)
@@ -28,7 +31,8 @@ class AuditDispatchTests(unittest.IsolatedAsyncioTestCase):
         for callback in (self.activity.member_join, self.activity.member_remove,
                          self.activity.voice_state_update, self.vice.member_join,
                          self.vice.member_remove, self.vice.voice.voice_state_update,
-                         self.vice.audit.entry_create):
+                         self.vice.audit.entry_create, self.antispam.message,
+                         self.antispam.member_join):
             callback.assert_not_awaited()
 
     async def test_unrelated_guild_is_rejected_before_any_district_callback(self):
@@ -38,21 +42,27 @@ class AuditDispatchTests(unittest.IsolatedAsyncioTestCase):
         await StoreBot.on_raw_member_remove(self.bot, NS(guild_id=foreign.id, user=member))
         await StoreBot.on_voice_state_update(self.bot, member, self.before, self.after)
         await StoreBot.on_audit_log_entry_create(self.bot, NS(id=987, guild=foreign))
+        await StoreBot.on_message(self.bot, NS(id=123, guild=foreign, channel=NS(id=456)))
         self.assert_no_district_calls()
         self.bot.get_guild.assert_not_called()
         self.bot.configured_event.wait.assert_not_awaited()
         self.bot.welcome.joined.assert_not_awaited()
+        self.bot.esschino.observe.assert_not_awaited()
 
     async def test_join_activity_is_queued_before_welcome(self):
         order = []
         async def activity(member):
             order.append('activity')
+        async def antispam(member):
+            order.append('antispam')
         async def welcome(member):
             order.append('welcome')
         self.activity.member_join.side_effect = activity
+        self.antispam.member_join.side_effect = antispam
         self.vice.member_join.side_effect = welcome
         await StoreBot.on_member_join(self.bot, self.member)
-        self.assertEqual(order, ['activity', 'welcome'])
+        self.assertEqual(order, ['antispam', 'activity', 'welcome'])
+        self.antispam.member_join.assert_awaited_once_with(self.member)
         self.activity.member_join.assert_awaited_once_with(self.member)
         self.vice.member_join.assert_awaited_once_with(self.member)
         self.bot.welcome.joined.assert_not_awaited()
@@ -63,6 +73,42 @@ class AuditDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.activity.member_join.assert_awaited_once_with(self.member)
         self.vice.member_join.assert_awaited_once_with(self.member)
         self.logger.exception.assert_called()
+
+    async def test_antispam_failure_does_not_prevent_join_audit_or_welcome(self):
+        self.antispam.member_join.side_effect = RuntimeError('protection unavailable')
+        await StoreBot.on_member_join(self.bot, self.member)
+        self.antispam.member_join.assert_awaited_once_with(self.member)
+        self.activity.member_join.assert_awaited_once_with(self.member)
+        self.vice.member_join.assert_awaited_once_with(self.member)
+        self.bot.welcome.joined.assert_not_awaited()
+        self.logger.exception.assert_called()
+
+    async def test_district_message_routes_only_to_antispam(self):
+        message = NS(id=123, guild=self.guild, channel=NS(id=456))
+        await StoreBot.on_message(self.bot, message)
+        self.antispam.message.assert_awaited_once_with(message)
+        self.bot.esschino.observe.assert_not_awaited()
+        self.bot.configured_event.wait.assert_not_awaited()
+
+    async def test_district_message_antispam_error_is_caught_without_studio_fallback(self):
+        message = NS(id=123, guild=self.guild, channel=NS(id=456))
+        self.antispam.message.side_effect = RuntimeError('protection unavailable')
+        await StoreBot.on_message(self.bot, message)
+        self.antispam.message.assert_awaited_once_with(message)
+        self.bot.esschino.observe.assert_not_awaited()
+        self.logger.exception.assert_called()
+
+    async def test_studio_message_preserves_its_original_observer_without_antispam(self):
+        message = NS(id=123, guild=NS(id=STUDIO_GUILD_ID), channel=NS(id=456))
+        await StoreBot.on_message(self.bot, message)
+        self.bot.esschino.observe.assert_awaited_once_with(message)
+        self.assert_no_district_calls()
+
+    async def test_dm_message_reaches_neither_district_nor_studio(self):
+        await StoreBot.on_message(self.bot, NS(id=123, guild=None, channel=NS(id=456)))
+        self.assert_no_district_calls()
+        self.bot.esschino.observe.assert_not_awaited()
+        self.bot.get_guild.assert_not_called()
 
     async def test_welcome_failure_does_not_undo_activity_dispatch(self):
         self.vice.member_join.side_effect = RuntimeError('welcome upload unavailable')
