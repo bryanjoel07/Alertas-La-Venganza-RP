@@ -210,8 +210,10 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_close_preserves_channel_and_owner_access(self):
         self.system.store.add_ticket(55,77,'comunidad')
-        channel = NS(edit=AsyncMock(), send=AsyncMock(), delete=AsyncMock())
+        closed_channel = NS(id=55)
+        channel = NS(edit=AsyncMock(return_value=closed_channel), send=AsyncMock(), delete=AsyncMock())
         self.interaction.channel = channel
+        self.system.ticket_deletion.ensure_closed_panel = AsyncMock()
         self.guild.get_channel.return_value = NS(id=200)
         await self.system.close_ticket(self.interaction)
         self.assertEqual(self.system.store.ticket(55)['state'], 'closed')
@@ -219,6 +221,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(rules[self.guild.default_role].view_channel)
         self.assertTrue(rules[self.member].view_channel)
         self.assertFalse(rules[self.member].send_messages)
+        self.system.ticket_deletion.ensure_closed_panel.assert_awaited_once_with(closed_channel)
         channel.delete.assert_not_awaited()
 
     async def test_welcome_receipt_prevents_double_send_and_survives_restart(self):

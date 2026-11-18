@@ -299,6 +299,21 @@ class AuditRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.audit.store.state('cursor'))
         self.channel.send.assert_not_awaited()
 
+    async def test_batch_budget_never_abbreviates_permission_lines(self):
+        permission_lines = '\n'.join('✅ Permiso completo ' + str(i) for i in range(40))
+        cards = []
+        for index in range(5):
+            card = self.embed(size=80)
+            card.add_field(name='Permisos autorizados', value=permission_lines, inline=False)
+            card.add_field(name='Detalle secundario', value='D' * 800, inline=False)
+            cards.append(card)
+        fitted = fit_batch(cards)
+        self.assertLessEqual(sum(len(e) for e in fitted), 5900)
+        for card in fitted:
+            values = {field.name: field.value for field in card.fields}
+            self.assertEqual(values['Permisos autorizados'], permission_lines)
+            self.assertEqual(len(values['Permisos autorizados'].splitlines()), 40)
+
     async def test_scan_imports_all_oldest_first_then_polls_overlap_and_keeps_original_history(self):
         entries = [NS(guild=self.guild, id=1572621740033446082 + i, created_at=self.when)
                    for i in range(105)]

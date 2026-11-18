@@ -123,8 +123,11 @@ Publication fails closed if registro-staff loses its private staff-only overwrit
 
 `vice-audit-compact-v2` replaces the previously published long cards at the owner's
 explicit request. Cards use one action sentence, relevant changes, an optional reason,
-and concise IDs. Permission updates show only changed permissions, without bitmasks;
-member/voice cards have at most two fields, and administrative cards at most three.
+and concise IDs. Permission updates show every changed permission on its own line,
+grouped into authorized, denied and reset permissions, without bitmasks or omitted
+counts. Permission groups split only at line boundaries to respect Discord fields;
+the full list is exempt from the compact card length budget and batch abbreviation.
+Member/voice cards have at most two fields; ordinary administrative cards at most three.
 The marker is stored as embed URL metadata so the visible footer remains short.
 
 The one-time replacement freezes full original outbox rows in
@@ -191,6 +194,27 @@ On Windows the old Studio tests leave a few SQLite connections awaiting GC; coll
 garbage before TestCase.doCleanups to release those handles without altering runtime code.
 
 ## Restoration
+
+### Closed ticket deletion controls
+
+`vice_ticket_delete.py` adds the persistent red **Eliminar** button to registered
+closed VIce District tickets, including existing archive messages. Obsolete close
+controls are removed only from recognized bot ticket panels in that closed ticket.
+Setup never deletes a ticket. The owner, administrators, moderators and support may
+request deletion; the bot freshly verifies membership and staff roles, then shows
+an ephemeral confirmation tied to that actor and channel. A second check under the
+ticket lock requires the exact guild, persisted closed state, archive category and
+owner topic before deleting. The confirmation explicitly states that the channel
+and its messages will be deleted. Cancelling leaves the ticket unchanged.
+
+Deletion retains the ticket row as deleted and a durable before-state of channel
+configuration, access and ticket identity. This is an audit record, not a promise
+to restore Discord messages or attachments. A persisted deletion attempt permits
+narrow 404 reconciliation after an interrupted acknowledgement. Startup only
+installs controls or reconciles a proven missing ticket; it never initiates deletion.
+To disable the control, remove TicketDeletion lifecycle integration and the close
+hook, keeping its receipts and ticket rows. Already deleted Discord channels cannot
+recover their original IDs.
 
 Keep the Railway `/data` volume and both SQLite databases. To disable only the new
 community runtime, remove the `ViceDistrict` integration from store_bot.py and revert

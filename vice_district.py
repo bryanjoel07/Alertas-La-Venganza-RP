@@ -22,6 +22,7 @@ from vice_community import CommunityExtras, EventModal
 from vice_readonly import ReadOnlyChannels, lock_overwrites
 from vice_audit import ViceAudit
 from vice_activity import ViceActivity
+from vice_ticket_delete import TicketDeletion
 from welcome_cards import WelcomeCards, clean_name
 
 log = logging.getLogger('ViceDistrict')
@@ -124,6 +125,7 @@ class ViceDistrict:
         self.readonly = ReadOnlyChannels(self)
         self.audit = ViceAudit(self)
         self.activity = ViceActivity(self.audit)
+        self.ticket_deletion = TicketDeletion(self)
         self.ready_lock = asyncio.Lock()
         self.roles_lock = asyncio.Lock()
         self.ticket_lock = asyncio.Lock()
@@ -183,6 +185,7 @@ class ViceDistrict:
         await self.voice.start()
         await self.community.start()
         await self.audit.start()
+        await self.ticket_deletion.start()
         for view in [WelcomePanel(self, links=False), RolesPanel(self), SupportPanel(self), CloseTicketPanel(self)]:
             self.bot.add_view(view)
 
@@ -222,6 +225,7 @@ class ViceDistrict:
                 await self.voice.ready()
                 await self.readonly.ready()
                 await self.community.ready()
+                await self.ticket_deletion.ready()
                 await self.audit.ready()
                 return
             guild = self.bot.get_guild(GUILD_ID)
@@ -247,6 +251,7 @@ class ViceDistrict:
             await self.voice.ready()
             await self.readonly.ready()
             await self.community.ready()
+            await self.ticket_deletion.ready()
             await self.audit.ready()
 
     async def decorate(self, guild):
@@ -577,12 +582,15 @@ class ViceDistrict:
 
     async def close_ticket(self, interaction):
         self.authorize(interaction)
-        row = await self.call('ticket', interaction.channel_id)
-        if not row or (int(row['owner']) != interaction.user.id and not self.is_staff(interaction.user)):
-            raise ValueError('Solo el autor del ticket o el equipo puede cerrarlo.')
-        if row['state'] == 'closed':
-            return
         async with self.ticket_lock:
+            row = await self.call('ticket', interaction.channel_id)
+            if not row or (int(row['owner']) != interaction.user.id and not self.is_staff(interaction.user)):
+                raise ValueError('Solo el autor del ticket o el equipo puede cerrarlo.')
+            if row['state'] == 'closed':
+                await self.ticket_deletion.ensure_closed_panel(interaction.channel, row)
+                return
+            if row['state'] != 'open':
+                raise ValueError('Este ticket ya no está disponible para cerrar.')
             async def apply():
                 guild = interaction.guild
                 category = guild.get_channel(self.store.get('category:closed'))
@@ -595,13 +603,11 @@ class ViceDistrict:
                     owner = await guild.fetch_member(int(row['owner']))
                 except discord.NotFound:
                     owner = discord.Object(id=int(row['owner']), type=discord.Member)
-                await interaction.channel.edit(name=TICKET_CLOSED_PREFIX + str(row['owner'])[-6:], category=category,
+                closed_channel = await interaction.channel.edit(name=TICKET_CLOSED_PREFIX + str(row['owner'])[-6:], category=category,
                     topic='VIce ticket closed owner=' + str(row['owner']),
                     overwrites=self.overwrites(guild, 'closed', owner), reason=REASON)
-                await interaction.channel.send(embed=self.embed('🔒 Conversación archivada',
-                    'El ticket está cerrado. Su historial permanece privado para el autor y el equipo.'),
-                    allowed_mentions=discord.AllowedMentions.none())
                 await self.call('ticket_state', interaction.channel_id, 'closed')
+                await self.ticket_deletion.ensure_closed_panel(closed_channel)
             await self.track('TICKET_CLOSE', 'Cerrar ticket conservando su historial privado', apply, interaction.id)
 
     async def member_join(self, member):

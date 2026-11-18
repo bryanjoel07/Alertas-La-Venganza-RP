@@ -11,11 +11,11 @@ import discord
 
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID, CYAN
 from vice_audit_store import AuditStore
-from vice_audit_format import format_audit_entry, compact_stored_embed
+from vice_audit_format import format_audit_entry, compact_stored_embed, is_permission_field
 
 log = logging.getLogger('ViceDistrict.audit')
 AUDIT_VERSION = 'vice-audit-compact-v2'
-FORMAT_VERSION = 'vice-audit-compact-details-v3'
+FORMAT_VERSION = 'vice-audit-permission-lines-v4'
 POLL_SECONDS = 60
 TOPIC = 'Auditoría y actividad del distrito: miembros, voz y cambios administrativos. Registro privado del equipo.'
 
@@ -79,13 +79,13 @@ def fit_batch(embeds, limit=5900):
     for embed in result:
         embed.description = note
         for index, field in enumerate(embed.fields):
-            if field.name not in essential and len(field.value) > 120:
+            if field.name not in essential and not is_permission_field(field.name) and len(field.value) > 120:
                 embed.set_field_at(index, name=field.name, value=field.value[:119] + '…',
                                    inline=field.inline)
     while sum(len(embed) for embed in result) > limit:
         candidates = [(len(field.name) + len(field.value), embed, index)
                       for embed in result for index, field in enumerate(embed.fields)
-                      if field.name not in essential]
+                      if field.name not in essential and not is_permission_field(field.name)]
         if not candidates:
             break
         _, embed, index = max(candidates, key=lambda item: item[0])
@@ -99,7 +99,7 @@ def fit_batch(embeds, limit=5900):
                 embed.set_author(name=author.name[:79] + '…',
                                  icon_url=author.icon_url, url=author.url)
             for index, field in enumerate(embed.fields):
-                if field.name != 'IDs' and len(field.value) > 100:
+                if field.name != 'IDs' and not is_permission_field(field.name) and len(field.value) > 100:
                     ids = re.findall(r'<[@#][!&]?\d+>|`\d+`', field.value)
                     value = ' · '.join(dict.fromkeys(ids)) or field.value[:99] + '…'
                     embed.set_field_at(index, name=field.name, value=value, inline=field.inline)

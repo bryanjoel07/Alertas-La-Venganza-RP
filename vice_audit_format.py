@@ -201,29 +201,74 @@ PERMISSION_NAMES.update({
 def _bits(value):
     raw = _get(value, 'value', value)
     try:
-        return int(raw) if raw is not None else 0
+        return max(0, int(raw)) if raw is not None else 0
     except (TypeError, ValueError):
         return 0
 
 
+PERMISSION_FIELD_NAMES = ('Permisos autorizados', 'Permisos denegados', 'Permisos restablecidos')
+
+
+def is_permission_field(name):
+    """Publisher contract: never truncate these fields, including continuations."""
+    return any(str(name) == base or re.fullmatch(re.escape(base) + r' \(\d+\)', str(name))
+               for base in PERMISSION_FIELD_NAMES)
+
+
 def _permission_changes(before, after, *, overwrite=False):
-    """Only changed permission states; never full lists or raw bitmasks."""
+    """Every changed flag, grouped by its new state; no raw bitmasks or omitted rows."""
     if overwrite:
         old_allow, old_deny = _bits(before.get('allow')), _bits(before.get('deny'))
         new_allow, new_deny = _bits(after.get('allow')), _bits(after.get('deny'))
     else:
         old_allow, new_allow = _bits(before.get('permissions')), _bits(after.get('permissions'))
         old_deny = new_deny = 0
-    changes = []
+    changes = {name: [] for name in PERMISSION_FIELD_NAMES}
+    named_bits, seen = [], set()
     for name, _ in discord.Permissions.none():
         bit = discord.Permissions.VALID_FLAGS[name]
+        if bit not in seen:
+            named_bits.append((name, bit))
+            seen.add(bit)
+    # Include future library flags even if its iterator has not caught up.
+    for name, bit in discord.Permissions.VALID_FLAGS.items():
+        if bit not in seen:
+            named_bits.append((name, bit))
+            seen.add(bit)
+    remaining = (old_allow ^ new_allow) | (old_deny ^ new_deny)
+    for bit in seen:
+        remaining &= ~bit
+    while remaining:
+        bit = remaining & -remaining
+        named_bits.append((f'Permiso desconocido (bit {bit.bit_length()-1})', bit))
+        remaining &= ~bit
+    for name, bit in named_bits:
         old = 1 if old_allow & bit else (-1 if old_deny & bit else 0)
         new = 1 if new_allow & bit else (-1 if new_deny & bit else 0)
         if old == new:
             continue
-        icon = '✅' if new == 1 else ('↩️' if overwrite and new == 0 else '❌')
-        changes.append(icon + ' ' + PERMISSION_NAMES.get(name, 'Permiso de Discord'))
-    return ' · '.join(changes[:5]) + (f' · +{len(changes)-5} más' if len(changes) > 5 else '')
+        group = 0 if new == 1 else (2 if overwrite and new == 0 else 1)
+        icon = ('✅', '❌', '↩️')[group]
+        changes[PERMISSION_FIELD_NAMES[group]].append(icon + ' ' + PERMISSION_NAMES.get(name, name))
+    return {name: lines for name, lines in changes.items() if lines}
+
+
+def _append_permission_fields(embed, groups):
+    """Split only between complete permission lines; preserve all supplied rows."""
+    for base in PERMISSION_FIELD_NAMES:
+        chunks, chunk = [], []
+        for line in groups.get(base, []):
+            if len(line) > 1024:
+                raise ValueError('El nombre de un permiso excede el límite de Discord.')
+            if chunk and len('\n'.join(chunk + [line])) > 1024:
+                chunks.append('\n'.join(chunk))
+                chunk = []
+            chunk.append(line)
+        if chunk:
+            chunks.append('\n'.join(chunk))
+        for index, value in enumerate(chunks, 1):
+            name = base if index == 1 else f'{base} ({index})'
+            embed.add_field(name=name, value=value, inline=False)
 
 
 def _simple(value, key=''):
@@ -369,9 +414,17 @@ def _card(description, color, created, *, author_name=None, avatar=None, thumbna
         created = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
         stamp = ' • ' + created.astimezone(PR_TIME).strftime('%d/%m %H:%M AST')
     result.set_footer(text='VIce District' + stamp)
-    for name, value, maximum in (('Cambio', change, 280), ('Razón', reason, 160), ('IDs', identifiers, 370)):
+    permissions = isinstance(change, dict)
+    if permissions:
+        _append_permission_fields(result, change)
+    for name, value, maximum in (('Cambio', '' if permissions else change, 280),
+                                 ('Razón', reason, 160), ('IDs', identifiers, 370)):
         if value:
             result.add_field(name=name, value=_cut(value, maximum), inline=False)
+    if permissions:
+        if len(result.fields) > 25 or len(result) >= 5900:
+            raise ValueError('Los permisos completos exceden la capacidad de una tarjeta de Discord.')
+        return result
     # Keep room for the durable marker added by the publisher.
     while len(result) > 1050:
         candidates = [(len(f.value), i) for i, f in enumerate(result.fields) if f.name != 'IDs']
@@ -471,7 +524,14 @@ def _stored_bits(value):
 
 
 def _stored_changes(fields, code):
-    if code in (13, 14, 15, 31):
+    groups = {}
+    for name, value in fields.items():
+        if is_permission_field(name):
+            base = next(base for base in PERMISSION_FIELD_NAMES if name.startswith(base))
+            groups.setdefault(base, []).extend(_rich(line, 1024) for line in value.splitlines() if line.strip())
+    if groups:
+        return groups
+    if code in (13, 14, 15, 31) or any(name in fields for name in ('Permitir', 'Denegar', 'Permisos')):
         before, after = {}, {}
         for label, key in (('Permitir', 'allow'), ('Denegar', 'deny'), ('Permisos', 'permissions')):
             pair = _stored_pair(fields.get(label))
@@ -479,8 +539,23 @@ def _stored_changes(fields, code):
                 old, new = map(_stored_bits, pair)
                 if old is not None and new is not None:
                     before[key], after[key] = old, new
-        if before:
-            return _permission_changes(before, after, overwrite=code in (13, 14, 15))
+            elif code in (13, 15):
+                value = _stored_bits(fields.get(label, ''))
+                if value is not None:
+                    (after if code == 13 else before)[key] = value
+        if before or after:
+            overwrite = code in (13, 14, 15) or 'allow' in before or 'deny' in before or 'allow' in after or 'deny' in after
+            return _permission_changes(before, after, overwrite=overwrite)
+    # Older compact cards may only retain their already-visible permission rows.
+    # A fresh audit read is required to recover anything previously omitted.
+    for part in re.split(r'\s*·\s*|\n', fields.get('Cambio', '')):
+        part = part.strip()
+        for icon, base in zip(('✅', '❌', '↩️'), PERMISSION_FIELD_NAMES):
+            if part.startswith(icon + ' '):
+                groups.setdefault(base, []).append(_rich(part, 1024))
+                break
+    if groups:
+        return groups
     if code == 25:
         pieces = []
         for label, sign in (('Roles añadidos', '+'), ('Roles retirados', '−')):

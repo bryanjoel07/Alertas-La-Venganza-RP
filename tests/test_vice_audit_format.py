@@ -3,11 +3,13 @@ from datetime import datetime, timezone
 import json
 from types import SimpleNamespace as NS
 import unittest
+from unittest.mock import patch
 
 import discord
 
 from vice_audit_format import (
-    ACTION_NAMES, AMBER, GREEN, RED, compact_stored_embed, format_audit_entry,
+    ACTION_NAMES, AMBER, GREEN, RED, PERMISSION_NAMES, PERMISSION_FIELD_NAMES,
+    compact_stored_embed, format_audit_entry, is_permission_field,
 )
 
 WHEN = datetime(2026, 11, 18, 13, 20, tzinfo=timezone.utc)
@@ -33,6 +35,10 @@ def contents(embed):
 
 def field(embed, name):
     return next(f.value for f in embed.fields if f.name == name)
+
+
+def permission_lines(embed):
+    return [line for f in embed.fields if is_permission_field(f.name) for line in f.value.splitlines()]
 
 
 def legacy(title, **kwargs):
@@ -81,34 +87,101 @@ class AuditFormatTests(unittest.TestCase):
                    deny=discord.Permissions(send_messages=True))
         result = format_audit_entry(entry(discord.AuditLogAction.overwrite_update,
             before=old, after=new, extra=NS(id=CHANNEL, name='Miembro', type=discord.Role)))
-        change = field(result, 'Cambio')
-        self.assertIn('❌ Enviar mensajes', change)
-        self.assertIn('↩️ Insertar enlaces', change)
+        change = '\n'.join(permission_lines(result))
+        self.assertEqual(field(result, 'Permisos denegados'), '❌ Enviar mensajes')
+        self.assertEqual(field(result, 'Permisos restablecidos'), '↩️ Insertar enlaces')
         self.assertNotIn('Ver canal', change)
         self.assertNotIn(str(old['allow'].value), change)
         self.assertNotIn('Antes', change)
         self.assertNotIn('Después', change)
         self.assertIn(f'<@&{CHANNEL}>', result.description)
 
-    def test_permission_limit_is_five_plus_remainder_and_no_raw_masks(self):
+    def test_all_edited_role_permissions_are_shown_one_per_line_without_remainder(self):
         result = format_audit_entry(entry(discord.AuditLogAction.role_update,
             before={'permissions': discord.Permissions.none()},
             after={'permissions': discord.Permissions.all()}))
-        change = field(result, 'Cambio')
-        self.assertEqual(change.count('✅'), 5)
-        self.assertRegex(change, r'\+\d+ más')
+        lines = permission_lines(result)
+        expected = ['✅ ' + PERMISSION_NAMES.get(name, name) for name, enabled in discord.Permissions.all() if enabled]
+        self.assertEqual(lines, expected)
+        change = '\n'.join(lines)
+        self.assertNotRegex(change, r'\+\d+ más')
+        self.assertNotIn(' · ', change)
+        self.assertNotIn('…', change)
         self.assertNotIn(str(discord.Permissions.all().value), change)
-        self.assertLess(len(result), 650)
+        self.assertLess(len(result), 5900)
+        self.assertTrue(all(len(f.value) <= 1024 for f in result.fields))
 
     def test_overwrite_create_and_delete_map_to_allow_deny_inherit(self):
         created = format_audit_entry(entry(discord.AuditLogAction.overwrite_create,
             after={'allow': discord.Permissions(view_channel=True),
                    'deny': discord.Permissions(send_messages=True)}))
-        self.assertIn('✅ Ver canal', field(created, 'Cambio'))
-        self.assertIn('❌ Enviar mensajes', field(created, 'Cambio'))
+        self.assertEqual(field(created, 'Permisos autorizados'), '✅ Ver canal')
+        self.assertEqual(field(created, 'Permisos denegados'), '❌ Enviar mensajes')
         deleted = format_audit_entry(entry(discord.AuditLogAction.overwrite_delete,
             before={'allow': discord.Permissions(view_channel=True)}))
-        self.assertIn('↩️ Ver canal', field(deleted, 'Cambio'))
+        self.assertEqual(field(deleted, 'Permisos restablecidos'), '↩️ Ver canal')
+
+    def test_all_removed_and_reset_permissions_remain_complete(self):
+        expected_names = [PERMISSION_NAMES.get(name, name) for name, enabled in discord.Permissions.all() if enabled]
+        removed = format_audit_entry(entry(discord.AuditLogAction.role_update,
+            before={'permissions': discord.Permissions.all()}, after={'permissions': discord.Permissions.none()}))
+        self.assertEqual(permission_lines(removed), ['❌ ' + name for name in expected_names])
+        reset = format_audit_entry(entry(discord.AuditLogAction.overwrite_delete,
+            before={'allow': discord.Permissions.all()}))
+        self.assertEqual(permission_lines(reset), ['↩️ ' + name for name in expected_names])
+        self.assertLess(len(reset), 5900)
+
+    def test_permission_fields_split_only_at_line_boundaries_and_keep_reason_and_ids(self):
+        labels = {name: 'Permiso con nombre español descriptivo ' + name
+                  for name, enabled in discord.Permissions.all() if enabled}
+        with patch('vice_audit_format.PERMISSION_NAMES', labels):
+            result = format_audit_entry(entry(discord.AuditLogAction.role_update,
+                before={'permissions': discord.Permissions.none()},
+                after={'permissions': discord.Permissions.all()}, reason='Cambio autorizado'))
+        self.assertEqual(permission_lines(result), ['✅ ' + label for label in labels.values()])
+        permission_fields = [f for f in result.fields if is_permission_field(f.name)]
+        self.assertGreater(len(permission_fields), 1)
+        self.assertEqual(permission_fields[1].name, 'Permisos autorizados (2)')
+        self.assertTrue(all(len(f.value) <= 1024 for f in permission_fields))
+        self.assertTrue(all(not f.value.endswith('…') for f in permission_fields))
+        self.assertEqual(field(result, 'Razón'), 'Cambio autorizado')
+        self.assertIn(str(ACTOR), field(result, 'IDs'))
+        self.assertGreater(len(result), 1050)
+        self.assertLess(len(result), 5900)
+
+    def test_untranslated_and_new_library_flags_use_their_actual_distinct_names(self):
+        labels = dict(PERMISSION_NAMES)
+        labels.pop('send_messages')
+        with patch('vice_audit_format.PERMISSION_NAMES', labels), patch.dict(
+                discord.Permissions.VALID_FLAGS, {'brand_new_capability': 1 << 61}):
+            result = format_audit_entry(entry(discord.AuditLogAction.role_update,
+                before={'permissions': discord.Permissions.none()},
+                after={'permissions': discord.Permissions.send_messages.flag | (1 << 61)}))
+        self.assertEqual(permission_lines(result), ['✅ send_messages', '✅ brand_new_capability'])
+        self.assertNotIn('Permiso de Discord', contents(result))
+
+    def test_stored_full_masks_recover_every_permission_and_remain_full_on_second_pass(self):
+        all_bits = discord.Permissions.all().value
+        source = legacy('🟠 Rol actualizado', fields={
+            'Responsable': f'<@{ACTOR}>', 'Objeto afectado': f'<@&{TARGET}>',
+            'Permisos': '**Antes:** Ninguno · ' + chr(96) + '0' + chr(96)
+                        + '\n**Después:** Todos · ' + chr(96) + str(all_bits) + chr(96),
+            'IDs': f'Actor: {chr(96)}{ACTOR}{chr(96)}\nRol: {chr(96)}{TARGET}{chr(96)}'})
+        first = compact_stored_embed(source)
+        expected = ['✅ ' + PERMISSION_NAMES.get(name, name)
+                    for name, enabled in discord.Permissions.all() if enabled]
+        self.assertEqual(permission_lines(first), expected)
+        second = compact_stored_embed(first.to_dict())
+        self.assertEqual(permission_lines(second), expected)
+        self.assertEqual(field(second, 'IDs'), field(first, 'IDs'))
+        self.assertLess(len(second), 5900)
+
+    def test_publisher_field_contract_recognizes_only_permission_groups_and_continuations(self):
+        for base in PERMISSION_FIELD_NAMES:
+            self.assertTrue(is_permission_field(base))
+            self.assertTrue(is_permission_field(base + ' (2)'))
+        for name in ('Cambio', 'IDs', 'Permisos autorizados secret', 'Permisos autorizados (no)'):
+            self.assertFalse(is_permission_field(name))
 
     def test_create_and_delete_do_not_dump_entire_object_configuration(self):
         for action in (discord.AuditLogAction.channel_create, discord.AuditLogAction.channel_delete):
@@ -256,8 +329,8 @@ class AuditFormatTests(unittest.TestCase):
             'Motivo': 'No indicado en la auditoría de Discord.',
             'IDs': f'Responsable: {chr(96)}{ACTOR}{chr(96)}\nCanal: {chr(96)}{CHANNEL}{chr(96)}'})
         result = compact_stored_embed(source)
-        self.assertEqual(field(result, 'Cambio'), '↩️ Enviar mensajes')
-        self.assertNotIn(str(old), field(result, 'Cambio'))
+        self.assertEqual(field(result, 'Permisos restablecidos'), '↩️ Enviar mensajes')
+        self.assertNotIn(str(old), '\n'.join(permission_lines(result)))
         self.assertNotIn('No indicado', contents(result))
         self.assertLess(len(result), 650)
 
