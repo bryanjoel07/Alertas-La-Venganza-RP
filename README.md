@@ -49,6 +49,14 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
+### Reabrir el mismo ticket — v1
+
+Los paneles de tickets cerrados incluyen **Reabrir**, **Valorar atención** y **Eliminar**. Solo el equipo vigente puede reabrir: el mismo canal vuelve a Ayuda, recupera escritura privada y conserva sus mensajes, autor, categoría de consulta, fecha original y responsable vigente. Si el responsable ya no pertenece al equipo, se conserva su asignación anterior como historial y el caso queda sin asignar. Un autor que ya salió del servidor o tiene otro ticket abierto debe resolver esa condición primero. No se reabre ningún caso automáticamente al instalar el botón.
+
+La reapertura guarda intención, copia previa y revisión para reanudar fallos o reinicios sin duplicar canales o paneles. Vuelve al panel de pendientes; los avisos esperan 2h si nunca hubo respuesta del equipo o 24h si ya la hubo, respetando el límite diario. Las copias privadas anteriores y valoraciones aceptadas se conservan. Cada nuevo cierre captura el responsable actual; sigue habiendo una valoración por caso. Confirmaciones antiguas de eliminación y formularios anteriores de valoración no sirven después de otro ciclo.
+
+Para retirar la función, desactivar únicamente Reabrir en los paneles cerrados registrados mediante operaciones journaled y esperar a completar las reaperturas pendientes. Después desplegar la revisión previa `95dfabc8e38721211d01152ea1d24a4ccadd948a`, conservando canales reabiertos, base actual y todos los recibos. No restaurar una base antigua, recrear tickets ni borrar mensajes. Mantener compatibilidad de paneles de cierre y metadatos de ciclo si hay casos reabiertos pendientes de cerrarse.
+
 ### Decoración uniforme para móvil — v6
 
 La corrección v6 usa ┌ / ├ / └ para las categorías y elimina las ramas y puntos adicionales de los canales, que quedan como emoji╎nombre en versalitas. Mantiene los emojis, palabras completas y separador ╎; no añade relleno. Discord controla la sangría nativa de cada tipo de fila, por lo que este formato uniforme no promete alineación exacta entre categorías y canales ni entre dispositivos. El manifiesto v6 conserva el estado previo de los 38 objetos y solo se cambia el nombre mediante recibos nuevos, sin repetir migraciones anteriores.

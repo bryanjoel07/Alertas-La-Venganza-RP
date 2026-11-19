@@ -14,6 +14,7 @@ from vice_tickets import KINDS
 
 log = logging.getLogger('ViceDistrict.ticket_feedback')
 FEEDBACK_CUSTOM_ID = 'vice:v1:ticket:feedback'
+REOPEN_CUSTOM_ID = 'vice:v1:ticket:reopen'
 DESTINATION_KEY = 'ticket_feedback:destination'
 TOPIC = 'Valoraciones privadas de atención. Acceso exclusivo de Administración.'
 TITLE = '⭐ Valoración de atención'
@@ -29,14 +30,19 @@ def review_key(ticket_id):
     return 'ticket_feedback:review:' + str(ticket_id)
 
 
+def reopen_key(ticket_id, revision):
+    return f'ticket_feedback:reopened:{ticket_id}:{revision}'
+
+
 def safe_text(value):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(value)))
 
 
 class FeedbackView(discord.ui.View):
-    def __init__(self, manager, ticket_id, owner_id):
+    def __init__(self, manager, ticket_id, owner_id, *, closure=None):
         super().__init__(timeout=120)
         self.manager, self.ticket_id, self.owner_id = manager, int(ticket_id), int(owner_id)
+        self.closure = closure
 
     async def interaction_check(self, interaction):
         self.manager.check_interaction(interaction)
@@ -56,13 +62,14 @@ class FeedbackView(discord.ui.View):
         if len(select.values) != 1 or select.values[0] not in ('1', '2', '3', '4', '5'):
             raise ValueError('Elige una puntuación de 1 a 5 estrellas.')
         await interaction.response.send_modal(FeedbackModal(
-            self.manager, self.ticket_id, self.owner_id, int(select.values[0])))
+            self.manager, self.ticket_id, self.owner_id, int(select.values[0]), closure=self.closure))
 
 
 class FeedbackModal(discord.ui.Modal):
-    def __init__(self, manager, ticket_id, owner_id, score):
+    def __init__(self, manager, ticket_id, owner_id, score, *, closure=None):
         super().__init__(title=f'Valorar atención · {score}/5', timeout=300)
         self.manager, self.ticket_id, self.owner_id, self.score = manager, int(ticket_id), int(owner_id), score
+        self.closure = closure
         self.comment = discord.ui.TextInput(label='Comentario privado (opcional)',
             placeholder='Solo Administración verá tu comentario.',
             style=discord.TextStyle.paragraph, required=False, max_length=1000)
@@ -71,7 +78,8 @@ class FeedbackModal(discord.ui.Modal):
     async def on_submit(self, interaction):
         if interaction.user.id != self.owner_id or interaction.channel_id != self.ticket_id:
             raise ValueError('Esta valoración pertenece al autor de otro ticket.')
-        await self.manager.submit(interaction, self.ticket_id, self.score, str(self.comment.value))
+        await self.manager.submit(interaction, self.ticket_id, self.score, str(self.comment.value),
+                                  expected_closure=self.closure)
 
     async def on_error(self, interaction, error):
         await self.manager.interaction_error(interaction, error)
@@ -128,6 +136,49 @@ class TicketFeedback:
         return (record.get('guild') == GUILD_ID and str(record.get('channel')) == str(row['channel'])
                 and str(record.get('owner')) == str(row['owner']))
 
+    async def reopened(self, row, revision):
+        """Caller holds ticket_lock inside the journaled reopen operation.
+
+        Preserve the prior closure and every accepted review, then allow the next
+        close to capture its current assignee. A completed revision never clears
+        a later closure; a failed write resumes only its own saved transition.
+        """
+        self.guild()
+        if (not isinstance(revision, str) or not 1 <= len(revision) <= 128
+                or any(not (char.isascii() and (char.isalnum() or char in '_-')) for char in revision)):
+            raise ValueError('La revisión de reapertura necesita verificación.')
+        if not row:
+            raise ValueError('No se pudo comprobar el ticket reabierto.')
+        current = await self.system.call('ticket', row['channel'])
+        if (not current or current['state'] != 'open'
+                or str(current['channel']) != str(row['channel'])
+                or str(current['owner']) != str(row['owner']) or current['kind'] != row['kind']):
+            raise ValueError('El ticket reabierto cambió; se conserva su cierre anterior.')
+        key = reopen_key(current['channel'], revision)
+        binding = dict(guild=GUILD_ID, channel=str(current['channel']), owner=str(current['owner']),
+                       kind=current['kind'], revision=revision)
+        receipt = await self.system.call('get', key) or {}
+        if receipt and any(receipt.get(name) != value for name, value in binding.items()):
+            raise ValueError('La reapertura pertenece a otro ticket.')
+        if receipt.get('state') == 'completed':
+            return receipt
+        if receipt.get('state') not in (None, 'pending'):
+            raise ValueError('El estado de la reapertura necesita verificación.')
+        previous = await self.system.call('get', close_key(current['channel']))
+        if previous and not self.bound(previous, current):
+            raise ValueError('El cierre anterior pertenece a otro ticket.')
+        if not receipt:
+            receipt = dict(binding, state='pending', previous=previous,
+                           started_at=datetime.now(timezone.utc).isoformat())
+            await self.system.call('put', key, receipt)
+        elif previous is not None and previous != receipt.get('previous'):
+            raise ValueError('Existe un cierre posterior; se conserva sin cambios.')
+        if previous is not None:
+            await self.system.call('put', close_key(current['channel']), None)
+        receipt = dict(receipt, state='completed', completed_at=datetime.now(timezone.utc).isoformat())
+        await self.system.call('put', key, receipt)
+        return receipt
+
     async def capture_close(self, channel, row, actor_id):
         """Caller holds ticket_lock; freeze who handled the case without posting a rating."""
         current = await self.system.call('ticket', channel.id)
@@ -178,7 +229,9 @@ class TicketFeedback:
                 or panel.channel.id != channel.id or panel.content or panel.attachments
                 or len(panel.embeds) != 1 or panel.embeds[0].title != '🔒 Conversación archivada'
                 or panel.embeds[0].footer.text != 'VIce District • Ticket cerrado'
-                or len(keys) != 2 or set(keys) != {FEEDBACK_CUSTOM_ID, 'vice:v1:ticket:delete'}):
+                or not ((len(keys) == 2 and set(keys) == {FEEDBACK_CUSTOM_ID, 'vice:v1:ticket:delete'})
+                        or (len(keys) == 3 and set(keys) == {
+                            FEEDBACK_CUSTOM_ID, 'vice:v1:ticket:delete', REOPEN_CUSTOM_ID}))):
             raise ValueError('El panel de valoración necesita revisión de Administración.')
         if require_source and (interaction.message is None or interaction.message.id != panel.id
                 or interaction.message.author.id != BOT_ID or interaction.message.channel.id != channel.id):
@@ -192,16 +245,16 @@ class TicketFeedback:
             channel, row, unused = await self.owner_context(interaction, interaction.channel_id, require_source=True)
             if await self.system.call('get', review_key(channel.id)):
                 raise ValueError('Ya enviaste una valoración para este ticket. Gracias por tu opinión.')
-            await self.capture_close(channel, row, None)
+            closure = await self.capture_close(channel, row, None)
         embed = discord.Embed(title='⭐ ¿Cómo fue la atención?',
             description=PRIVACY + '\nElige de 1 a 5 estrellas; después podrás añadir un comentario.', color=CYAN)
         embed.set_footer(text=FOOTER)
-        view = FeedbackView(self, channel.id, interaction.user.id)
+        view = FeedbackView(self, channel.id, interaction.user.id, closure=closure['captured_at'])
         await interaction.followup.send(embed=embed, view=view, ephemeral=True,
                                         allowed_mentions=discord.AllowedMentions.none())
         return view
 
-    async def submit(self, interaction, ticket_id, score, comment):
+    async def submit(self, interaction, ticket_id, score, comment, *, expected_closure=None):
         self.check_interaction(interaction)
         if type(score) is not int or not 1 <= score <= 5:
             raise ValueError('Elige una puntuación de 1 a 5 estrellas.')
@@ -214,6 +267,8 @@ class TicketFeedback:
             if await self.system.call('get', review_key(ticket_id)):
                 raise ValueError('Ya enviaste una valoración para este ticket. Gracias por tu opinión.')
             closure = await self.capture_close(channel, row, None)
+            if expected_closure is not None and closure['captured_at'] != expected_closure:
+                raise ValueError('Este formulario pertenece a un cierre anterior. Vuelve a pulsar Valorar atención.')
             # Confirm the private destination before accepting any user feedback.
             await self.destination()
             review = dict(closure, score=score, comment=comment, author_name=str(member.display_name)[:100],

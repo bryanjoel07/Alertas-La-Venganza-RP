@@ -11,7 +11,7 @@ import discord
 from esschino import StudioStore
 from vice_design import GUILD_ID, BOT_ID, OWNER_ID
 from vice_ticket_feedback import (TicketFeedback, FeedbackView, FeedbackModal, DESTINATION_KEY,
-                                  FEEDBACK_CUSTOM_ID, TOPIC, close_key, review_key)
+                                  FEEDBACK_CUSTOM_ID, REOPEN_CUSTOM_ID, TOPIC, close_key, review_key, reopen_key)
 from vice_readonly import WRITE_FLAGS
 
 
@@ -119,6 +119,97 @@ class TicketFeedbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(modal.score, 4)
         self.assertFalse(modal.comment.required)
         self.assertEqual(modal.comment.max_length, 1000)
+        self.destination.send.assert_not_awaited()
+
+    async def test_new_three_button_panel_allows_rating_but_unknown_controls_do_not(self):
+        self.panel.components[0].children.append(NS(custom_id=REOPEN_CUSTOM_ID, disabled=False))
+        view = await self.feedback.request(self.interaction)
+        self.assertIsInstance(view, FeedbackView)
+        self.panel.components[0].children[-1].custom_id = 'unexpected-control'
+        with self.assertRaises(ValueError):
+            await self.feedback.request(self.interact())
+
+    async def test_reopen_archives_closure_and_next_close_captures_current_staff(self):
+        original = await self.feedback.capture_close(self.channel, self.row, 77)
+        self.store.ticket_state(55, 'open')
+        row = self.store.ticket(55)
+        receipt = await self.feedback.reopened(row, 'first-reopen')
+        self.assertEqual(receipt['previous'], original)
+        self.assertEqual(receipt['state'], 'completed')
+        self.assertIsNone(self.store.get(close_key(55)))
+        changed = self.store.get('ticket_assignment:55')
+        changed.update(staff_id=88, staff_name='Nuevo responsable')
+        self.store.put('ticket_assignment:55', changed)
+        self.store.ticket_state(55, 'closed')
+        current = await self.feedback.capture_close(self.channel, self.store.ticket(55), 88)
+        self.assertEqual(current['staff_id'], 88)
+        self.assertEqual(current['closed_by'], 88)
+        self.assertEqual(self.store.get(reopen_key(55, 'first-reopen'))['previous'], original)
+        self.store.ticket_state(55, 'open')
+        await self.feedback.reopened(self.store.ticket(55), 'first-reopen')
+        self.assertEqual(self.store.get(close_key(55)), current)
+        self.destination.send.assert_not_awaited()
+
+    async def test_reopen_preserves_existing_rating_and_prevents_second_rating_after_reclose(self):
+        original_review = await self.feedback.submit(self.interaction, 55, 4, 'Privado')
+        self.store.ticket_state(55, 'open')
+        await self.feedback.reopened(self.store.ticket(55), 'reviewed-reopen')
+        self.assertEqual(self.store.get(review_key(55)), original_review)
+        self.store.ticket_state(55, 'closed')
+        await self.feedback.capture_close(self.channel, self.store.ticket(55), 88)
+        with self.assertRaisesRegex(ValueError, 'Ya enviaste'):
+            await self.feedback.submit(self.interact(), 55, 5, 'Segunda')
+        self.assertEqual(self.store.get(review_key(55)), original_review)
+        self.destination.send.assert_awaited_once()
+
+    async def test_reopen_recovers_after_clear_before_completion_without_losing_previous_close(self):
+        original_close = await self.feedback.capture_close(self.channel, self.row, 77)
+        self.store.ticket_state(55, 'open')
+        original_call = self.system.call.side_effect
+        async def fail_completion(method, *args):
+            if (method == 'put' and args[0] == reopen_key(55, 'recover')
+                    and args[1].get('state') == 'completed'):
+                raise OSError('lost database response')
+            return await original_call(method, *args)
+        self.system.call.side_effect = fail_completion
+        with self.assertRaises(OSError):
+            await self.feedback.reopened(self.store.ticket(55), 'recover')
+        self.assertIsNone(self.store.get(close_key(55)))
+        self.assertEqual(self.store.get(reopen_key(55, 'recover'))['previous'], original_close)
+        self.system.call.side_effect = original_call
+        result = await self.feedback.reopened(self.store.ticket(55), 'recover')
+        self.assertEqual(result['state'], 'completed')
+        self.assertEqual(result['previous'], original_close)
+
+    async def test_reopen_rejects_wrong_scope_or_revision_without_clearing_closure(self):
+        original = await self.feedback.capture_close(self.channel, self.row, 77)
+        with self.assertRaises(ValueError):
+            await self.feedback.reopened(self.row, 'closed-state')
+        self.store.ticket_state(55, 'open')
+        row = self.store.ticket(55)
+        for revision in ('', '../bad', 'x' * 129, None):
+            with self.subTest(revision=revision), self.assertRaises(ValueError):
+                await self.feedback.reopened(row, revision)
+        with self.assertRaises(ValueError):
+            await self.feedback.reopened(dict(row, owner='other'), 'wrong-owner')
+        self.bot.user.id = 1
+        with self.assertRaises(ValueError):
+            await self.feedback.reopened(row, 'wrong-bot')
+        self.assertEqual(self.store.get(close_key(55)), original)
+
+    async def test_rating_modal_from_previous_closure_is_rejected_after_reopen_and_close(self):
+        view = await self.feedback.request(self.interaction)
+        view.children[0]._values = ['4']
+        await view.children[0].callback(self.interaction)
+        modal = self.interaction.response.send_modal.await_args.args[0]
+        self.assertEqual(modal.closure, self.store.get(close_key(55))['captured_at'])
+        self.store.ticket_state(55, 'open')
+        await self.feedback.reopened(self.store.ticket(55), 'modal-reopen')
+        self.store.ticket_state(55, 'closed')
+        await self.feedback.capture_close(self.channel, self.store.ticket(55), 88)
+        with self.assertRaisesRegex(ValueError, 'cierre anterior'):
+            await modal.on_submit(self.interact())
+        self.assertIsNone(self.store.get(review_key(55)))
         self.destination.send.assert_not_awaited()
 
     async def test_non_owner_foreign_guild_and_bot_cannot_request_or_submit(self):

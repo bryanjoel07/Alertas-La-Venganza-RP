@@ -20,6 +20,7 @@ FOOTER = 'GTA VI Latino • Puerto Rico + Latinoamérica • Fans no oficiales'
 CLOSE = 'vice:v1:ticket:close'
 DELETE = 'vice:v1:ticket:delete'
 FEEDBACK = 'vice:v1:ticket:feedback'
+REOPEN = 'vice:v1:ticket:reopen'
 
 
 def missing():
@@ -179,7 +180,7 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_persistent_delete_view_and_request_do_not_delete_without_confirmation(self):
         self.assertTrue(DeleteTicketPanel(self.manager).is_persistent())
-        self.assertEqual([c.custom_id for c in DeleteTicketPanel(self.manager).children], [FEEDBACK, DELETE])
+        self.assertEqual([c.custom_id for c in DeleteTicketPanel(self.manager).children], [REOPEN, FEEDBACK, DELETE])
         self.bot.add_view.assert_called_once()
         interaction, view = await self.requested()
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
@@ -209,7 +210,7 @@ class TicketDeletionTests(unittest.IsolatedAsyncioTestCase):
         panel.components = [NS(children=[NS(custom_id=DELETE, disabled=False)])]
         panel.edit.reset_mock()
         await self.manager.ready()
-        self.assertEqual([c.custom_id for row in panel.components for c in row.children], [FEEDBACK, DELETE])
+        self.assertEqual([c.custom_id for row in panel.components for c in row.children], [REOPEN, FEEDBACK, DELETE])
         self.assertIn('solo para Administración', panel.embeds[0].description)
         self.assertEqual(self.store.get('ticket_delete:55')['panel_id'], panel.id)
         panel.edit.assert_awaited_once()

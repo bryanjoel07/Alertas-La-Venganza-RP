@@ -23,6 +23,7 @@ from vice_readonly import ReadOnlyChannels, lock_overwrites
 from vice_audit import ViceAudit
 from vice_activity import ViceActivity
 from vice_ticket_delete import TicketDeletion
+from vice_ticket_reopen import TicketReopen
 from vice_tickets import TicketCenter
 from vice_ticket_archive import TicketArchive
 from vice_ticket_feedback import TicketFeedback
@@ -139,6 +140,7 @@ class ViceDistrict:
         self.audit = ViceAudit(self)
         self.activity = ViceActivity(self.audit)
         self.ticket_deletion = TicketDeletion(self)
+        self.ticket_reopen = TicketReopen(self)
         self.tickets = TicketCenter(self)
         self.ticket_archive = TicketArchive(self)
         self.ticket_feedback = TicketFeedback(self)
@@ -297,6 +299,7 @@ class ViceDistrict:
                 ('bot_separator', self.bot_separator.ready),
                 ('booster_club', self.booster_club.ready),
                 ('boost_notices', self.boost_notices.ready),
+                ('ticket_reopen', self.ticket_reopen.ready),
                 ('tickets', self.tickets.ready), ('ticket_archive', self.ticket_archive.ready),
                 ('ticket_feedback', self.ticket_feedback.ready),
                 ('ticket_reminders', self.ticket_reminders.ready),
@@ -683,6 +686,7 @@ class ViceDistrict:
         async with self.ticket_lock:
             for row in await self.call('tickets', interaction.user.id):
                 if row['state'] == 'open':
+                    await self.ticket_deletion.require_no_reopen(row['channel'])
                     channel = interaction.guild.get_channel(int(row['channel']))
                     if channel:
                         await self.tickets.ensure_open_panel(channel, row)
@@ -710,6 +714,7 @@ class ViceDistrict:
     async def close_ticket(self, interaction):
         self.authorize(interaction)
         async with self.ticket_lock:
+            await self.ticket_deletion.require_no_reopen(interaction.channel_id)
             row = await self.call('ticket', interaction.channel_id)
             if not row or (int(row['owner']) != interaction.user.id and not self.is_staff(interaction.user)):
                 raise ValueError('Solo el autor del ticket o el equipo puede cerrarlo.')
@@ -862,6 +867,7 @@ class ViceDistrict:
             return await self.track('GOODBYE', 'Registrar despedida privada del distrito', send, key, snapshot=snapshot)
 
     async def close(self):
+        await self.ticket_reopen.close()
         await self.ticket_dashboard.close()
         await self.ticket_reminders.close()
         await self.tickets.close()

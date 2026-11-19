@@ -93,13 +93,17 @@ class TicketReminders:
                    ('view_channel', 'read_message_history', 'send_messages', 'embed_links')):
             raise ValueError('Faltan permisos para el recordatorio privado.')
 
-    async def reconcile(self, channel, row, state):
+    async def reconcile(self, channel, row, state, *, before=None, historical_staff=()):
         """Read a bounded ordered page; incomplete pages never permit a send."""
+        if historical_staff and before is None:
+            raise ValueError('La prueba de equipo anterior requiere un cierre temporal.')
         candidate = deepcopy(state)
         cursor = int(candidate['cursor'])
         kwargs = dict(limit=HISTORY_LIMIT + 1, oldest_first=True)
         if cursor:
             kwargs['after'] = discord.Object(id=cursor)
+        if before is not None:
+            kwargs['before'] = as_time(before)
         messages = [message async for message in channel.history(**kwargs)]
         complete = len(messages) <= HISTORY_LIMIT
         members = {}
@@ -116,6 +120,8 @@ class TicketReminders:
                         (discord.MessageType.default, discord.MessageType.reply)):
                 continue
             when = as_time(message.created_at)
+            if before is not None and when >= as_time(before):
+                raise ValueError('El historial anterior excede la fecha de reapertura.')
             if when > utcnow() + timedelta(minutes=5):
                 raise ValueError('El historial del ticket contiene una fecha incoherente.')
             # A staff member can open a ticket too; their own messages remain
@@ -126,6 +132,13 @@ class TicketReminders:
                                      owner_message=str(message.id))
                 elif candidate['owner_message'] is None:
                     candidate['owner_message'] = str(message.id)
+                continue
+            if author.id in historical_staff:
+                # The caller derives this set only from the same ticket's
+                # journaled pre-reopen assignment / frozen closure. It grants
+                # no current role, access or reminder-recipient eligibility.
+                candidate.update(ever_replied=True, awaiting_since=None, episode=None,
+                                 owner_message=None, last_staff_reply_at=when.isoformat())
                 continue
             if author.id not in members:
                 member = await channel.guild.fetch_member(author.id)
@@ -141,6 +154,96 @@ class TicketReminders:
                              owner_message=None, last_staff_reply_at=when.isoformat())
         await self.save(candidate)
         return candidate, complete
+
+    async def reopen_record(self, row):
+        record = await self.system.call('get', 'ticket_reopen:' + str(row['channel']))
+        if record:
+            expected = dict(guild=GUILD_ID, channel=str(row['channel']), owner=str(row['owner']))
+            if (any(record.get(key) != value for key, value in expected.items())
+                    or record.get('state') not in ('pending', 'completed')
+                    or not isinstance(record.get('revision'), str) or not record['revision']):
+                raise ValueError('La reapertura pendiente no pertenece a este ticket.')
+        return record
+
+    async def reopened(self, channel, row, reopened_at, revision):
+        """Reset one reopen episode under the caller's journal and ticket lock.
+
+        The durable reopen receipt suppresses the worker until the parent
+        operation has completed. Historical messages establish whether staff
+        ever replied, but cannot consume the new waiting period. No messages
+        are sent by this method and no private contents are stored.
+        """
+        when = as_time(reopened_at)
+        if (not isinstance(revision, str) or not revision or len(revision) > 128
+                or when < datetime.fromtimestamp(int(row['created']), timezone.utc)
+                or when > utcnow() + timedelta(minutes=5)):
+            raise ValueError('La fecha de reapertura necesita revisión.')
+        guild = self.guild()
+        current = await self.system.call('ticket', row['channel'])
+        if (not current or current['state'] != 'open' or current['channel'] != row['channel']
+                or str(current['owner']) != str(row['owner'])
+                or int(current['created']) != int(row['created'])
+                or channel.id != int(current['channel'])):
+            raise ValueError('El ticket ya no está abierto para reiniciar su seguimiento.')
+        record = await self.reopen_record(current)
+        if not record or record['revision'] != revision:
+            raise ValueError('La reapertura no tiene un registro coincidente.')
+        fresh = await guild.fetch_channel(int(current['channel']))
+        self.scope(fresh, current)
+        state = await self.load(current)
+        if state.get('reopen_revision') == revision:
+            if state.get('reopened_at') != when.isoformat():
+                raise ValueError('La fecha de esta reapertura cambió.')
+            return state
+        historical_staff = set()
+        closure = await self.system.call('get', 'ticket_feedback:closed:' + str(current['channel']))
+        for evidence in (record.get('assignment'), closure):
+            if not evidence:
+                continue
+            if (evidence.get('guild') != GUILD_ID
+                    or str(evidence.get('channel')) != str(current['channel'])
+                    or str(evidence.get('owner')) != str(current['owner'])
+                    or evidence.get('kind') not in (current['kind'], self.system.tickets.row_kind(current))):
+                raise ValueError('El equipo anterior no corresponde al ticket reabierto.')
+            staff_id = evidence.get('staff_id')
+            if staff_id is not None:
+                if type(staff_id) is not int or staff_id <= 0:
+                    raise ValueError('El responsable anterior necesita verificación.')
+                if staff_id not in (BOT_ID, int(current['owner'])):
+                    historical_staff.add(staff_id)
+        while True:
+            previous_cursor = int(state['cursor'])
+            state, complete = await self.reconcile(fresh, current, state, before=when,
+                                                   historical_staff=historical_staff)
+            if complete:
+                break
+            if int(state['cursor']) <= previous_cursor:
+                raise ValueError('El historial anterior no pudo verificarse.')
+        pending = state.get('pending')
+        if pending:
+            expected = dict(guild=GUILD_ID, channel=str(current['channel']), owner=str(current['owner']))
+            if any(pending.get(key) != value for key, value in expected.items()):
+                raise ValueError('La entrega anterior no pertenece al ticket reabierto.')
+            saved = await self.system.call('get', receipt_key(pending['nonce']))
+            if saved and saved.get('state') == 'sent':
+                if any(saved.get(key) != value for key, value in expected.items()):
+                    raise ValueError('El recibo anterior no pertenece al ticket reabierto.')
+                sent = as_time(saved['sent_at'])
+                previous = as_time(state['last_sent']) if state.get('last_sent') else sent
+                state.update(last_sent=max(previous, sent).isoformat(), pending=None)
+                await self.save(state)
+            else:
+                found = await self.recover(fresh, pending)
+                await self.finish(state, pending, found)
+        # Start just before the cutoff millisecond: later messages, including
+        # human replies racing with the reopen operation, remain unprocessed.
+        cutoff = discord.utils.time_snowflake(when, high=False) - 1
+        state.update(cursor=max(int(state['cursor']), cutoff),
+                     awaiting_since=when.isoformat(), episode='reopen:' + revision,
+                     owner_message=None, pending=None, reopen_revision=revision,
+                     reopened_at=when.isoformat())
+        await self.save(state)
+        return state
 
     @staticmethod
     def due(state, now):
@@ -244,6 +347,9 @@ class TicketReminders:
         guild = self.guild()
         row = await self.system.call('ticket', channel_id)
         if not row or row['state'] != 'open':
+            return 0
+        reopen = await self.reopen_record(row)
+        if reopen and reopen['state'] == 'pending':
             return 0
         channel = await guild.fetch_channel(int(channel_id))
         self.scope(channel, row)

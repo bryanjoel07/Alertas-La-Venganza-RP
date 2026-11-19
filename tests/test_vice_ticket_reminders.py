@@ -13,7 +13,7 @@ import discord
 from tests import test_vice_ticket_delete as deletion_fixture
 from vice_design import BOT_ID, GUILD_ID
 from vice_tickets import TicketCenter, assignment_key
-from vice_ticket_reminders import TicketReminders
+from vice_ticket_reminders import TicketReminders, state_key, receipt_key
 
 
 class TicketReminderTests(unittest.IsolatedAsyncioTestCase):
@@ -120,6 +120,205 @@ class TicketReminderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(allowed.get('users'), [identifier])
         self.assertNotIn('everyone', allowed.get('parse', []))
         self.assertNotIn('roles', allowed.get('parse', []))
+
+    def reopen_receipt(self, revision='reopen-one', *, state='pending'):
+        self.store.put('ticket_reopen:55', dict(guild=GUILD_ID, channel='55', owner='999',
+                                              revision=revision, state=state))
+
+    async def finish_reopen(self, revision='reopen-one', when=None):
+        self.reopen_receipt(revision)
+        result = await self.manager.reopened(self.channel, self.store.ticket(55),
+                                             when or self.now, revision)
+        self.reopen_receipt(revision, state='completed')
+        return result
+
+    async def test_reopen_unanswered_case_starts_new_two_hour_deadline(self):
+        self.add_message(999)
+        self.now += timedelta(hours=72)
+        original = self.store.ticket(55)
+        state = await self.finish_reopen()
+        self.assertEqual(state['awaiting_since'], self.now.isoformat())
+        self.assertFalse(state['ever_replied'])
+        self.assertEqual(self.store.ticket(55), original)
+        await self.advance(hours=1, minutes=59, seconds=59)
+        self.channel.send.assert_not_awaited()
+        await self.advance(seconds=1)
+        self.assertEqual(self.channel.send.await_count, 1)
+
+    async def test_reopen_reconciles_old_staff_reply_but_preserves_new_wait(self):
+        self.add_message(999)
+        self.add_message(78, when=self.now + timedelta(minutes=10))
+        self.now += timedelta(days=4)
+        state = await self.finish_reopen()
+        self.assertTrue(state['ever_replied'])
+        self.assertEqual(state['awaiting_since'], self.now.isoformat())
+        await self.advance(hours=23, minutes=59, seconds=59)
+        self.channel.send.assert_not_awaited()
+        await self.advance(seconds=1)
+        self.assertEqual(self.channel.send.await_count, 1)
+
+    async def test_reopen_keeps_daily_cooldown_even_with_initial_deadline(self):
+        await self.advance(hours=2)
+        self.assertEqual(self.channel.send.await_count, 1)
+        previous = self.store.get(state_key(55))['last_sent']
+        self.now += timedelta(minutes=10)
+        state = await self.finish_reopen()
+        self.assertEqual(state['last_sent'], previous)
+        await self.advance(hours=2)
+        self.assertEqual(self.channel.send.await_count, 1)
+        await self.advance(hours=21, minutes=50)
+        self.assertEqual(self.channel.send.await_count, 2)
+
+    async def test_reopen_retry_is_idempotent_after_new_staff_reply(self):
+        self.now += timedelta(hours=72)
+        reopened_at = self.now
+        await self.finish_reopen()
+        self.now += timedelta(minutes=1)
+        self.add_message(78)
+        await self.manager.tick()
+        before = self.store.get(state_key(55))
+        self.assertIsNone(before['awaiting_since'])
+        result = await self.manager.reopened(self.channel, self.store.ticket(55),
+                                             reopened_at, 'reopen-one')
+        self.assertEqual(result, before)
+        await self.advance(hours=48)
+        self.channel.send.assert_not_awaited()
+        with self.assertRaises(ValueError):
+            await self.manager.reopened(self.channel, self.store.ticket(55),
+                                         reopened_at + timedelta(seconds=1), 'reopen-one')
+
+    async def test_reopen_does_not_skip_human_reply_posted_after_cutoff(self):
+        self.now += timedelta(hours=72)
+        reopened_at = self.now
+        self.now += timedelta(seconds=2)
+        reply = self.add_message(78)
+        state = await self.finish_reopen(when=reopened_at)
+        self.assertLess(state['cursor'], reply.id)
+        await self.manager.tick()
+        self.assertIsNone(self.store.get(state_key(55))['awaiting_since'])
+        await self.advance(hours=48)
+        self.channel.send.assert_not_awaited()
+
+    async def test_pending_or_foreign_reopen_receipt_suppresses_worker(self):
+        self.now += timedelta(days=3)
+        self.reopen_receipt()
+        await self.manager.tick()
+        self.channel.send.assert_not_awaited()
+        receipt = self.store.get('ticket_reopen:55')
+        receipt.update(state='completed', owner='123')
+        self.store.put('ticket_reopen:55', receipt)
+        await self.manager.tick()
+        self.channel.send.assert_not_awaited()
+        with self.assertRaises(ValueError):
+            await self.manager.reopened(self.channel, self.store.ticket(55), self.now, 'reopen-one')
+
+    async def test_reopen_resolves_lost_prior_send_before_resetting_episode(self):
+        async def lost(**kwargs):
+            await self.send_impl(**kwargs)
+            raise asyncio.TimeoutError('response lost')
+        self.channel.send.side_effect = lost
+        await self.advance(hours=2)
+        pending = self.store.get(state_key(55))['pending']
+        self.assertTrue(pending)
+        self.channel.send.side_effect = self.send_impl
+        self.now += timedelta(minutes=1)
+        state = await self.finish_reopen()
+        self.assertIsNone(state['pending'])
+        self.assertEqual(self.store.get(receipt_key(pending['nonce']))['state'], 'sent')
+        await self.advance(hours=2)
+        self.assertEqual(self.channel.send.await_count, 1)
+
+    async def test_reopen_cancels_verified_unsent_prior_reminder(self):
+        self.channel.send.side_effect = asyncio.TimeoutError('never delivered')
+        await self.advance(hours=2)
+        pending = self.store.get(state_key(55))['pending']
+        self.assertTrue(pending)
+        self.channel.send.side_effect = self.send_impl
+        self.now += timedelta(minutes=1)
+        state = await self.finish_reopen()
+        self.assertIsNone(state['pending'])
+        self.assertIsNone(state['last_sent'])
+        self.assertEqual(self.store.get(receipt_key(pending['nonce']))['state'], 'cancelled')
+        await self.advance(hours=1, minutes=59)
+        self.assertEqual(self.channel.send.await_count, 1)
+        await self.advance(minutes=1)
+        self.assertEqual(self.channel.send.await_count, 2)
+
+    async def test_reopen_reads_all_bounded_history_pages_before_selecting_delay(self):
+        for _ in range(1001):
+            self.add_message(BOT_ID, bot=True)
+        self.add_message(78, when=self.now + timedelta(hours=1))
+        self.now += timedelta(days=4)
+        state = await self.finish_reopen()
+        self.assertTrue(state['ever_replied'])
+        self.assertGreaterEqual(self.channel.history.call_count, 2)
+        await self.advance(hours=23)
+        self.channel.send.assert_not_awaited()
+        await self.advance(hours=1)
+        self.assertEqual(self.channel.send.await_count, 1)
+
+    async def test_failed_reopen_history_read_keeps_reminders_paused(self):
+        async def fail(**kwargs):
+            raise RuntimeError('unavailable')
+            yield
+        self.channel.history.side_effect = fail
+        self.now += timedelta(days=3)
+        self.reopen_receipt()
+        with self.assertRaises(RuntimeError):
+            await self.manager.reopened(self.channel, self.store.ticket(55), self.now, 'reopen-one')
+        await self.advance(hours=24)
+        self.channel.send.assert_not_awaited()
+
+    async def test_reopen_requires_private_open_ticket_and_bound_revision(self):
+        self.reopen_receipt()
+        self.store.ticket_state(55, 'closed')
+        with self.assertRaises(ValueError):
+            await self.manager.reopened(self.channel, self.store.ticket(55), self.now, 'reopen-one')
+        self.store.ticket_state(55, 'open')
+        with self.assertRaises(ValueError):
+            await self.manager.reopened(self.channel, self.store.ticket(55), self.now, 'other-revision')
+        self.channel.overwrites[self.guild.default_role] = discord.PermissionOverwrite(view_channel=True)
+        with self.assertRaises(ValueError):
+            await self.manager.reopened(self.channel, self.store.ticket(55), self.now, 'reopen-one')
+
+    async def test_reopen_counts_frozen_former_assignee_reply_without_granting_current_role(self):
+        self.add_message(77, when=self.now + timedelta(minutes=1))
+        self.now += timedelta(days=3)
+        self.staff.roles = []
+        self.reopen_receipt()
+        receipt = self.store.get('ticket_reopen:55')
+        receipt['assignment'] = self.store.get(assignment_key(55))
+        self.store.put('ticket_reopen:55', receipt)
+        self.assign(None)
+        state = await self.manager.reopened(self.channel, self.store.ticket(55), self.now, 'reopen-one')
+        self.assertTrue(state['ever_replied'])
+        self.assertIsNone(self.store.get(assignment_key(55))['staff_id'])
+        self.assertEqual(self.staff.roles, [])
+        self.reopen_receipt(state='completed')
+        await self.advance(hours=23)
+        self.channel.send.assert_not_awaited()
+        await self.advance(hours=1)
+        self.assertEqual(self.sent_kwargs[0]['content'], '<@&13>')
+
+    async def test_reopen_uses_bound_closure_for_departed_assignee(self):
+        self.add_message(77, when=self.now + timedelta(minutes=1))
+        self.now += timedelta(days=3)
+        del self.members[77]
+        self.store.put('ticket_feedback:closed:55', dict(guild=GUILD_ID, channel=55,
+            owner='999', kind='general', staff_id=77, captured_at=self.now.isoformat()))
+        self.assign(None)
+        state = await self.finish_reopen()
+        self.assertTrue(state['ever_replied'])
+
+    async def test_reopen_rejects_foreign_historical_staff_evidence(self):
+        self.reopen_receipt()
+        self.store.put('ticket_feedback:closed:55', dict(guild=GUILD_ID, channel=55,
+            owner='123', kind='general', staff_id=77))
+        with self.assertRaises(ValueError):
+            await self.manager.reopened(self.channel, self.store.ticket(55), self.now, 'reopen-one')
+        row = self.store.ticket(55)
+        with self.assertRaises(ValueError):
+            await self.manager.reconcile(self.channel, row, await self.manager.load(row), historical_staff={77})
 
     async def test_first_response_deadline_is_two_hours_then_one_per_day(self):
         await self.manager.tick()

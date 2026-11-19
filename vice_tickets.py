@@ -244,11 +244,11 @@ class TicketCenter:
                 if error.code != 10008:
                     raise
             else:
-                if not self.starter_matches(panel):
+                if not self.starter_matches(panel, archived=True):
                     raise ValueError('El panel registrado necesita revisión del equipo.')
         if panel is None:
             async for candidate in channel.history(limit=None, oldest_first=True):
-                if self.starter_matches(candidate):
+                if self.starter_matches(candidate, archived=True):
                     panel = candidate
                     break
         embed = self.starter_embed(current, assignment)
@@ -291,6 +291,9 @@ class TicketCenter:
                 or any(role.id == self.system.store.get('role:admin') for role in member.roles))
 
     async def action_context(self, interaction):
+        reopening = await self.system.call('get', 'ticket_reopen:' + str(interaction.channel_id))
+        if reopening and reopening.get('state') == 'pending':
+            raise ValueError('Espera a que termine de verificarse la reapertura.')
         guild = self.guild()
         member = await self.fresh_staff(guild, interaction.user.id)
         channel = await guild.fetch_channel(interaction.channel_id)
@@ -376,6 +379,9 @@ class TicketCenter:
 
     async def claim_notice(self, channel, row):
         """Caller holds ticket_lock; old assignments deliberately have no notice revision."""
+        reopening = await self.system.call('get', 'ticket_reopen:' + str(channel.id))
+        if reopening and reopening.get('state') == 'pending':
+            return None
         current = await self.system.call('ticket', channel.id)
         self.valid_channel(channel, current)
         if str(current['owner']) != str(row['owner']):
@@ -457,6 +463,9 @@ class TicketCenter:
 
     async def pending_notice(self, row):
         if not row or row['state'] != 'open':
+            return False
+        reopening = await self.system.call('get', 'ticket_reopen:' + str(row['channel']))
+        if reopening and reopening.get('state') == 'pending':
             return False
         assignment = await self.assignment(row)
         revision = assignment.get('notice_revision')
@@ -571,6 +580,9 @@ class TicketCenter:
             if row['state'] != 'open':
                 continue
             async with self.system.ticket_lock:
+                reopening = await self.system.call('get', 'ticket_reopen:' + str(row['channel']))
+                if reopening and reopening.get('state') == 'pending':
+                    continue
                 try:
                     channel = await guild.fetch_channel(int(row['channel']))
                     await self.ensure_open_panel(channel, row)

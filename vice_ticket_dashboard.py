@@ -204,6 +204,10 @@ class TicketDashboard:
             row = await self.system.call('ticket', saved['channel'])
             if not row or row['state'] != 'open':
                 continue
+            reopening = await self.system.call('get', 'ticket_reopen:' + str(row['channel']))
+            if reopening and reopening.get('state') == 'pending':
+                unavailable += 1
+                continue
             try:
                 channel = await guild.fetch_channel(int(row['channel']))
                 self.system.tickets.notice_scope(channel, row)

@@ -8,15 +8,17 @@ import discord
 from vice_design import GUILD_ID, BOT_ID
 
 log = logging.getLogger('ViceDistrict.ticket_delete')
-DELETE_VERSION = 'vice-closed-ticket-feedback-v2'
+DELETE_VERSION = 'vice-closed-ticket-reopen-v3'
+REOPEN_CUSTOM_ID = 'vice:v1:ticket:reopen'
+REOPEN_TITLE = '🔓 Conversación reabierta'
 DELETE_CUSTOM_ID = 'vice:v1:ticket:delete'
 FEEDBACK_CUSTOM_ID = 'vice:v1:ticket:feedback'
 CLOSE_CUSTOM_ID = 'vice:v1:ticket:close'
 ARCHIVE_TITLE = '🔒 Conversación archivada'
 STARTER_TITLE = '🎫 Te escuchamos'
 LEGACY_FOOTER = 'GTA VI Latino • Puerto Rico + Latinoamérica • Fans no oficiales'
-ARCHIVE_DESCRIPTION = ('Ticket cerrado. Su historial sigue disponible para el autor y el equipo. '
-                       'Solo el equipo puede eliminarlo; antes se guardará una copia privada.\n\n'
+ARCHIVE_DESCRIPTION = ('Ticket cerrado. El equipo puede **Reabrir** el mismo caso con su historial y responsable. '
+                       'Antes de **Eliminar**, se guardará una copia privada.\n\n'
                        'El autor puede valorar la atención. Su valoración será privada, solo para Administración.')
 
 
@@ -60,6 +62,11 @@ class TicketDeleteView(discord.ui.View):
 
 
 class DeleteTicketPanel(TicketDeleteView):
+    @discord.ui.button(label='Reabrir', emoji='🔓', style=discord.ButtonStyle.success,
+                       custom_id=REOPEN_CUSTOM_ID)
+    async def reopen_ticket(self, interaction, button):
+        await self.manager.system.ticket_reopen.request(interaction)
+
     @discord.ui.button(label='Valorar atención', emoji='⭐', style=discord.ButtonStyle.primary,
                        custom_id=FEEDBACK_CUSTOM_ID)
     async def rate_ticket(self, interaction, button):
@@ -72,9 +79,10 @@ class DeleteTicketPanel(TicketDeleteView):
 
 
 class ConfirmDeleteView(TicketDeleteView):
-    def __init__(self, manager, actor_id, channel_id, panel_id):
+    def __init__(self, manager, actor_id, channel_id, panel_id, reopen_revision=None):
         super().__init__(manager, timeout=60)
         self.actor_id, self.channel_id, self.panel_id = int(actor_id), int(channel_id), int(panel_id)
+        self.reopen_revision = reopen_revision
         self.token = uuid.uuid4().hex
         self.finished = False
 
@@ -152,9 +160,13 @@ class TicketDeletion:
         controls = [child for row in message.components for child in getattr(row, 'children', ())]
         identifiers = {getattr(child, 'custom_id', None) for child in controls}
         known_controls = (not controls or (len(controls) == 1 and identifiers == {DELETE_CUSTOM_ID})
-                          or (len(controls) == 2 and identifiers == {FEEDBACK_CUSTOM_ID, DELETE_CUSTOM_ID}))
+                          or (len(controls) == 2 and identifiers == {FEEDBACK_CUSTOM_ID, DELETE_CUSTOM_ID})
+                          or (len(controls) == 3 and identifiers == {REOPEN_CUSTOM_ID, FEEDBACK_CUSTOM_ID, DELETE_CUSTOM_ID}))
         return (message.author.id == BOT_ID and not message.content and not message.attachments
-                and len(message.embeds) == 1 and message.embeds[0].title == ARCHIVE_TITLE
+                and len(message.embeds) == 1
+                and (message.embeds[0].title == ARCHIVE_TITLE
+                     or (message.embeds[0].title == REOPEN_TITLE and not controls
+                         and message.embeds[0].footer.text == panel_footer(channel_id)))
                 and message.embeds[0].footer.text in (LEGACY_FOOTER, panel_footer(channel_id),
                                                      'VIce District • ticket-delete:' + str(channel_id))
                 and known_controls)
@@ -201,6 +213,7 @@ class TicketDeletion:
                     panel = message
         if (panel is not None and has_control(panel, DELETE_CUSTOM_ID)
                 and has_control(panel, FEEDBACK_CUSTOM_ID)
+                and has_control(panel, REOPEN_CUSTOM_ID)
                 and panel.embeds[0].footer.text == panel_footer(channel.id)
                 and panel.embeds[0].description == ARCHIVE_DESCRIPTION
                 and record.get('starters_cleaned') and not starters):
@@ -300,6 +313,7 @@ class TicketDeletion:
         await interaction.response.defer(ephemeral=True)
         guild = self.guild()
         async with self.system.ticket_lock:
+            await self.require_no_reopen(interaction.channel_id)
             await self.fresh_staff(guild, interaction.user.id)
             row = await self.system.call('ticket', interaction.channel_id)
             channel = await guild.fetch_channel(interaction.channel_id)
@@ -310,7 +324,7 @@ class TicketDeletion:
                     or not self.archive_matches(source, channel.id)
                     or not has_control(source, DELETE_CUSTOM_ID)):
                 raise ValueError('Usa el botón Eliminar del panel archivado de este ticket.')
-            view = ConfirmDeleteView(self, interaction.user.id, channel.id, record['panel_id'])
+            view = ConfirmDeleteView(self, interaction.user.id, channel.id, record['panel_id'], record.get('reopen_revision'))
         await interaction.followup.send('Eliminarás este canal y **todo su historial**. Esta acción es permanente.\n'
                                         'Antes se guardará una copia privada para el equipo.\n'
                                         '¿Quieres continuar?', view=view, ephemeral=True)
@@ -321,10 +335,13 @@ class TicketDeletion:
         await interaction.response.defer(ephemeral=True)
         guild = self.guild()
         async with self.system.ticket_lock:
+            await self.require_no_reopen(view.channel_id)
             self.check_confirmation(interaction, view)
             member = await self.fresh_staff(guild, view.actor_id)
             row = await self.system.call('ticket', view.channel_id)
             record = await self.record(view.channel_id)
+            if record.get('reopen_revision') != view.reopen_revision:
+                raise ValueError('El ticket fue reabierto. Vuelve a pulsar Eliminar en su cierre actual.')
             try:
                 channel = await guild.fetch_channel(view.channel_id)
             except discord.NotFound as error:
@@ -383,3 +400,8 @@ class TicketDeletion:
             view.finished = True
             view.stop()
         await interaction.edit_original_response(content='Cancelado. El ticket se conserva.', view=None)
+
+    async def require_no_reopen(self, channel_id):
+        record = await self.system.call('get', 'ticket_reopen:' + str(channel_id))
+        if record and record.get('state') == 'pending':
+            raise ValueError('La reapertura se está verificando. Inténtalo de nuevo cuando termine.')
