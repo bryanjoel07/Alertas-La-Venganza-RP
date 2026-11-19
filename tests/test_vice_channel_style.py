@@ -51,17 +51,17 @@ class TypographyTests(unittest.TestCase):
             self.assertEqual(format_name(row['target_name'], category=row['type'] == 4,
                                          edge=row.get('edge', 'middle')), row['target_name'])
 
-    def test_future_creation_keeps_words_emoji_and_channel_branches(self):
-        self.assertEqual(format_name('╭・👋│bienvenida'), '╭・👋╎ʙɪᴇɴᴠᴇɴɪᴅᴀ')
-        self.assertEqual(format_name('╭・👋│mi╎canal'), '╭・👋╎ᴍɪ╎ᴄᴀɴᴀʟ')
+    def test_future_creation_keeps_words_emoji_and_removes_only_known_branches(self):
+        self.assertEqual(format_name('╭・👋│bienvenida'), '👋╎ʙɪᴇɴᴠᴇɴɪᴅᴀ')
+        self.assertEqual(format_name('╭・👋│mi╎canal'), '👋╎ᴍɪ╎ᴄᴀɴᴀʟ')
         self.assertEqual(format_name('🎙️ José 01'), '🎙️╎ᴊᴏꜱᴇ́ 01')
         self.assertEqual(format_name('1️⃣ Mi sala'), '1️⃣╎ᴍɪ ꜱᴀʟᴀ')
         self.assertEqual(format_name('━━ 🌴 EMPIEZA AQUÍ ━━', category=True, edge='first'),
-                         '↱ 🌴╎ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́')
+                         '┌ 🌴╎ᴇᴍᴘɪᴇᴢᴀ ᴀꞯᴜɪ́')
         self.assertEqual(format_name('━━ 🇵🇷 CORILLO LATINO ━━', category=True),
-                         '│ 🇵🇷╎ᴄᴏʀɪʟʟᴏ ʟᴀᴛɪɴᴏ')
+                         '├ 🇵🇷╎ᴄᴏʀɪʟʟᴏ ʟᴀᴛɪɴᴏ')
         self.assertEqual(format_name('━━ 🔒 ARCHIVO ━━', category=True, edge='last'),
-                         '↳ 🔒╎ᴀʀᴄʜɪᴠᴏ')
+                         '└ 🔒╎ᴀʀᴄʜɪᴠᴏ')
         for edge in ('first', 'middle', 'last'):
             name = format_name('━━ 🛡️ STAFF ━━', category=True, edge=edge)
             self.assertEqual(format_name(name, category=True, edge=edge), name)
@@ -69,6 +69,21 @@ class TypographyTests(unittest.TestCase):
             self.assertNotIn('─', name)
         with self.assertRaises(ValueError):
             format_name('Staff', category=True, edge='unknown')
+
+    def test_legacy_and_current_names_converge_without_losing_label_separators(self):
+        for branch in ('╭・', '├・', '╰・', '┊・', ''):
+            for divider in ('│', '╎'):
+                source = branch + '🎙️' + divider + 'José │ crew╎02'
+                expected = '🎙️╎ᴊᴏꜱᴇ́ │ ᴄʀᴇᴡ╎02'
+                with self.subTest(source=source):
+                    self.assertEqual(format_name(source), expected)
+                    self.assertEqual(format_name(expected), expected)
+        for old in ('↱', '│', '↳', '┌', '├', '└'):
+            for edge, new in (('first', '┌'), ('middle', '├'), ('last', '└')):
+                self.assertEqual(format_name(old + ' 🛡️╎Staff', category=True, edge=edge),
+                                 new + ' 🛡️╎ꜱᴛᴀꜰꜰ')
+        self.assertEqual(format_name('🎙️ José ├・03'), '🎙️╎ᴊᴏꜱᴇ́ ├・03')
+        self.assertEqual(format_name('📋 ╎ pendientes'), '📋╎ᴘᴇɴᴅɪᴇɴᴛᴇꜱ')
 
     def test_manifest_rejects_foreign_identity_duplicates_and_arbitrary_renames(self):
         rows, _ = load_manifest()
@@ -233,7 +248,8 @@ class ChannelStyleTests(unittest.IsolatedAsyncioTestCase):
     async def test_restoration_keeps_previous_pending_receipts_unchanged(self):
         old = {'vice-channel-style-v2:102': {'state': 'pending', 'source_name': 'old v2'},
                'vice-channel-style-v3:102': {'state': 'pending', 'source_name': 'old v3'},
-               'vice-channel-style-v4:102': {'state': 'completed', 'source_name': 'old v4'}}
+               'vice-channel-style-v4:102': {'state': 'completed', 'source_name': 'old v4'},
+               'vice-channel-style-v5:102': {'state': 'completed', 'source_name': 'old v5'}}
         self.values.update(deepcopy(old))
         await self.manager.ready()
         self.assertEqual({key: self.values[key] for key in old}, old)

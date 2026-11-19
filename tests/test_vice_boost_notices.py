@@ -107,6 +107,15 @@ class BoostNoticeTests(unittest.IsolatedAsyncioTestCase):
         if guild is None or guild.id != GUILD_ID or guild.owner_id != OWNER_ID:
             raise ValueError('Wrong guild')
 
+    async def test_name_migration_accepts_v5_and_v6_without_weakening_identity(self):
+        record = self.store.get(DESTINATION_KEY)
+        for name in (module.stylize(module.NAME).replace('│', '╎'), module.format_name(module.NAME)):
+            self.destination.name = name
+            self.assertIs(self.manager.validate_destination(self.destination, record), self.destination)
+        self.destination.category_id = 999
+        with self.assertRaises(ValueError):
+            self.manager.validate_destination(self.destination, record)
+
     def overwrites(self, guild, policy):
         readonly = discord.PermissionOverwrite(view_channel=True, read_message_history=True,
                                                 **{flag: False for flag in WRITE_FLAGS})

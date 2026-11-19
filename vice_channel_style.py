@@ -13,12 +13,14 @@ import discord
 GUILD_ID = 1572462544302383164
 BOT_ID = 1571639486591402174
 OWNER_ID = 1509288420852109383
-VERSION = 'vice-channel-style-v5'
-MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v5.json'
+VERSION = 'vice-channel-style-v6'
+MANIFEST = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v6.json'
 RESTORE_REFERENCE = Path(__file__).parent / 'assets' / 'vice-district' / 'channel-style-v2.json'
 TEAM_CATEGORY_ID = 1572467006999896074
 ICON_SEPARATOR = '╎'
-CATEGORY_EDGES = {'first': '↱', 'middle': '│', 'last': '↳'}
+CATEGORY_EDGES = {'first': '┌', 'middle': '├', 'last': '└'}
+LEGACY_CATEGORY_EDGES = ('↱', '│', '↳')
+CHANNEL_BRANCHES = ('╭・', '├・', '╰・', '┊・')
 SUPPORTED_TYPES = frozenset((0, 2, 4, 5, 13, 15, 16))
 SMALL_CAPS = dict(zip('abcdefghijklmnopqrstuvwxyz', 'ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡXʏᴢ'))
 FROM_SMALL_CAPS = {value: key for key, value in SMALL_CAPS.items()}
@@ -79,7 +81,7 @@ def _split_icon_label(text):
 
 
 def format_name(name, *, category=False, edge='middle'):
-    """Keep smallcaps and channel branches; use the owner's exact separators."""
+    """Use matching category corners and uncluttered emoji-first channel names."""
     text = str(name).strip()
     if not text:
         return ''
@@ -90,22 +92,19 @@ def format_name(name, *, category=False, edge='middle'):
             if text.startswith(frame) and text.endswith(frame):
                 text = text[len(frame):-len(frame)].strip()
                 break
-        if text[:1] in CATEGORY_EDGES.values():
+        if text[:1] in (*CATEGORY_EDGES.values(), *LEGACY_CATEGORY_EDGES):
             text = text[1:].lstrip()
         icon, label = _split_icon_label(text)
         body = icon + ICON_SEPARATOR + stylize(label) if icon else stylize(label)
         return CATEGORY_EDGES[edge] + ' ' + body
-    separator = _first_separator(text)
-    if separator:
-        prefix, label = text.split(separator, 1)
-        return stylize(prefix) + ICON_SEPARATOR + stylize(label)
-    branch = ''
-    for candidate in ('╭・', '├・', '╰・', '┊・'):
+    # Strip only known decorative prefixes, before splitting at the first
+    # emoji/name divider. Any later divider belongs to the actual label.
+    for candidate in CHANNEL_BRANCHES:
         if text.startswith(candidate):
-            branch, text = candidate, text[len(candidate):]
+            text = text[len(candidate):].lstrip()
             break
     icon, label = _split_icon_label(text)
-    return branch + (icon + ICON_SEPARATOR + stylize(label) if icon else stylize(label))
+    return icon + ICON_SEPARATOR + stylize(label) if icon else stylize(label)
 
 
 

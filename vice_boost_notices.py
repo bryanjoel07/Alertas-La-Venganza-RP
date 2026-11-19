@@ -121,7 +121,9 @@ class BoostNotices:
                 or record.get('guild') != GUILD_ID or channel.id != int(record.get('channel') or 0)
                 or channel.id == SOURCE_CHANNEL_ID
                 or channel.category_id != int(self.system.store.get('category:community') or 0)
-                or channel.name not in {NAME, stylize(NAME), stylize(NAME.removeprefix('├・')), format_name(NAME)} or channel.topic != TOPIC):
+                or channel.name not in {NAME, stylize(NAME), stylize(NAME.removeprefix('├・')),
+                                       stylize(NAME).replace('│', '╎'), format_name(NAME)}
+                or channel.topic != TOPIC):
             raise ValueError('El canal de mejoras registrado necesita revisión.')
         rules = {target.id: overwrite for target, overwrite in channel.overwrites.items()}
         if set(rules) != {GUILD_ID, BOT_ID}:

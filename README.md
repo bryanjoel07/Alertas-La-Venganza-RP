@@ -49,6 +49,12 @@ Las pruebas de lanzamiento están en `test_store_launch.py`: actualización de l
 
 ## Restauración
 
+### Decoración uniforme para móvil — v6
+
+La corrección v6 usa ┌ / ├ / └ para las categorías y elimina las ramas y puntos adicionales de los canales, que quedan como emoji╎nombre en versalitas. Mantiene los emojis, palabras completas y separador ╎; no añade relleno. Discord controla la sangría nativa de cada tipo de fila, por lo que este formato uniforme no promete alineación exacta entre categorías y canales ni entre dispositivos. El manifiesto v6 conserva el estado previo de los 38 objetos y solo se cambia el nombre mediante recibos nuevos, sin repetir migraciones anteriores.
+
+Para restaurar v5, aplicar individualmente el `name` previo del manifiesto v6 solo si el nombre actual todavía coincide con `target_name`, mediante operaciones registradas. Conservar cambios manuales posteriores y la base actual. El servicio de mejoras acepta ambos formatos durante la transición; no alterar permisos, posiciones, temas, historial ni el mensaje de pendientes.
+
 ### Flechas de inicio y cierre, separador ╎ — v5
 
 La revisión v5 conserva las versalitas, los emojis y las ramas de los canales. Cambia el separador entre emoji y nombre a ╎. Las categorías usan ↱ al inicio de la lista, │ en posiciones intermedias y ↳ al final, según el orden observado; solo cambia sus nombres. El manifiesto v5 conserva los 38 IDs, nombres previos y posiciones de referencia. No añade relleno, no reordena objetos y no repite migraciones anteriores. La creación futura de tickets y salas conserva este formato.
